@@ -9,6 +9,21 @@ where it lives --- `fly.toml`, the `Dockerfile`, the CI workflow and
 [final project brief](https://comp.anu.edu.au/courses/comp4020-agentic-coding-studio/assessments/final-project/).
 What the agent needs to carry from any of it is your call.
 
+## README.md / PROCESS.md authorship
+
+These two files should read in my own voice (course guidance: AI-generated
+prose here gets flagged as "median" output and marked down). The rule is
+about *inventing* content, not about who types it:
+
+- If I haven't told you what a section should say, give me a skeleton
+  (headings, bullet prompts, structure) and leave the prose to me.
+- If I've already dictated the actual points/content (e.g. "put these three
+  decisions in, write them up"), formalizing that into full prose is fine --
+  that's not you making things up, it's you writing down what I already said.
+
+The distinction that matters: did the content originate from me, or did you
+invent it. Only the latter is off-limits.
+
 ## ADR drafting
 
 Architecture decisions get discussed here before they get written up properly.
