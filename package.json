@@ -5,14 +5,23 @@
   "scripts": {
     "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
     "typecheck": "tsc --noEmit",
+    "build:client": "node scripts/build-client.ts",
+    "dev": "pnpm build:client && node server/index.ts",
     "check": "pnpm typecheck && pnpm test",
     "check:evidence": "node scripts/check-evidence.ts",
     "test": "vitest run"
   },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
   "devDependencies": {
     "@types/jsdom": "^30.0.0",
     "@types/node": "^24.0.0",
+    "@types/three": "^0.180.0",
+    "@types/ws": "^8.5.0",
+    "esbuild": "^0.25.0",
     "jsdom": "^30.1.0",
+    "three": "^0.180.0",
     "typescript": "^6.0.3",
     "vitest": "^5.0.1"
   },
