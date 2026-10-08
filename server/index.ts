@@ -9,15 +9,20 @@ import {
   DEATH_DURATION_MS,
   HIT_RADIUS,
   PERSIST_INTERVAL_MS,
+  PICKUP_RANGE,
   PROJECTILE_MAX_BOUNCES,
   PROJECTILE_RADIUS,
   PROJECTILE_SPEED,
   PROJECTILE_TTL_MS,
   SPAWN_POINTS,
   WORLD_BOUNDS,
+  canPlaceBox,
   overlapsAnyObstacle,
   resolveObstacles,
+  worldObstacles,
   type ClientMessage,
+  type ItemKind,
+  type ItemState,
   type MoveMessage,
   type PlayerState,
   type ProjectileState,
@@ -111,6 +116,62 @@ interface Connection {
 
 const connections = new Map<string, Connection>();
 
+// In memory only for now: every restart puts the world's items back where
+// they started. (Persisting them is planned, just not until the item set
+// settles down.)
+const items = new Map<string, ItemState>();
+
+const INITIAL_ITEMS: { kind: ItemKind; x: number; z: number }[] = [
+  { kind: "gun", x: 3, z: 3 },
+  { kind: "gun", x: -3, z: -3 },
+  { kind: "gun", x: 9, z: -9 },
+  { kind: "box", x: 8, z: -2 },
+  { kind: "box", x: 9, z: -2 },
+  { kind: "box", x: -9, z: 3 },
+  { kind: "box", x: -10, z: 3 },
+  { kind: "box", x: 2, z: 11 },
+  { kind: "box", x: -1, z: -12 },
+];
+for (const it of INITIAL_ITEMS) {
+  const id = randomUUID();
+  items.set(id, { id, ...it });
+}
+
+function heldItem(playerId: string): ItemState | undefined {
+  for (const item of items.values()) if (item.heldBy === playerId) return item;
+  return undefined;
+}
+
+/**
+ * Let go of whatever this player holds, right where they stand. Used when
+ * they die or disconnect, so an item never leaves the world with them.
+ */
+function dropHeld(player: PlayerState): void {
+  const item = heldItem(player.id);
+  if (!item) return;
+  item.heldBy = undefined;
+  item.x = player.x;
+  item.z = player.z;
+}
+
+function livingPlayers(now: number): PlayerState[] {
+  return [...connections.values()].filter((c) => !isDead(c, now)).map((c) => c.player);
+}
+
+function handlePrimary(conn: Connection, x: number, z: number, now: number): void {
+  const item = heldItem(conn.player.id);
+  if (!item) return;
+  if (item.kind === "gun") {
+    spawnProjectile(conn.player);
+  } else if (item.kind === "box") {
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return;
+    if (!canPlaceBox(x, z, conn.player, worldObstacles(items.values()), livingPlayers(now))) return;
+    item.heldBy = undefined;
+    item.x = x;
+    item.z = z;
+  }
+}
+
 function isDead(conn: Connection, now: number): boolean {
   return conn.deadUntil > now;
 }
@@ -163,7 +224,7 @@ wss.on("connection", (socket, req) => {
         x: clamp(move.x, -WORLD_BOUNDS, WORLD_BOUNDS),
         z: clamp(move.z, -WORLD_BOUNDS, WORLD_BOUNDS),
       };
-      const resolved = resolveObstacles(clamped.x, clamped.z);
+      const resolved = resolveObstacles(clamped.x, clamped.z, worldObstacles(items.values()));
       conn.player.x = resolved.x;
       conn.player.z = resolved.z;
       conn.player.rotation = move.rotation;
@@ -171,13 +232,31 @@ wss.on("connection", (socket, req) => {
       return;
     }
 
-    if (msg.type === "shoot") {
-      spawnProjectile(conn.player);
+    if (msg.type === "pickup") {
+      const item = items.get(msg.itemId);
+      if (!item || item.heldBy !== undefined || heldItem(playerId)) return;
+      const reach = Math.hypot(item.x - conn.player.x, item.z - conn.player.z);
+      if (reach > PICKUP_RANGE) return;
+      item.heldBy = playerId;
+      return;
+    }
+
+    if (msg.type === "primary") {
+      handlePrimary(conn, msg.x, msg.z, Date.now());
+      return;
+    }
+
+    if (msg.type === "drop") {
+      // A box goes down through its primary action (it needs a valid spot);
+      // only items that don't block anything can just be let go of.
+      const item = heldItem(playerId);
+      if (item && item.kind !== "box") dropHeld(conn.player);
       return;
     }
   });
 
   socket.on("close", () => {
+    dropHeld(conn.player);
     connections.delete(playerId);
     savePlayer(conn.player);
   });
@@ -225,6 +304,7 @@ function respawn(player: PlayerState): void {
 
 function stepProjectiles(dt: number): void {
   const now = Date.now();
+  const obstacles = worldObstacles(items.values());
   for (const p of projectiles.values()) {
     if (now - p.spawnedAt > PROJECTILE_TTL_MS || p.bounces > PROJECTILE_MAX_BOUNCES) {
       projectiles.delete(p.id);
@@ -235,8 +315,8 @@ function stepProjectiles(dt: number): void {
     const nz = p.z + p.vz * dt;
     const hitWallX = nx < -WORLD_BOUNDS || nx > WORLD_BOUNDS;
     const hitWallZ = nz < -WORLD_BOUNDS || nz > WORLD_BOUNDS;
-    const hitObstacleX = overlapsAnyObstacle(nx, p.z, PROJECTILE_RADIUS);
-    const hitObstacleZ = overlapsAnyObstacle(p.x, nz, PROJECTILE_RADIUS);
+    const hitObstacleX = overlapsAnyObstacle(nx, p.z, PROJECTILE_RADIUS, obstacles);
+    const hitObstacleZ = overlapsAnyObstacle(p.x, nz, PROJECTILE_RADIUS, obstacles);
 
     if (hitWallX || hitObstacleX) p.vx = -p.vx;
     if (hitWallZ || hitObstacleZ) p.vz = -p.vz;
@@ -257,6 +337,7 @@ function stepProjectiles(dt: number): void {
       if (dx * dx + dz * dz < HIT_RADIUS * HIT_RADIUS) {
         conn.deadUntil = now + DEATH_DURATION_MS;
         conn.dirty = true;
+        dropHeld(conn.player);
         const ownerConn = connections.get(p.ownerId);
         if (ownerConn) {
           ownerConn.score += conn.player.id === p.ownerId ? -1 : 1;
@@ -290,7 +371,12 @@ setInterval(() => {
     x: p.x,
     z: p.z,
   }));
-  const state: ServerMessage = { type: "state", players, projectiles: projectileList };
+  const state: ServerMessage = {
+    type: "state",
+    players,
+    projectiles: projectileList,
+    items: [...items.values()],
+  };
   const payload = JSON.stringify(state);
   for (const conn of connections.values()) {
     if (conn.socket.readyState === conn.socket.OPEN) conn.socket.send(payload);

@@ -1,15 +1,23 @@
-import type { MoveMessage, PlayerState, ProjectileState, ServerMessage } from "../shared/protocol.ts";
+import type {
+  ItemState,
+  MoveMessage,
+  PlayerState,
+  ProjectileState,
+  ServerMessage,
+} from "../shared/protocol.ts";
 
 export interface NetHandlers {
   onWelcome: (you: PlayerState, players: PlayerState[]) => void;
-  onState: (players: PlayerState[], projectiles: ProjectileState[]) => void;
+  onState: (players: PlayerState[], projectiles: ProjectileState[], items: ItemState[]) => void;
   /** fires on every connect/disconnect transition, including the first connect */
   onConnectionChange: (connected: boolean) => void;
 }
 
 export interface Net {
   sendMove: (m: Omit<MoveMessage, "type">) => void;
-  shoot: () => void;
+  pickup: (itemId: string) => void;
+  primary: (x: number, z: number) => void;
+  drop: () => void;
 }
 
 const RECONNECT_BASE_MS = 500;
@@ -39,7 +47,7 @@ export function connect(handlers: NetHandlers): Net {
     ws.addEventListener("message", (event) => {
       const msg: ServerMessage = JSON.parse(event.data);
       if (msg.type === "welcome") handlers.onWelcome(msg.you, msg.players);
-      else if (msg.type === "state") handlers.onState(msg.players, msg.projectiles);
+      else if (msg.type === "state") handlers.onState(msg.players, msg.projectiles, msg.items);
     });
 
     // A Fly machine that scales to zero, a wifi blip, a laptop sleeping ---
@@ -66,8 +74,14 @@ export function connect(handlers: NetHandlers): Net {
       if (socket?.readyState === WebSocket.OPEN) send({ type: "move", ...m });
       else queuedMove = m;
     },
-    shoot() {
-      send({ type: "shoot" });
+    pickup(itemId) {
+      send({ type: "pickup", itemId });
+    },
+    primary(x, z) {
+      send({ type: "primary", x, z });
+    },
+    drop() {
+      send({ type: "drop" });
     },
   };
 }

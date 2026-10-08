@@ -1,11 +1,20 @@
 import * as THREE from "three";
 import { connect } from "./net.ts";
 import {
+  BOX_HALF_EXTENT,
   BROADCAST_INTERVAL_MS,
+  ITEM_KINDS,
   OBSTACLES,
+  PICKUP_RANGE,
+  PLACE_RANGE,
   PROJECTILE_SPEED,
   WORLD_BOUNDS,
+  canPlaceBox,
   resolveObstacles,
+  snapToGrid,
+  worldObstacles,
+  type ItemState,
+  type Obstacle,
   type PlayerState,
   type ProjectileState,
 } from "../shared/protocol.ts";
@@ -123,6 +132,7 @@ const remotes = new Map<string, RemotePlayer>();
 const respawnEl = document.getElementById("respawn")!;
 const leaderboardEl = document.getElementById("leaderboard")!;
 const connectionLostEl = document.getElementById("connection-lost")!;
+const controlsEl = document.getElementById("controls")!;
 
 function isDead(): boolean {
   return Date.now() < myRespawnAt;
@@ -156,6 +166,8 @@ const raycaster = new THREE.Raycaster();
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const pointerNDC = new THREE.Vector2(0, 0);
 let aimRotation = 0;
+/** where the cursor currently lands on the ground */
+const aimPoint = new THREE.Vector3();
 
 window.addEventListener("pointermove", (e) => {
   pointerNDC.x = (e.clientX / window.innerWidth) * 2 - 1;
@@ -167,11 +179,208 @@ function updateAim(): void {
   raycaster.setFromCamera(pointerNDC, camera);
   const hit = new THREE.Vector3();
   if (!raycaster.ray.intersectPlane(groundPlane, hit)) return;
+  aimPoint.copy(hit);
   const dx = hit.x - localMesh.position.x;
   const dz = hit.z - localMesh.position.z;
   if (Math.hypot(dx, dz) < 0.05) return; // cursor right on top of the player: keep the last aim
   aimRotation = Math.atan2(dx, dz);
   localMesh.rotation.y = aimRotation;
+}
+
+// --- Items -----------------------------------------------------------------
+// Every pickup-able thing shares one representation (ItemState) and one
+// set of rules; only the mesh and what its actions do differ by kind.
+
+interface ClientItem {
+  state: ItemState;
+  mesh: THREE.Mesh;
+  material: THREE.MeshStandardMaterial;
+}
+
+const items = new Map<string, ClientItem>();
+/** terrain plus boxes on the ground, as of the last state broadcast */
+let obstacles: Obstacle[] = OBSTACLES;
+/** a box's secondary action toggles this; it stays put between boxes */
+let gridSnap = false;
+
+function makeItemMesh(state: ItemState): ClientItem {
+  const material = new THREE.MeshStandardMaterial({
+    color: state.kind === "gun" ? 0x8a93a6 : 0xb07a45,
+  });
+  const geometry =
+    state.kind === "gun"
+      ? new THREE.BoxGeometry(0.18, 0.18, 0.7)
+      : new THREE.BoxGeometry(BOX_HALF_EXTENT * 2, BOX_HALF_EXTENT * 2, BOX_HALF_EXTENT * 2);
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+  return { state, mesh, material };
+}
+
+function updateItems(incoming: ItemState[]): void {
+  const seen = new Set<string>();
+  for (const state of incoming) {
+    seen.add(state.id);
+    const existing = items.get(state.id);
+    if (existing) existing.state = state;
+    else items.set(state.id, makeItemMesh(state));
+  }
+  for (const [id, item] of items) {
+    if (!seen.has(id)) {
+      scene.remove(item.mesh);
+      items.delete(id);
+    }
+  }
+  obstacles = worldObstacles(incoming);
+}
+
+function myHeldItem(): ClientItem | undefined {
+  if (!myId) return undefined;
+  for (const item of items.values()) if (item.state.heldBy === myId) return item;
+  return undefined;
+}
+
+/**
+ * The ground item the cursor is over, if it's in reach. Matched by
+ * distance from the cursor's ground point rather than by ray-hitting the
+ * mesh itself, so a small item doesn't need a pixel-precise click ---
+ * which matters on a trackpad.
+ */
+const HOVER_RADIUS = 0.9;
+function hoveredItem(): ClientItem | undefined {
+  if (!localMesh) return undefined;
+  let best: ClientItem | undefined;
+  let bestDist = HOVER_RADIUS;
+  for (const item of items.values()) {
+    const { state } = item;
+    if (state.heldBy !== undefined) continue;
+    if (Math.hypot(state.x - localMesh.position.x, state.z - localMesh.position.z) > PICKUP_RANGE) continue;
+    const d = Math.hypot(state.x - aimPoint.x, state.z - aimPoint.z);
+    if (d < bestDist) {
+      best = item;
+      bestDist = d;
+    }
+  }
+  return best;
+}
+
+/**
+ * Where a held box would land: the cursor's ground point, pulled in to
+ * placement range, then snapped if grid snap is on. Pulled in a bit
+ * further when snapping, so rounding to the grid can't push a spot that
+ * looked in range back out of it.
+ */
+function boxTarget(): { x: number; z: number } {
+  const origin = localMesh!.position;
+  let dx = aimPoint.x - origin.x;
+  let dz = aimPoint.z - origin.z;
+  const dist = Math.hypot(dx, dz);
+  const maxDist = gridSnap ? PLACE_RANGE - 0.75 : PLACE_RANGE - 0.01;
+  if (dist > maxDist) {
+    dx *= maxDist / dist;
+    dz *= maxDist / dist;
+  }
+  let x = origin.x + dx;
+  let z = origin.z + dz;
+  if (gridSnap) {
+    x = snapToGrid(x);
+    z = snapToGrid(z);
+  }
+  return { x, z };
+}
+
+function boxTargetValid(target: { x: number; z: number }): boolean {
+  const bodies: { x: number; z: number }[] = [];
+  if (localMesh) bodies.push({ x: localMesh.position.x, z: localMesh.position.z });
+  for (const remote of remotes.values()) {
+    if (remote.mesh.visible) bodies.push({ x: remote.target.x, z: remote.target.z });
+  }
+  return canPlaceBox(target.x, target.z, localMesh!.position, obstacles, bodies);
+}
+
+const previewMaterial = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.4 });
+const placementPreview = new THREE.Mesh(
+  new THREE.BoxGeometry(BOX_HALF_EXTENT * 2, BOX_HALF_EXTENT * 2, BOX_HALF_EXTENT * 2),
+  previewMaterial,
+);
+placementPreview.visible = false;
+scene.add(placementPreview);
+
+function holderMesh(playerId: string): THREE.Mesh | undefined {
+  if (playerId === myId) return localMesh;
+  return remotes.get(playerId)?.mesh;
+}
+
+function stepItemVisuals(time: number): void {
+  const hovered = isDead() || myHeldItem() ? undefined : hoveredItem();
+  for (const item of items.values()) {
+    const { state, mesh } = item;
+    item.material.emissive.setHex(item === hovered ? 0x444444 : 0x000000);
+    if (state.heldBy === undefined) {
+      mesh.visible = true;
+      mesh.scale.setScalar(1);
+      if (state.kind === "gun") {
+        // a slow spin and bob, so loose guns read as "pick me up"
+        mesh.position.set(state.x, 0.35 + Math.sin(time * 2) * 0.08, state.z);
+        mesh.rotation.y = time;
+      } else {
+        mesh.position.set(state.x, BOX_HALF_EXTENT, state.z);
+        mesh.rotation.y = 0;
+      }
+      continue;
+    }
+    const holder = holderMesh(state.heldBy);
+    mesh.visible = !!holder?.visible;
+    if (!holder) continue;
+    const rot = holder.rotation.y;
+    if (state.kind === "gun") {
+      // held out in front, along the aim
+      mesh.position.set(
+        holder.position.x + Math.sin(rot) * 0.55,
+        0.9,
+        holder.position.z + Math.cos(rot) * 0.55,
+      );
+      mesh.rotation.y = rot;
+      mesh.scale.setScalar(1);
+    } else {
+      // carried overhead, shrunk a little so it doesn't hide the carrier
+      mesh.position.set(holder.position.x, 2.0, holder.position.z);
+      mesh.rotation.y = 0;
+      mesh.scale.setScalar(0.7);
+    }
+  }
+
+  const held = myHeldItem();
+  const showPreview = !isDead() && !!localMesh && held?.state.kind === "box";
+  placementPreview.visible = showPreview;
+  if (showPreview) {
+    const target = boxTarget();
+    placementPreview.position.set(target.x, BOX_HALF_EXTENT, target.z);
+    previewMaterial.color.setHex(boxTargetValid(target) ? 0x4ade80 : 0xef4444);
+  }
+}
+
+let lastControlsText = "";
+function renderControls(): void {
+  const held = myHeldItem();
+  let text: string;
+  if (!held) {
+    text = "WASD to move · click an item next to you to pick it up";
+  } else {
+    const info = ITEM_KINDS[held.state.kind];
+    const parts = [`click: ${info.primaryLabel}`];
+    if (info.secondaryLabel) {
+      const state = held.state.kind === "box" ? ` (${gridSnap ? "on" : "off"})` : "";
+      parts.push(`right-click / E: ${info.secondaryLabel}${state}`);
+    }
+    parts.push(held.state.kind === "box" ? "Q: place" : "Q: drop");
+    text = `WASD to move · ${parts.join(" · ")}`;
+  }
+  if (text !== lastControlsText) {
+    controlsEl.textContent = text;
+    lastControlsText = text;
+  }
 }
 
 const projectileMaterial = new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0x332200 });
@@ -204,6 +413,9 @@ function clearSceneState(): void {
   projectiles.clear();
   for (const shot of pendingShots) scene.remove(shot.mesh);
   pendingShots.length = 0;
+  for (const item of items.values()) scene.remove(item.mesh);
+  items.clear();
+  obstacles = OBSTACLES;
 }
 
 const net = connect({
@@ -223,7 +435,7 @@ const net = connect({
     }
     renderLeaderboard(players);
   },
-  onState(players, incomingProjectiles) {
+  onState(players, incomingProjectiles, incomingItems) {
     const seenPlayers = new Set<string>();
     const myPrevPos = localMesh ? { x: localMesh.position.x, z: localMesh.position.z } : undefined;
     for (const p of players) {
@@ -248,6 +460,7 @@ const net = connect({
       }
     }
     updateProjectiles(incomingProjectiles);
+    updateItems(incomingItems);
     renderLeaderboard(players);
   },
 });
@@ -311,9 +524,8 @@ function stepPendingShots(dt: number): void {
   }
 }
 
-window.addEventListener("pointerdown", () => {
-  if (isDead() || !localMesh) return;
-  net.shoot();
+function firePredictedShot(): void {
+  if (!localMesh) return;
   // same spawn math as the server's spawnProjectile, purely for immediate
   // visual feedback --- the server's own projectile is still what actually
   // bounces, hits, and scores
@@ -329,6 +541,62 @@ window.addEventListener("pointerdown", () => {
     vz: dirZ * PROJECTILE_SPEED,
     createdAt: performance.now(),
   });
+}
+
+// --- Input --------------------------------------------------------------
+// Three verbs, each reachable without a right mouse button and without
+// holding anything down, since a lot of players are on a laptop trackpad:
+//   primary   --- click (or tap-to-click)
+//   secondary --- right-click / two-finger click / ctrl+click, or E
+//   drop      --- Q
+
+function primary(): void {
+  if (isDead() || !localMesh) return;
+  const held = myHeldItem();
+  if (!held) {
+    const target = hoveredItem();
+    if (target) net.pickup(target.state.id);
+    return;
+  }
+  if (held.state.kind === "gun") {
+    net.primary(aimPoint.x, aimPoint.z);
+    firePredictedShot();
+  } else if (held.state.kind === "box") {
+    const target = boxTarget();
+    if (boxTargetValid(target)) net.primary(target.x, target.z);
+  }
+}
+
+function secondary(): void {
+  if (isDead()) return;
+  const held = myHeldItem();
+  if (held?.state.kind === "box") gridSnap = !gridSnap;
+}
+
+function drop(): void {
+  if (isDead()) return;
+  const held = myHeldItem();
+  if (!held) return;
+  // a box can't just be let go of where you stand --- it'd land on you ---
+  // so dropping one means putting it down at the preview spot
+  if (held.state.kind === "box") primary();
+  else net.drop();
+}
+
+window.addEventListener("pointerdown", (e) => {
+  // On a Mac, ctrl+click is the trackpad's right-click: it arrives as a
+  // *left* button press with ctrlKey set (plus a contextmenu event), so it
+  // has to be caught here or it would fire the primary action as well.
+  if (e.button === 2 || (e.button === 0 && e.ctrlKey)) secondary();
+  else if (e.button === 0) primary();
+});
+// the browser's own right-click menu would steal the secondary action
+window.addEventListener("contextmenu", (e) => e.preventDefault());
+window.addEventListener("keydown", (e) => {
+  if (e.repeat) return;
+  const key = e.key.toLowerCase();
+  if (key === "e") secondary();
+  else if (key === "q") drop();
 });
 
 function addOrUpdateRemote(p: PlayerState): void {
@@ -372,7 +640,7 @@ function animate(): void {
         dz /= len;
         const nextX = clamp(localMesh.position.x + dx * SPEED * dt, -WORLD_BOUNDS, WORLD_BOUNDS);
         const nextZ = clamp(localMesh.position.z + dz * SPEED * dt, -WORLD_BOUNDS, WORLD_BOUNDS);
-        const resolved = resolveObstacles(nextX, nextZ);
+        const resolved = resolveObstacles(nextX, nextZ, obstacles);
         localMesh.position.x = resolved.x;
         localMesh.position.z = resolved.z;
       }
@@ -402,6 +670,8 @@ function animate(): void {
 
   stepProjectileInterpolation(dt);
   stepPendingShots(dt);
+  stepItemVisuals(clock.elapsedTime);
+  renderControls();
 
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
