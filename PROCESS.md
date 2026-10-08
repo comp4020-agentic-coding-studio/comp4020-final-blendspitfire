@@ -60,6 +60,15 @@ whether it ends up PVP, PVE, something non-combat and purely cooperative, or
 even sandbox-like. The current combat rules exist mainly to give the project
 something playable right now, not because they're the intended direction.
 
+<!-- out-of-scope note, skeleton for you to expand: real multiplayer testing
+     (2026-10-07) surfaced real-network latency as a problem. Client-side
+     shot prediction and jitter-tolerant interpolation were added, but true
+     server-side lag-compensated hit detection (rewinding world state to the
+     shooter's perceived time) and swapping WebSocket/TCP for a UDP-based
+     transport (WebRTC) were deliberately left out -- too large a
+     rearchitecture to justify for a placeholder combat mechanic whose
+     actual shape (per the paragraph above) isn't decided yet. -->
+
 ## Commit evidence
 
 [`8d98917`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/8d98917) — the shared 3D space MVP: server, client, Dockerfile, doc skeletons.

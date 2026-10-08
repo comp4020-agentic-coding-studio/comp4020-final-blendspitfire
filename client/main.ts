@@ -3,11 +3,39 @@ import { connect } from "./net.ts";
 import {
   BROADCAST_INTERVAL_MS,
   OBSTACLES,
+  PROJECTILE_SPEED,
   WORLD_BOUNDS,
   resolveObstacles,
   type PlayerState,
   type ProjectileState,
 } from "../shared/protocol.ts";
+
+function showFatalError(message: string): void {
+  const el = document.getElementById("fatal-error")!;
+  el.querySelector("div")!.textContent = message;
+  el.style.display = "flex";
+}
+
+// A WebGLRenderer construction failure (hardware acceleration disabled by
+// device policy, a locked-down lab machine, a VM/remote desktop with no GPU
+// passthrough) otherwise throws silently at module load and the visitor
+// just sees a blank page with no explanation. Check first, so there's
+// something on screen either way.
+function hasWebGL(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    return !!(canvas.getContext("webgl2") || canvas.getContext("webgl"));
+  } catch {
+    return false;
+  }
+}
+
+if (!hasWebGL()) {
+  showFatalError(
+    "This browser or device can't create a WebGL context, so the 3D scene can't render here. Try enabling hardware acceleration, or a different browser or device.",
+  );
+  throw new Error("WebGL unavailable");
+}
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1a1f2b);
@@ -20,7 +48,15 @@ const CAMERA_ALTITUDE = 22;
 const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
 camera.up.set(0, 0, -1);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+let renderer: THREE.WebGLRenderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+} catch {
+  showFatalError(
+    "This browser or device can't create a WebGL context, so the 3D scene can't render here. Try enabling hardware acceleration, or a different browser or device.",
+  );
+  throw new Error("WebGLRenderer construction failed");
+}
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
@@ -86,6 +122,7 @@ let myRespawnAt = 0;
 const remotes = new Map<string, RemotePlayer>();
 const respawnEl = document.getElementById("respawn")!;
 const leaderboardEl = document.getElementById("leaderboard")!;
+const connectionLostEl = document.getElementById("connection-lost")!;
 
 function isDead(): boolean {
   return Date.now() < myRespawnAt;
@@ -141,17 +178,42 @@ const projectileMaterial = new THREE.MeshStandardMaterial({ color: 0xffd166, emi
 
 interface RemoteProjectile {
   mesh: THREE.Mesh;
-  prevX: number;
-  prevZ: number;
-  targetX: number;
-  targetZ: number;
-  since: number;
+  target: THREE.Vector3;
 }
 
 const projectiles = new Map<string, RemoteProjectile>();
 
+// Locally-predicted shots: spawned the instant you click, so firing doesn't
+// wait a full round-trip to show anything. No bounce/obstacle physics ---
+// they're a short-lived visual bridge, swapped out for the server's real
+// projectile (or expired) well before they'd travel far enough to matter.
+interface PendingShot {
+  mesh: THREE.Mesh;
+  vx: number;
+  vz: number;
+  createdAt: number;
+}
+const pendingShots: PendingShot[] = [];
+const PENDING_SHOT_TTL_MS = 500;
+
+function clearSceneState(): void {
+  if (localMesh) scene.remove(localMesh);
+  for (const remote of remotes.values()) scene.remove(remote.mesh);
+  remotes.clear();
+  for (const proj of projectiles.values()) scene.remove(proj.mesh);
+  projectiles.clear();
+  for (const shot of pendingShots) scene.remove(shot.mesh);
+  pendingShots.length = 0;
+}
+
 const net = connect({
+  onConnectionChange(connected) {
+    connectionLostEl.style.display = connected ? "none" : "block";
+  },
   onWelcome(you, players) {
+    // also fires on every reconnect, so start from a clean scene rather
+    // than piling a new set of meshes on top of the last session's
+    clearSceneState();
     myId = you.id;
     myRespawnAt = you.respawnAt ?? 0;
     localMesh = makeCharacter(you.color);
@@ -190,16 +252,17 @@ const net = connect({
   },
 });
 
-// Projectiles move fast relative to the ~66ms broadcast tick, so snapping
-// straight to each new server position reads as stutter. Instead, each
-// update becomes a new interpolation target and the render loop eases
-// toward it over the same tick duration (updateProjectileInterpolation),
-// the same "entity interpolation" trick used for remote players, just with
-// a fixed-duration lerp instead of an exponential one since the speed is
-// high enough that lag-behind would otherwise be visible.
+// A fixed-duration lerp (assume an update every ~66ms, ease over exactly
+// that long) stutters on a real network: a late update leaves the
+// projectile frozen at its target, then the next one restarts a fresh
+// 66ms ease from there. A continuous, distance-proportional ease --- the
+// same style already used for remote players, just at a faster rate ---
+// doesn't assume any particular arrival cadence, so jitter just looks like
+// slightly more or less catch-up instead of a visible stair-step.
+const PROJECTILE_LERP_RATE = 20;
+
 function updateProjectiles(incoming: ProjectileState[]): void {
   const seen = new Set<string>();
-  const now = performance.now();
   for (const p of incoming) {
     seen.add(p.id);
     let proj = projectiles.get(p.id);
@@ -208,15 +271,17 @@ function updateProjectiles(incoming: ProjectileState[]): void {
       mesh.position.set(p.x, 0.5, p.z);
       mesh.castShadow = true;
       scene.add(mesh);
-      proj = { mesh, prevX: p.x, prevZ: p.z, targetX: p.x, targetZ: p.z, since: now };
+      proj = { mesh, target: new THREE.Vector3(p.x, 0.5, p.z) };
       projectiles.set(p.id, proj);
+      // the server's real version of a shot we predicted locally has now
+      // shown up: drop the oldest placeholder rather than show both
+      if (p.ownerId === myId && pendingShots.length > 0) {
+        const oldest = pendingShots.shift()!;
+        scene.remove(oldest.mesh);
+      }
       continue;
     }
-    proj.prevX = proj.mesh.position.x;
-    proj.prevZ = proj.mesh.position.z;
-    proj.targetX = p.x;
-    proj.targetZ = p.z;
-    proj.since = now;
+    proj.target.set(p.x, 0.5, p.z);
   }
   for (const [id, proj] of projectiles) {
     if (!seen.has(id)) {
@@ -226,17 +291,44 @@ function updateProjectiles(incoming: ProjectileState[]): void {
   }
 }
 
-function updateProjectileInterpolation(): void {
-  const now = performance.now();
+function stepProjectileInterpolation(dt: number): void {
   for (const proj of projectiles.values()) {
-    const t = Math.min(1, (now - proj.since) / BROADCAST_INTERVAL_MS);
-    proj.mesh.position.x = proj.prevX + (proj.targetX - proj.prevX) * t;
-    proj.mesh.position.z = proj.prevZ + (proj.targetZ - proj.prevZ) * t;
+    proj.mesh.position.lerp(proj.target, Math.min(1, dt * PROJECTILE_LERP_RATE));
+  }
+}
+
+function stepPendingShots(dt: number): void {
+  const now = performance.now();
+  for (let i = pendingShots.length - 1; i >= 0; i--) {
+    const shot = pendingShots[i];
+    if (now - shot.createdAt > PENDING_SHOT_TTL_MS) {
+      scene.remove(shot.mesh);
+      pendingShots.splice(i, 1);
+      continue;
+    }
+    shot.mesh.position.x += shot.vx * dt;
+    shot.mesh.position.z += shot.vz * dt;
   }
 }
 
 window.addEventListener("pointerdown", () => {
-  if (!isDead()) net.shoot();
+  if (isDead() || !localMesh) return;
+  net.shoot();
+  // same spawn math as the server's spawnProjectile, purely for immediate
+  // visual feedback --- the server's own projectile is still what actually
+  // bounces, hits, and scores
+  const dirX = Math.sin(aimRotation);
+  const dirZ = Math.cos(aimRotation);
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 8), projectileMaterial);
+  mesh.position.set(localMesh.position.x + dirX * 0.8, 0.5, localMesh.position.z + dirZ * 0.8);
+  mesh.castShadow = true;
+  scene.add(mesh);
+  pendingShots.push({
+    mesh,
+    vx: dirX * PROJECTILE_SPEED,
+    vz: dirZ * PROJECTILE_SPEED,
+    createdAt: performance.now(),
+  });
 });
 
 function addOrUpdateRemote(p: PlayerState): void {
@@ -308,7 +400,8 @@ function animate(): void {
     remote.mesh.rotation.y += angleDiff(remote.mesh.rotation.y, remote.targetRotation) * Math.min(1, dt * 8);
   }
 
-  updateProjectileInterpolation();
+  stepProjectileInterpolation(dt);
+  stepPendingShots(dt);
 
   renderer.render(scene, camera);
   requestAnimationFrame(animate);

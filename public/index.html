@@ -25,12 +25,25 @@
       #leaderboard .swatch { width: 10px; height: 10px; border-radius: 50%; flex: none; }
       #leaderboard .score { margin-left: auto; font-variant-numeric: tabular-nums; }
       #leaderboard .me { font-weight: bold; }
+      #fatal-error {
+        position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+        background: #111; color: #eee; font: 15px/1.5 system-ui, sans-serif;
+        text-align: center; padding: 24px;
+      }
+      #fatal-error div { max-width: 440px; }
+      #connection-lost {
+        position: fixed; left: 50%; top: 12px; transform: translateX(-50%);
+        color: #fff; font: 13px system-ui, sans-serif; background: rgba(140, 20, 20, 0.85);
+        border-radius: 6px; padding: 6px 12px; display: none; pointer-events: none;
+      }
     </style>
   </head>
   <body>
     <div id="hint">WASD / arrow keys to move, click to shoot &middot; <a href="/readme/" style="color:#9cf">about</a></div>
     <div id="respawn"></div>
     <div id="leaderboard"></div>
+    <div id="connection-lost">reconnecting&hellip;</div>
+    <div id="fatal-error"><div></div></div>
     <script type="module" src="/bundle.js"></script>
   </body>
 </html>

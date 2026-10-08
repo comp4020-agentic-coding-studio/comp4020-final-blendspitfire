@@ -68,7 +68,7 @@ const server = createServer((req, res) => {
   const url = new URL(req.url ?? "/", "http://localhost");
 
   if (url.pathname === "/readme/" || url.pathname === "/readme") {
-    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
     res.end(readmePage());
     return;
   }
@@ -86,7 +86,13 @@ const server = createServer((req, res) => {
       res.end("not found");
       return;
     }
-    res.writeHead(200, { "content-type": MIME[extname(filePath)] ?? "application/octet-stream" });
+    // No build-time versioning on bundle.js's filename, so without this a
+    // returning visitor's browser can silently keep serving last week's
+    // script instead of fetching what's actually deployed now.
+    res.writeHead(200, {
+      "content-type": MIME[extname(filePath)] ?? "application/octet-stream",
+      "cache-control": "no-store",
+    });
     res.end(data);
   });
 });
