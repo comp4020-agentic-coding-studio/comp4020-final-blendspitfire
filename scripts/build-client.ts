@@ -2,9 +2,9 @@
 import { build } from "esbuild";
 
 await build({
-  entryPoints: ["client/main.ts"],
+  entryPoints: { bundle: "client/main.ts", gallery: "client/gallery.ts" },
   bundle: true,
-  outfile: "public/bundle.js",
+  outdir: "public",
   format: "esm",
   target: "es2022",
   sourcemap: true,

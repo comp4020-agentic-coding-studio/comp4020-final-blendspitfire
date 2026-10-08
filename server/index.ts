@@ -4,20 +4,29 @@ import { readFile, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import { loadOrCreatePlayer, savePlayer } from "./db.ts";
+import { PLAYER_COLORS } from "../shared/palette.ts";
 import {
   BROADCAST_INTERVAL_MS,
   DEATH_DURATION_MS,
+  FIRE_COOLDOWN_MS,
   HIT_RADIUS,
+  ITEM_CAPS,
   PERSIST_INTERVAL_MS,
   PICKUP_RANGE,
   PROJECTILE_MAX_BOUNCES,
   PROJECTILE_RADIUS,
   PROJECTILE_SPEED,
   PROJECTILE_TTL_MS,
+  PLAY_BOUNDS,
   SPAWN_POINTS,
-  WORLD_BOUNDS,
-  canPlaceBox,
+  STATIONS,
+  STATION_RESTOCK_MS,
+  clampToPlayBounds,
+  inRect,
+  isInYard,
+  isWalkable,
   overlapsAnyObstacle,
+  placementVerdict,
   resolveObstacles,
   worldObstacles,
   type ClientMessage,
@@ -112,6 +121,7 @@ interface Connection {
   deadUntil: number;
   /** in-memory only: resets to 0 on every (re)connect, never persisted */
   score: number;
+  lastFireAt: number;
 }
 
 const connections = new Map<string, Connection>();
@@ -132,9 +142,36 @@ const INITIAL_ITEMS: { kind: ItemKind; x: number; z: number }[] = [
   { kind: "box", x: 2, z: 11 },
   { kind: "box", x: -1, z: -12 },
 ];
-for (const it of INITIAL_ITEMS) {
+for (const it of [...INITIAL_ITEMS, ...STATIONS]) spawnItem(it.kind, it.x, it.z);
+
+function spawnItem(kind: ItemKind, x: number, z: number): void {
   const id = randomUUID();
-  items.set(id, { id, ...it });
+  items.set(id, { id, kind, x, z });
+}
+
+// Each yard station keeps one of its item lying on its spot: once the spot
+// has been empty for STATION_RESTOCK_MS a fresh one appears, unless the
+// world already holds that kind's cap.
+const stationEmptySince = STATIONS.map(() => 0);
+function restockStations(now: number): void {
+  STATIONS.forEach((station, i) => {
+    const stocked = [...items.values()].some(
+      (it) =>
+        it.kind === station.kind &&
+        it.heldBy === undefined &&
+        Math.hypot(it.x - station.x, it.z - station.z) < 0.8,
+    );
+    if (stocked) {
+      stationEmptySince[i] = 0;
+      return;
+    }
+    if (stationEmptySince[i] === 0) stationEmptySince[i] = now;
+    const count = [...items.values()].filter((it) => it.kind === station.kind).length;
+    if (now - stationEmptySince[i] >= STATION_RESTOCK_MS && count < ITEM_CAPS[station.kind]) {
+      spawnItem(station.kind, station.x, station.z);
+      stationEmptySince[i] = 0;
+    }
+  });
 }
 
 function heldItem(playerId: string): ItemState | undefined {
@@ -162,10 +199,15 @@ function handlePrimary(conn: Connection, x: number, z: number, now: number): voi
   const item = heldItem(conn.player.id);
   if (!item) return;
   if (item.kind === "gun") {
+    // the yard is a no-fire zone; the client says so, the server enforces it
+    if (isInYard(conn.player.x, conn.player.z)) return;
+    if (now - conn.lastFireAt < FIRE_COOLDOWN_MS) return;
+    conn.lastFireAt = now;
     spawnProjectile(conn.player);
   } else if (item.kind === "box") {
     if (!Number.isFinite(x) || !Number.isFinite(z)) return;
-    if (!canPlaceBox(x, z, conn.player, worldObstacles(items.values()), livingPlayers(now))) return;
+    const verdict = placementVerdict(x, z, conn.player, worldObstacles(items.values()), livingPlayers(now));
+    if (verdict !== "ok") return;
     item.heldBy = undefined;
     item.x = x;
     item.z = z;
@@ -198,7 +240,14 @@ wss.on("connection", (socket, req) => {
   const playerId = pendingIds.get(req) ?? randomUUID();
 
   const player = loadOrCreatePlayer(playerId);
-  const conn: Connection = { socket, player, dirty: false, deadUntil: 0, score: 0 };
+  // Everyone starts in the yard: the saved position only matters while
+  // connected (it's what a reconnect mid-session would otherwise restore).
+  respawn(player);
+  const taken = [...connections.values()].map((c) => c.player.color);
+  if (!PLAYER_COLORS.includes(player.color as (typeof PLAYER_COLORS)[number]) || taken.includes(player.color)) {
+    player.color = leastUsedColor(taken);
+  }
+  const conn: Connection = { socket, player, dirty: true, deadUntil: 0, score: 0, lastFireAt: 0 };
   connections.set(playerId, conn);
 
   const now = Date.now();
@@ -220,11 +269,12 @@ wss.on("connection", (socket, req) => {
     }
     if (msg.type === "move") {
       const move = msg as MoveMessage;
-      const clamped = {
-        x: clamp(move.x, -WORLD_BOUNDS, WORLD_BOUNDS),
-        z: clamp(move.z, -WORLD_BOUNDS, WORLD_BOUNDS),
-      };
+      if (!Number.isFinite(move.x) || !Number.isFinite(move.z)) return;
+      const clamped = clampToPlayBounds(move.x, move.z);
       const resolved = resolveObstacles(clamped.x, clamped.z, worldObstacles(items.values()));
+      // walls stop a walking player, but a client could still claim a
+      // jump straight to the far side of one
+      if (!isWalkable(resolved.x, resolved.z)) return;
       conn.player.x = resolved.x;
       conn.player.z = resolved.z;
       conn.player.rotation = move.rotation;
@@ -262,8 +312,21 @@ wss.on("connection", (socket, req) => {
   });
 });
 
-function clamp(v: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, v));
+/**
+ * The palette colour fewest connected players are wearing, so a handful of
+ * players never share a colour (and only start doubling up past six).
+ */
+function leastUsedColor(taken: string[]): string {
+  let best: string = PLAYER_COLORS[0];
+  let bestCount = Infinity;
+  for (const color of PLAYER_COLORS) {
+    const count = taken.filter((t) => t === color).length;
+    if (count < bestCount) {
+      best = color;
+      bestCount = count;
+    }
+  }
+  return best;
 }
 
 interface ServerProjectile {
@@ -313,18 +376,23 @@ function stepProjectiles(dt: number): void {
 
     const nx = p.x + p.vx * dt;
     const nz = p.z + p.vz * dt;
-    const hitWallX = nx < -WORLD_BOUNDS || nx > WORLD_BOUNDS;
-    const hitWallZ = nz < -WORLD_BOUNDS || nz > WORLD_BOUNDS;
-    const hitObstacleX = overlapsAnyObstacle(nx, p.z, PROJECTILE_RADIUS, obstacles);
-    const hitObstacleZ = overlapsAnyObstacle(p.x, nz, PROJECTILE_RADIUS, obstacles);
+    // walls are obstacles like any other, so this is all the bouncing
+    const hitX = overlapsAnyObstacle(nx, p.z, PROJECTILE_RADIUS, obstacles);
+    const hitZ = overlapsAnyObstacle(p.x, nz, PROJECTILE_RADIUS, obstacles);
 
-    if (hitWallX || hitObstacleX) p.vx = -p.vx;
-    if (hitWallZ || hitObstacleZ) p.vz = -p.vz;
-    if (hitWallX || hitWallZ || hitObstacleX || hitObstacleZ) {
+    if (hitX) p.vx = -p.vx;
+    if (hitZ) p.vz = -p.vz;
+    if (hitX || hitZ) {
       p.bounces += 1;
     } else {
       p.x = nx;
       p.z = nz;
+    }
+    // a shot through the doorway fizzles at the yard line rather than
+    // reaching anyone in the no-fire zone; and nothing outlives the world
+    if (isInYard(p.x, p.z) || !inRect(PLAY_BOUNDS, p.x, p.z, -1)) {
+      projectiles.delete(p.id);
+      continue;
     }
 
     // Neutral: a projectile can hit its own owner too (e.g. after bouncing
@@ -364,6 +432,7 @@ setInterval(() => {
   const now = Date.now();
   stepProjectiles(BROADCAST_INTERVAL_MS / 1000);
   processRespawns(now);
+  restockStations(now);
   const players = [...connections.values()].map((c) => netPlayer(c, now));
   const projectileList: ProjectileState[] = [...projectiles.values()].map((p) => ({
     id: p.id,

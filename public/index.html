@@ -11,6 +11,12 @@
         position: fixed; left: 12px; bottom: 12px; color: #eee;
         font: 14px system-ui, sans-serif; opacity: 0.8; pointer-events: none;
       }
+      #hint a { pointer-events: auto; }
+      #tip {
+        position: fixed; left: 0; top: 0; display: none; pointer-events: none;
+        color: #f4efe6; font: 600 13px system-ui, sans-serif; white-space: nowrap;
+        background: rgba(44, 26, 46, 0.85); border-radius: 5px; padding: 4px 8px;
+      }
       #respawn {
         position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
         color: #fff; font: bold 48px system-ui, sans-serif; text-shadow: 0 2px 8px #000;
@@ -40,6 +46,7 @@
   </head>
   <body>
     <div id="hint"><span id="controls">WASD / arrow keys to move</span> &middot; <a href="/readme/" style="color:#9cf">about</a></div>
+    <div id="tip"></div>
     <div id="respawn"></div>
     <div id="leaderboard"></div>
     <div id="connection-lost">reconnecting&hellip;</div>

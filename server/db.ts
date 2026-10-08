@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { PlayerState } from "../shared/protocol.ts";
+import { PLAYER_COLORS } from "../shared/palette.ts";
 
 const DB_PATH = process.env.DB_PATH ?? "/data/game.db";
 
@@ -24,7 +25,7 @@ const getStmt = db.prepare("SELECT id, color, x, z, rotation FROM players WHERE 
 const upsertStmt = db.prepare(`
   INSERT INTO players (id, color, x, z, rotation, last_seen)
   VALUES (?, ?, ?, ?, ?, ?)
-  ON CONFLICT(id) DO UPDATE SET x = excluded.x, z = excluded.z, rotation = excluded.rotation, last_seen = excluded.last_seen
+  ON CONFLICT(id) DO UPDATE SET color = excluded.color, x = excluded.x, z = excluded.z, rotation = excluded.rotation, last_seen = excluded.last_seen
 `);
 
 export function loadPlayer(id: string): PlayerState | undefined {
@@ -38,10 +39,7 @@ export function savePlayer(player: PlayerState): void {
   upsertStmt.run(player.id, player.color, player.x, player.z, player.rotation, Date.now());
 }
 
-const randomColor = (): string => {
-  const hue = Math.floor(Math.random() * 360);
-  return `hsl(${hue}, 70%, 55%)`;
-};
+const randomColor = (): string => PLAYER_COLORS[Math.floor(Math.random() * PLAYER_COLORS.length)];
 
 export function loadOrCreatePlayer(id: string): PlayerState {
   const existing = loadPlayer(id);

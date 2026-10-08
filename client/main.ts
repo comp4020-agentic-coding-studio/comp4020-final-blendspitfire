@@ -1,20 +1,45 @@
 import * as THREE from "three";
 import { connect } from "./net.ts";
+import { configureRenderer, setupLighting } from "./look.ts";
+import { buildYardGuides } from "./floorGuides.ts";
 import {
+  GUN_REST_HEIGHT,
+  HELD_GUN_OFFSET,
+  character,
+  crate,
+  ground,
+  gun,
+  heldGun,
+  pineGeometry,
+  rock,
+  wall,
+} from "./models/index.ts";
+import { rng, sharedMaterial } from "./models/kit.ts";
+import { ACCENT, CHALK, DANGER, OK } from "../shared/palette.ts";
+import {
+  ARENA,
   BOX_HALF_EXTENT,
   BROADCAST_INTERVAL_MS,
+  FIRE_COOLDOWN_MS,
   ITEM_KINDS,
   OBSTACLES,
   PICKUP_RANGE,
   PLACE_RANGE,
+  PLAY_BOUNDS,
   PROJECTILE_SPEED,
-  WORLD_BOUNDS,
-  canPlaceBox,
+  ROCKS,
+  WALLS,
+  YARD,
+  clampToPlayBounds,
+  inRect,
+  isInYard,
+  placementVerdict,
   resolveObstacles,
   snapToGrid,
   worldObstacles,
   type ItemState,
   type Obstacle,
+  type PlacementVerdict,
   type PlayerState,
   type ProjectileState,
 } from "../shared/protocol.ts";
@@ -47,7 +72,6 @@ if (!hasWebGL()) {
 }
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x1a1f2b);
 
 // Perspective camera, but positioned directly overhead and looking straight
 // down --- no tilt, no angled follow. Perspective (rather than orthographic)
@@ -66,9 +90,8 @@ try {
   );
   throw new Error("WebGLRenderer construction failed");
 }
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+configureRenderer(renderer);
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.shadowMap.enabled = true;
 document.body.appendChild(renderer.domElement);
 
 window.addEventListener("resize", () => {
@@ -77,47 +100,67 @@ window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-const ambient = new THREE.AmbientLight(0xffffff, 0.5);
-scene.add(ambient);
+// The sun's shadow box follows the player rather than covering the whole
+// map, so one shadow map stays crisp wherever they are.
+const SHADOW_EXTENT = 16;
+const sun = setupLighting(scene, SHADOW_EXTENT);
+const SUN_OFFSET = new THREE.Vector3(12, 22, 8);
 
-const sun = new THREE.DirectionalLight(0xffffff, 1.4);
-sun.position.set(10, 16, 8);
-sun.castShadow = true;
-sun.shadow.mapSize.set(1024, 1024);
-sun.shadow.camera.left = -WORLD_BOUNDS - 5;
-sun.shadow.camera.right = WORLD_BOUNDS + 5;
-sun.shadow.camera.top = WORLD_BOUNDS + 5;
-sun.shadow.camera.bottom = -WORLD_BOUNDS - 5;
-scene.add(sun);
+// --- The static world ------------------------------------------------------
 
-const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(WORLD_BOUNDS * 2 + 4, WORLD_BOUNDS * 2 + 4),
-  new THREE.MeshStandardMaterial({ color: 0x2d3446 }),
+const MARGIN = 12;
+const worldCenterZ = (PLAY_BOUNDS.minZ + PLAY_BOUNDS.maxZ) / 2;
+const floor = ground(
+  PLAY_BOUNDS.maxX - PLAY_BOUNDS.minX + MARGIN * 2,
+  PLAY_BOUNDS.maxZ - PLAY_BOUNDS.minZ + MARGIN * 2,
+  1,
 );
-ground.rotation.x = -Math.PI / 2;
-ground.receiveShadow = true;
-scene.add(ground);
+floor.position.z = worldCenterZ;
+scene.add(floor);
 
-const obstacleMaterial = new THREE.MeshStandardMaterial({ color: 0x3f4a63 });
-for (const obs of OBSTACLES) {
-  const box = new THREE.Mesh(
-    new THREE.BoxGeometry(obs.halfExtent * 2, obs.halfHeight * 2, obs.halfExtent * 2),
-    obstacleMaterial,
-  );
-  box.position.set(obs.x, obs.halfHeight, obs.z);
-  box.castShadow = true;
-  box.receiveShadow = true;
-  scene.add(box);
+for (const w of WALLS) {
+  const m = wall(w.halfX, w.halfZ, w.halfHeight * 2);
+  m.position.set(w.x, 0, w.z);
+  scene.add(m);
 }
+ROCKS.forEach((r, i) => {
+  const m = rock(r.halfX, r.halfZ, r.halfHeight * 2, 100 + i);
+  m.position.set(r.x, 0, r.z);
+  scene.add(m);
+});
 
-function makeCharacter(color: string): THREE.Mesh {
-  const material = new THREE.MeshStandardMaterial({ color: new THREE.Color().setStyle(color) });
-  const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.4, 0.8, 4, 8), material);
-  mesh.position.y = 0.8;
-  mesh.castShadow = true;
-  scene.add(mesh);
-  return mesh;
+// Pines frame the map from outside the walls --- never inside, where
+// they'd be obstacles nobody collides with.
+function plantTrees(): void {
+  const random = rng(42);
+  const spots: { x: number; z: number; s: number; r: number }[] = [];
+  const outer = { minX: PLAY_BOUNDS.minX - MARGIN + 1, maxX: PLAY_BOUNDS.maxX + MARGIN - 1 };
+  const outerZ = { minZ: PLAY_BOUNDS.minZ - MARGIN + 1, maxZ: PLAY_BOUNDS.maxZ + MARGIN - 1 };
+  for (let tries = 0; tries < 3000 && spots.length < 150; tries++) {
+    const x = outer.minX + random() * (outer.maxX - outer.minX);
+    const z = outerZ.minZ + random() * (outerZ.maxZ - outerZ.minZ);
+    if (inRect(ARENA, x, z, -2) || inRect(YARD, x, z, -2)) continue;
+    if (spots.some((s) => Math.hypot(s.x - x, s.z - z) < 1.7)) continue;
+    spots.push({ x, z, s: 0.8 + random() * 0.6, r: random() * Math.PI * 2 });
+  }
+  const trees = new THREE.InstancedMesh(pineGeometry(), sharedMaterial, spots.length);
+  const m = new THREE.Matrix4();
+  spots.forEach((spot, i) => {
+    m.compose(
+      new THREE.Vector3(spot.x, 0, spot.z),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(0, spot.r, 0)),
+      new THREE.Vector3(spot.s, spot.s, spot.s),
+    );
+    trees.setMatrixAt(i, m);
+  });
+  trees.castShadow = true;
+  trees.receiveShadow = true;
+  scene.add(trees);
 }
+plantTrees();
+scene.add(buildYardGuides());
+
+// --- Players ---------------------------------------------------------------
 
 interface RemotePlayer {
   mesh: THREE.Mesh;
@@ -133,9 +176,26 @@ const respawnEl = document.getElementById("respawn")!;
 const leaderboardEl = document.getElementById("leaderboard")!;
 const connectionLostEl = document.getElementById("connection-lost")!;
 const controlsEl = document.getElementById("controls")!;
+const tipEl = document.getElementById("tip")!;
 
 function isDead(): boolean {
   return Date.now() < myRespawnAt;
+}
+
+function makeCharacter(color: string, mine: boolean): THREE.Mesh {
+  const mesh = character(color);
+  if (mine) {
+    // a ring in your own colour at your feet, so you can find yourself
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.5, 0.62, 24),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.75, depthWrite: false }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.03;
+    mesh.add(ring);
+  }
+  scene.add(mesh);
+  return mesh;
 }
 
 // The leaderboard only ever shows who the server currently has connected:
@@ -156,15 +216,21 @@ function renderLeaderboard(players: PlayerState[]): void {
     .join("");
 }
 
+// --- Aim -------------------------------------------------------------------
+
 const pressed = new Set<string>();
 window.addEventListener("keydown", (e) => pressed.add(e.key.toLowerCase()));
 window.addEventListener("keyup", (e) => pressed.delete(e.key.toLowerCase()));
+// a key released while the window is in the background never sends keyup;
+// without this the player keeps walking after alt-tabbing back
+window.addEventListener("blur", () => pressed.clear());
 
 // Aim is mouse-driven and independent of movement: the character always
 // faces the cursor's position on the ground, WASD only translates it.
 const raycaster = new THREE.Raycaster();
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const pointerNDC = new THREE.Vector2(0, 0);
+const pointerPx = { x: 0, y: 0 };
 let aimRotation = 0;
 /** where the cursor currently lands on the ground */
 const aimPoint = new THREE.Vector3();
@@ -172,6 +238,8 @@ const aimPoint = new THREE.Vector3();
 window.addEventListener("pointermove", (e) => {
   pointerNDC.x = (e.clientX / window.innerWidth) * 2 - 1;
   pointerNDC.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  pointerPx.x = e.clientX;
+  pointerPx.y = e.clientY;
 });
 
 function updateAim(): void {
@@ -189,33 +257,65 @@ function updateAim(): void {
 
 // --- Items -----------------------------------------------------------------
 // Every pickup-able thing shares one representation (ItemState) and one
-// set of rules; only the mesh and what its actions do differ by kind.
+// set of rules; only the models and what its actions do differ by kind.
+// Each item has two models: how it lies in the world, and how it's held.
 
 interface ClientItem {
   state: ItemState;
-  mesh: THREE.Mesh;
-  material: THREE.MeshStandardMaterial;
+  lying: THREE.Mesh;
+  held: THREE.Mesh;
+  outline: THREE.Mesh;
 }
 
 const items = new Map<string, ClientItem>();
-/** terrain plus boxes on the ground, as of the last state broadcast */
+/** walls, rocks, and boxes on the ground, as of the last state broadcast */
 let obstacles: Obstacle[] = OBSTACLES;
 /** a box's secondary action toggles this; it stays put between boxes */
 let gridSnap = false;
 
-function makeItemMesh(state: ItemState): ClientItem {
-  const material = new THREE.MeshStandardMaterial({
-    color: state.kind === "gun" ? 0x8a93a6 : 0xb07a45,
-  });
-  const geometry =
-    state.kind === "gun"
-      ? new THREE.BoxGeometry(0.18, 0.18, 0.7)
-      : new THREE.BoxGeometry(BOX_HALF_EXTENT * 2, BOX_HALF_EXTENT * 2, BOX_HALF_EXTENT * 2);
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  scene.add(mesh);
-  return { state, mesh, material };
+const outlineInReach = new THREE.MeshBasicMaterial({ color: ACCENT, side: THREE.BackSide, transparent: true });
+const outlineOutOfReach = new THREE.MeshBasicMaterial({
+  color: CHALK,
+  side: THREE.BackSide,
+  transparent: true,
+  opacity: 0.35,
+});
+
+/** a stable angle per item, so loose guns don't all lie parallel */
+function restingAngle(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return ((h >>> 0) % 628) / 100;
+}
+
+function makeItem(state: ItemState): ClientItem {
+  let lying: THREE.Mesh;
+  let held: THREE.Mesh;
+  if (state.kind === "gun") {
+    lying = gun();
+    lying.position.y = GUN_REST_HEIGHT;
+    lying.rotation.y = restingAngle(state.id);
+    held = heldGun();
+    held.position.set(HELD_GUN_OFFSET.x, HELD_GUN_OFFSET.y, HELD_GUN_OFFSET.z);
+  } else {
+    lying = crate();
+    held = crate();
+    // carried in front, in both arms, at a smaller size so it doesn't hide the carrier
+    held.scale.setScalar(0.55);
+    held.position.set(0, 0.62, 0.5);
+  }
+  const outline = new THREE.Mesh(lying.geometry, outlineInReach);
+  outline.scale.setScalar(state.kind === "gun" ? 1.18 : 1.1);
+  if (state.kind === "box") outline.position.y = -0.05;
+  outline.visible = false;
+  lying.add(outline);
+  scene.add(lying);
+  return { state, lying, held, outline };
+}
+
+function removeItem(item: ClientItem): void {
+  scene.remove(item.lying);
+  item.held.removeFromParent();
 }
 
 function updateItems(incoming: ItemState[]): void {
@@ -224,11 +324,11 @@ function updateItems(incoming: ItemState[]): void {
     seen.add(state.id);
     const existing = items.get(state.id);
     if (existing) existing.state = state;
-    else items.set(state.id, makeItemMesh(state));
+    else items.set(state.id, makeItem(state));
   }
   for (const [id, item] of items) {
     if (!seen.has(id)) {
-      scene.remove(item.mesh);
+      removeItem(item);
       items.delete(id);
     }
   }
@@ -242,27 +342,29 @@ function myHeldItem(): ClientItem | undefined {
 }
 
 /**
- * The ground item the cursor is over, if it's in reach. Matched by
- * distance from the cursor's ground point rather than by ray-hitting the
+ * The ground item the cursor is over, and whether it's in reach. Matched
+ * by distance from the cursor's ground point rather than by ray-hitting the
  * mesh itself, so a small item doesn't need a pixel-precise click ---
- * which matters on a trackpad.
+ * which matters on a trackpad. Out-of-reach items still count as hovered,
+ * so they can say "move closer" instead of ignoring the player.
  */
 const HOVER_RADIUS = 0.9;
-function hoveredItem(): ClientItem | undefined {
+function hoveredItem(): { item: ClientItem; inReach: boolean } | undefined {
   if (!localMesh) return undefined;
   let best: ClientItem | undefined;
   let bestDist = HOVER_RADIUS;
   for (const item of items.values()) {
     const { state } = item;
     if (state.heldBy !== undefined) continue;
-    if (Math.hypot(state.x - localMesh.position.x, state.z - localMesh.position.z) > PICKUP_RANGE) continue;
     const d = Math.hypot(state.x - aimPoint.x, state.z - aimPoint.z);
     if (d < bestDist) {
       best = item;
       bestDist = d;
     }
   }
-  return best;
+  if (!best) return undefined;
+  const reach = Math.hypot(best.state.x - localMesh.position.x, best.state.z - localMesh.position.z);
+  return { item: best, inReach: reach <= PICKUP_RANGE };
 }
 
 /**
@@ -290,16 +392,16 @@ function boxTarget(): { x: number; z: number } {
   return { x, z };
 }
 
-function boxTargetValid(target: { x: number; z: number }): boolean {
+function boxVerdict(target: { x: number; z: number }): PlacementVerdict {
   const bodies: { x: number; z: number }[] = [];
   if (localMesh) bodies.push({ x: localMesh.position.x, z: localMesh.position.z });
   for (const remote of remotes.values()) {
     if (remote.mesh.visible) bodies.push({ x: remote.target.x, z: remote.target.z });
   }
-  return canPlaceBox(target.x, target.z, localMesh!.position, obstacles, bodies);
+  return placementVerdict(target.x, target.z, localMesh!.position, obstacles, bodies);
 }
 
-const previewMaterial = new THREE.MeshStandardMaterial({ transparent: true, opacity: 0.4 });
+const previewMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.45, depthWrite: false });
 const placementPreview = new THREE.Mesh(
   new THREE.BoxGeometry(BOX_HALF_EXTENT * 2, BOX_HALF_EXTENT * 2, BOX_HALF_EXTENT * 2),
   previewMaterial,
@@ -307,58 +409,111 @@ const placementPreview = new THREE.Mesh(
 placementPreview.visible = false;
 scene.add(placementPreview);
 
+// shown around the preview while grid snap is on, so "snap" is visible
+// rather than just a word in the hint
+const snapGrid = new THREE.GridHelper(7, 7, CHALK, CHALK);
+(snapGrid.material as THREE.Material).transparent = true;
+(snapGrid.material as THREE.Material).opacity = 0.3;
+snapGrid.visible = false;
+scene.add(snapGrid);
+
+/** when the last refused placement happened, for the preview's shake */
+let refusedAt = -Infinity;
+
+const hoverRing = new THREE.Mesh(
+  new THREE.RingGeometry(0.75, 0.9, 32),
+  new THREE.MeshBasicMaterial({ color: ACCENT, transparent: true, depthWrite: false }),
+);
+hoverRing.rotation.x = -Math.PI / 2;
+hoverRing.visible = false;
+scene.add(hoverRing);
+
 function holderMesh(playerId: string): THREE.Mesh | undefined {
   if (playerId === myId) return localMesh;
   return remotes.get(playerId)?.mesh;
 }
 
 function stepItemVisuals(time: number): void {
-  const hovered = isDead() || myHeldItem() ? undefined : hoveredItem();
+  const dead = isDead();
+  const hovered = dead || myHeldItem() ? undefined : hoveredItem();
+  const pulse = 0.6 + 0.4 * Math.sin(time * 6);
+  outlineInReach.opacity = pulse;
+
   for (const item of items.values()) {
-    const { state, mesh } = item;
-    item.material.emissive.setHex(item === hovered ? 0x444444 : 0x000000);
+    const { state, lying, held, outline } = item;
+    const isHovered = hovered?.item === item;
+    outline.visible = isHovered;
+    if (isHovered) outline.material = hovered.inReach ? outlineInReach : outlineOutOfReach;
+
     if (state.heldBy === undefined) {
-      mesh.visible = true;
-      mesh.scale.setScalar(1);
-      if (state.kind === "gun") {
-        // a slow spin and bob, so loose guns read as "pick me up"
-        mesh.position.set(state.x, 0.35 + Math.sin(time * 2) * 0.08, state.z);
-        mesh.rotation.y = time;
-      } else {
-        mesh.position.set(state.x, BOX_HALF_EXTENT, state.z);
-        mesh.rotation.y = 0;
-      }
+      held.removeFromParent();
+      lying.visible = true;
+      lying.position.x = state.x;
+      lying.position.z = state.z;
       continue;
     }
+    lying.visible = false;
     const holder = holderMesh(state.heldBy);
-    mesh.visible = !!holder?.visible;
-    if (!holder) continue;
-    const rot = holder.rotation.y;
-    if (state.kind === "gun") {
-      // held out in front, along the aim
-      mesh.position.set(
-        holder.position.x + Math.sin(rot) * 0.55,
-        0.9,
-        holder.position.z + Math.cos(rot) * 0.55,
-      );
-      mesh.rotation.y = rot;
-      mesh.scale.setScalar(1);
-    } else {
-      // carried overhead, shrunk a little so it doesn't hide the carrier
-      mesh.position.set(holder.position.x, 2.0, holder.position.z);
-      mesh.rotation.y = 0;
-      mesh.scale.setScalar(0.7);
-    }
+    if (holder && held.parent !== holder) holder.add(held);
+    if (!holder) held.removeFromParent();
+  }
+
+  hoverRing.visible = !!hovered?.inReach;
+  if (hovered?.inReach) {
+    hoverRing.position.set(hovered.item.state.x, 0.03, hovered.item.state.z);
+    (hoverRing.material as THREE.MeshBasicMaterial).opacity = pulse;
   }
 
   const held = myHeldItem();
-  const showPreview = !isDead() && !!localMesh && held?.state.kind === "box";
+  const showPreview = !dead && !!localMesh && held?.state.kind === "box";
   placementPreview.visible = showPreview;
+  snapGrid.visible = showPreview && gridSnap;
   if (showPreview) {
     const target = boxTarget();
-    placementPreview.position.set(target.x, BOX_HALF_EXTENT, target.z);
-    previewMaterial.color.setHex(boxTargetValid(target) ? 0x4ade80 : 0xef4444);
+    const sinceRefused = time - refusedAt;
+    const shake = sinceRefused < 0.3 ? Math.sin(sinceRefused * 60) * 0.12 : 0;
+    placementPreview.position.set(target.x + shake, BOX_HALF_EXTENT, target.z);
+    previewMaterial.color.setHex(boxVerdict(target) === "ok" ? OK : DANGER);
+    snapGrid.position.set(target.x, 0.02, target.z);
   }
+}
+
+// --- Cursor, tooltip and control hint ----------------------------------------
+
+let flashText = "";
+let flashUntil = 0;
+/** briefly explain why something the player just tried didn't happen */
+function flash(text: string): void {
+  flashText = text;
+  flashUntil = performance.now() + 1400;
+}
+
+function renderPointerFeedback(): void {
+  let cursor = "default";
+  let tip = "";
+  const held = myHeldItem();
+  if (localMesh && !isDead()) {
+    if (!held) {
+      const hovered = hoveredItem();
+      if (hovered?.inReach) {
+        cursor = "pointer";
+        tip = `click to pick up`;
+      } else if (hovered) {
+        tip = "move closer";
+      }
+    } else if (held.state.kind === "gun") {
+      cursor = "crosshair";
+      if (isInYard(localMesh.position.x, localMesh.position.z)) tip = "no firing in the yard";
+    } else if (held.state.kind === "box") {
+      const verdict = boxVerdict(boxTarget());
+      if (verdict !== "ok") tip = verdict;
+    }
+  }
+  if (performance.now() < flashUntil) tip = flashText;
+  renderer.domElement.style.cursor = cursor;
+  tipEl.textContent = tip;
+  tipEl.style.display = tip ? "block" : "none";
+  tipEl.style.transform = `translate(${pointerPx.x + 16}px, ${pointerPx.y + 14}px)`;
 }
 
 let lastControlsText = "";
@@ -372,7 +527,7 @@ function renderControls(): void {
     const parts = [`click: ${info.primaryLabel}`];
     if (info.secondaryLabel) {
       const state = held.state.kind === "box" ? ` (${gridSnap ? "on" : "off"})` : "";
-      parts.push(`right-click / E: ${info.secondaryLabel}${state}`);
+      parts.push(`right-click / Space: ${info.secondaryLabel}${state}`);
     }
     parts.push(held.state.kind === "box" ? "Q: place" : "Q: drop");
     text = `WASD to move · ${parts.join(" · ")}`;
@@ -383,7 +538,10 @@ function renderControls(): void {
   }
 }
 
-const projectileMaterial = new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0x332200 });
+// --- Projectiles -------------------------------------------------------------
+
+const projectileMaterial = new THREE.MeshBasicMaterial({ color: ACCENT });
+const projectileGeometry = new THREE.IcosahedronGeometry(0.15, 0);
 
 interface RemoteProjectile {
   mesh: THREE.Mesh;
@@ -404,6 +562,7 @@ interface PendingShot {
 }
 const pendingShots: PendingShot[] = [];
 const PENDING_SHOT_TTL_MS = 500;
+let lastFireAt = -Infinity;
 
 function clearSceneState(): void {
   if (localMesh) scene.remove(localMesh);
@@ -413,7 +572,7 @@ function clearSceneState(): void {
   projectiles.clear();
   for (const shot of pendingShots) scene.remove(shot.mesh);
   pendingShots.length = 0;
-  for (const item of items.values()) scene.remove(item.mesh);
+  for (const item of items.values()) removeItem(item);
   items.clear();
   obstacles = OBSTACLES;
 }
@@ -428,8 +587,8 @@ const net = connect({
     clearSceneState();
     myId = you.id;
     myRespawnAt = you.respawnAt ?? 0;
-    localMesh = makeCharacter(you.color);
-    localMesh.position.set(you.x, 0.8, you.z);
+    localMesh = makeCharacter(you.color, true);
+    localMesh.position.set(you.x, 0, you.z);
     for (const p of players) {
       if (p.id !== myId) addOrUpdateRemote(p);
     }
@@ -480,11 +639,10 @@ function updateProjectiles(incoming: ProjectileState[]): void {
     seen.add(p.id);
     let proj = projectiles.get(p.id);
     if (!proj) {
-      const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 8), projectileMaterial);
-      mesh.position.set(p.x, 0.5, p.z);
-      mesh.castShadow = true;
+      const mesh = new THREE.Mesh(projectileGeometry, projectileMaterial);
+      mesh.position.set(p.x, 0.9, p.z);
       scene.add(mesh);
-      proj = { mesh, target: new THREE.Vector3(p.x, 0.5, p.z) };
+      proj = { mesh, target: new THREE.Vector3(p.x, 0.9, p.z) };
       projectiles.set(p.id, proj);
       // the server's real version of a shot we predicted locally has now
       // shown up: drop the oldest placeholder rather than show both
@@ -494,7 +652,7 @@ function updateProjectiles(incoming: ProjectileState[]): void {
       }
       continue;
     }
-    proj.target.set(p.x, 0.5, p.z);
+    proj.target.set(p.x, 0.9, p.z);
   }
   for (const [id, proj] of projectiles) {
     if (!seen.has(id)) {
@@ -531,9 +689,8 @@ function firePredictedShot(): void {
   // bounces, hits, and scores
   const dirX = Math.sin(aimRotation);
   const dirZ = Math.cos(aimRotation);
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 8), projectileMaterial);
-  mesh.position.set(localMesh.position.x + dirX * 0.8, 0.5, localMesh.position.z + dirZ * 0.8);
-  mesh.castShadow = true;
+  const mesh = new THREE.Mesh(projectileGeometry, projectileMaterial);
+  mesh.position.set(localMesh.position.x + dirX * 0.8, 0.9, localMesh.position.z + dirZ * 0.8);
   scene.add(mesh);
   pendingShots.push({
     mesh,
@@ -545,25 +702,41 @@ function firePredictedShot(): void {
 
 // --- Input --------------------------------------------------------------
 // Three verbs, each reachable without a right mouse button and without
-// holding anything down, since a lot of players are on a laptop trackpad:
+// holding anything down, since a lot of players are on a laptop trackpad.
+// The left hand stays on WASD: its only other keys are the thumb's Space
+// and an occasional Q.
 //   primary   --- click (or tap-to-click)
-//   secondary --- right-click / two-finger click / ctrl+click, or E
+//   secondary --- right-click / two-finger click / ctrl+click, or Space
 //   drop      --- Q
 
 function primary(): void {
   if (isDead() || !localMesh) return;
   const held = myHeldItem();
   if (!held) {
-    const target = hoveredItem();
-    if (target) net.pickup(target.state.id);
+    const hovered = hoveredItem();
+    if (hovered?.inReach) net.pickup(hovered.item.state.id);
+    else if (hovered) flash("move closer");
     return;
   }
   if (held.state.kind === "gun") {
+    if (isInYard(localMesh.position.x, localMesh.position.z)) {
+      flash("no firing in the yard");
+      return;
+    }
+    const now = performance.now();
+    if (now - lastFireAt < FIRE_COOLDOWN_MS) return;
+    lastFireAt = now;
     net.primary(aimPoint.x, aimPoint.z);
     firePredictedShot();
   } else if (held.state.kind === "box") {
     const target = boxTarget();
-    if (boxTargetValid(target)) net.primary(target.x, target.z);
+    const verdict = boxVerdict(target);
+    if (verdict === "ok") {
+      net.primary(target.x, target.z);
+    } else {
+      refusedAt = clock.elapsedTime;
+      flash(`can't place: ${verdict}`);
+    }
   }
 }
 
@@ -584,6 +757,8 @@ function drop(): void {
 }
 
 window.addEventListener("pointerdown", (e) => {
+  // a click on the page's own links/UI isn't a game action
+  if (e.target !== renderer.domElement) return;
   // On a Mac, ctrl+click is the trackpad's right-click: it arrives as a
   // *left* button press with ctrlKey set (plus a contextmenu event), so it
   // has to be caught here or it would fire the primary action as well.
@@ -593,20 +768,26 @@ window.addEventListener("pointerdown", (e) => {
 // the browser's own right-click menu would steal the secondary action
 window.addEventListener("contextmenu", (e) => e.preventDefault());
 window.addEventListener("keydown", (e) => {
-  if (e.repeat) return;
   const key = e.key.toLowerCase();
-  if (key === "e") secondary();
+  // Space would otherwise scroll, or "click" whatever link has focus
+  if (key === " ") e.preventDefault();
+  if (e.repeat) return;
+  if (key === " ") secondary();
   else if (key === "q") drop();
 });
 
 function addOrUpdateRemote(p: PlayerState): void {
   let remote = remotes.get(p.id);
   if (!remote) {
-    remote = { mesh: makeCharacter(p.color), target: new THREE.Vector3(), targetRotation: 0 };
-    remote.mesh.position.set(p.x, 0.8, p.z);
+    remote = { mesh: makeCharacter(p.color, false), target: new THREE.Vector3(), targetRotation: 0 };
+    remote.mesh.position.set(p.x, 0, p.z);
     remotes.set(p.id, remote);
   }
-  remote.target.set(p.x, 0.8, p.z);
+  // a big jump is a respawn, not movement: don't slide across the map
+  if (Math.hypot(p.x - remote.mesh.position.x, p.z - remote.mesh.position.z) > 4) {
+    remote.mesh.position.set(p.x, 0, p.z);
+  }
+  remote.target.set(p.x, 0, p.z);
   remote.targetRotation = p.rotation;
   // the server only sends respawnAt while someone's dead
   remote.mesh.visible = p.respawnAt === undefined;
@@ -638,9 +819,11 @@ function animate(): void {
         const len = Math.hypot(dx, dz);
         dx /= len;
         dz /= len;
-        const nextX = clamp(localMesh.position.x + dx * SPEED * dt, -WORLD_BOUNDS, WORLD_BOUNDS);
-        const nextZ = clamp(localMesh.position.z + dz * SPEED * dt, -WORLD_BOUNDS, WORLD_BOUNDS);
-        const resolved = resolveObstacles(nextX, nextZ, obstacles);
+        const next = clampToPlayBounds(
+          localMesh.position.x + dx * SPEED * dt,
+          localMesh.position.z + dz * SPEED * dt,
+        );
+        const resolved = resolveObstacles(next.x, next.z, obstacles);
         localMesh.position.x = resolved.x;
         localMesh.position.z = resolved.z;
       }
@@ -661,6 +844,8 @@ function animate(): void {
 
     camera.position.set(localMesh.position.x, CAMERA_ALTITUDE, localMesh.position.z);
     camera.lookAt(localMesh.position.x, 0, localMesh.position.z);
+    sun.position.copy(localMesh.position).add(SUN_OFFSET);
+    sun.target.position.copy(localMesh.position);
   }
 
   for (const remote of remotes.values()) {
@@ -671,14 +856,11 @@ function animate(): void {
   stepProjectileInterpolation(dt);
   stepPendingShots(dt);
   stepItemVisuals(clock.elapsedTime);
+  renderPointerFeedback();
   renderControls();
 
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
-}
-
-function clamp(v: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, v));
 }
 
 function angleDiff(a: number, b: number): number {

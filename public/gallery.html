@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en-AU">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Model sheet</title>
+    <style>
+      html, body { margin: 0; background: #111; color: #eee; font: 13px system-ui, sans-serif; }
+      header { padding: 10px 12px; display: flex; gap: 0; }
+      header span { flex: 1; text-align: center; opacity: 0.7; }
+      header span:first-child { flex: none; width: 170px; text-align: left; }
+      #sheet { position: relative; width: 100%; }
+      #sheet canvas { display: block; }
+      .label { position: absolute; left: 12px; width: 150px; padding-top: 12px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span>asset</span><span>overhead, game scale</span><span>overhead, close</span><span>side, close</span><span>turning</span>
+    </header>
+    <div id="sheet"></div>
+    <script type="module" src="/gallery.js"></script>
+  </body>
+</html>

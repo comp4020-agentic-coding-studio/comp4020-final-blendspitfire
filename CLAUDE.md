@@ -33,3 +33,10 @@ options considered, what was picked, and why, in my own words where possible.
 That file lives under `.claude/`, which is already gitignored, so it never
 gets pushed; it's scratch material for writing the real ADRs from later, not
 a deliverable itself.
+
+## Art and interaction rules
+
+Every model, colour and control is held to
+[`docs/art-and-interaction.md`](docs/art-and-interaction.md). Read it before
+adding or changing any asset or input, and run its interaction checklist
+before calling a mechanic done.

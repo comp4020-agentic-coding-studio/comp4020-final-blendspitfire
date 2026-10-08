@@ -5,6 +5,8 @@ dist/
 # built by `pnpm build:client` (esbuild); Docker rebuilds it at image build time
 public/bundle.js
 public/bundle.js.map
+public/gallery.js
+public/gallery.js.map
 
 # editor and OS junk
 .DS_Store
