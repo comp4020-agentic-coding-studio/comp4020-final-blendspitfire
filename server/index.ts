@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { readFile, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
-import { loadOrCreatePlayer, savePlayer } from "./db.ts";
+import { loadItems, loadObjective, loadOrCreatePlayer, saveWorld, savePlayer } from "./db.ts";
 import { PLAYER_COLORS } from "../shared/palette.ts";
 import {
   BROADCAST_INTERVAL_MS,
@@ -14,6 +14,7 @@ import {
   shotRange,
   segmentHitsCircle,
   ITEM_CAPS,
+  OBSTACLES,
   PERSIST_INTERVAL_MS,
   PICKUP_RANGE,
   PROJECTILE_RADIUS,
@@ -133,14 +134,16 @@ interface Connection {
 
 const connections = new Map<string, Connection>();
 
-// The reactor: off until someone switches it on, back off once the
-// facility is empty. In memory only, like items, for now.
-const objective: ObjectiveState = { active: false };
-
-// In memory only for now: every restart puts the world's items back where
-// they started. (Persisting them is planned, just not until the item set
-// settles down.)
+// The world --- items and the reactor --- is saved to SQLite (server/db.ts)
+// and loaded back on boot, so what people built and moved survives the
+// machine stopping overnight. Changes mark it dirty; it's flushed on the
+// same interval as players, and on shutdown.
+const objective: ObjectiveState = loadObjective();
 const items = new Map<string, ItemState>();
+let worldDirty = false;
+const markWorldDirty = (): void => {
+  worldDirty = true;
+};
 
 const INITIAL_ITEMS: { kind: ItemKind; x: number; z: number }[] = [
   { kind: "gun", x: 0.8, z: 9 }, // corridor
@@ -153,11 +156,37 @@ const INITIAL_ITEMS: { kind: ItemKind; x: number; z: number }[] = [
   { kind: "box", x: -6, z: -6 }, // core
   { kind: "box", x: 6, z: -6 },
 ];
-for (const it of [...INITIAL_ITEMS, ...STATIONS]) spawnItem(it.kind, it.x, it.z);
+/**
+ * Somewhere this item can legitimately lie in the current layout. A saved
+ * world can predate a layout change, which can leave an item inside a new
+ * wall or out where nobody can walk; those are dropped rather than left
+ * stranded or blocking a doorway.
+ */
+function stillPlaceable(item: ItemState, placed: ItemState[]): boolean {
+  if (!isWalkable(item.x, item.z)) return false;
+  if (item.kind !== "box") return !overlapsAnyObstacle(item.x, item.z, 0.1, OBSTACLES);
+  return placementVerdict(item.x, item.z, item, worldObstacles(placed), []) !== "blocked";
+}
+
+const saved = loadItems();
+if (saved) {
+  const kept: ItemState[] = [];
+  for (const item of saved) if (stillPlaceable(item, kept)) kept.push(item);
+  for (const item of kept) items.set(item.id, item);
+  if (kept.length !== saved.length) {
+    console.log(`world: dropped ${saved.length - kept.length} saved item(s) the current layout has no room for`);
+    markWorldDirty();
+  }
+  console.log(`world: loaded ${kept.length} item(s), reactor ${objective.active ? "active" : "off"}`);
+} else {
+  for (const it of [...INITIAL_ITEMS, ...STATIONS]) spawnItem(it.kind, it.x, it.z);
+  console.log("world: fresh, seeded the starting items");
+}
 
 function spawnItem(kind: ItemKind, x: number, z: number): void {
   const id = randomUUID();
   items.set(id, { id, kind, x, z });
+  markWorldDirty();
 }
 
 // Each yard station keeps one of its item lying on its spot: once the spot
@@ -200,6 +229,7 @@ function dropHeld(player: PlayerState): void {
   item.heldBy = undefined;
   item.x = player.x;
   item.z = player.z;
+  markWorldDirty();
 }
 
 function livingPlayers(now: number): PlayerState[] {
@@ -230,6 +260,7 @@ function handlePrimary(conn: Connection, x: number, z: number, now: number): voi
     item.heldBy = undefined;
     item.x = x;
     item.z = z;
+    markWorldDirty();
   }
 }
 
@@ -307,7 +338,10 @@ wss.on("connection", (socket, req) => {
 
     if (msg.type === "activate") {
       const verdict = activateVerdict(conn.player, heldItem(playerId) !== undefined, objective);
-      if (verdict === "ok") objective.active = true;
+      if (verdict === "ok") {
+        objective.active = true;
+        markWorldDirty();
+      }
       return;
     }
 
@@ -317,6 +351,7 @@ wss.on("connection", (socket, req) => {
       const reach = Math.hypot(item.x - conn.player.x, item.z - conn.player.z);
       if (reach > PICKUP_RANGE) return;
       item.heldBy = playerId;
+      markWorldDirty();
       return;
     }
 
@@ -338,7 +373,6 @@ wss.on("connection", (socket, req) => {
     dropHeld(conn.player);
     connections.delete(playerId);
     savePlayer(conn.player);
-    if (connections.size === 0) objective.active = false;
   });
 });
 
@@ -476,14 +510,35 @@ setInterval(() => {
   }
 }, BROADCAST_INTERVAL_MS);
 
-setInterval(() => {
+function flushWorld(): void {
+  if (!worldDirty) return;
+  worldDirty = false;
+  saveWorld(items.values(), objective, (id) => connections.get(id)?.player);
+}
+
+function flushPlayers(): void {
   for (const conn of connections.values()) {
     if (conn.dirty) {
       savePlayer(conn.player);
       conn.dirty = false;
     }
   }
+}
+
+setInterval(() => {
+  flushPlayers();
+  flushWorld();
 }, PERSIST_INTERVAL_MS);
+
+// Fly stops an idle machine with SIGINT/SIGTERM: write out the last second
+// of changes before going, so nothing built just before everyone left is lost.
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.on(signal, () => {
+    flushPlayers();
+    flushWorld();
+    process.exit(0);
+  });
+}
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`listening on 0.0.0.0:${PORT}`);
