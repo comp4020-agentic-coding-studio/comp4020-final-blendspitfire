@@ -19,12 +19,16 @@ export interface ObjectiveState {
 
 export interface WelcomeMessage {
   type: "welcome";
+  /** server time when sent, so the client can estimate the clock offset straight away */
+  t: number;
   you: PlayerState;
   players: PlayerState[];
 }
 
 export interface StateMessage {
   type: "state";
+  /** server time (Date.now() scale) this snapshot was taken: clients interpolate other players against it */
+  t: number;
   players: PlayerState[];
   projectiles: ProjectileState[];
   items: ItemState[];
@@ -63,11 +67,25 @@ export interface ActivateMessage {
   type: "activate";
 }
 
+/**
+ * A shot, sent once rather than every tick: where it started, which way it
+ * flies and when, and how far it gets before it stops (a wall, a box, or
+ * someone it hit). Every client plays the same straight line forward from
+ * those, so a fast bullet looks identical everywhere without streaming its
+ * position. `range` can shrink once (when it hits a player mid-flight); the
+ * next broadcast carries the new value.
+ */
 export interface ProjectileState {
   id: string;
   ownerId: string;
   x: number;
   z: number;
+  dirX: number;
+  dirZ: number;
+  /** server time (Date.now() scale) it was fired */
+  firedAt: number;
+  /** distance it travels before stopping */
+  range: number;
 }
 
 export type ServerMessage = WelcomeMessage | StateMessage;
@@ -109,7 +127,8 @@ export const PLACE_RANGE = 3.5;
 export const BOX_HALF_EXTENT = 0.5;
 export const GRID_SIZE = 1;
 
-export const BROADCAST_INTERVAL_MS = 66;
+/** 20 updates a second: smooth enough to interpolate between, small enough for the 256 MB machine */
+export const BROADCAST_INTERVAL_MS = 50;
 export const PERSIST_INTERVAL_MS = 1000;
 
 // --- World layout ----------------------------------------------------------
@@ -493,6 +512,29 @@ export function boxObstacle(item: { x: number; z: number }): Obstacle {
   return { x: item.x, z: item.z, halfX: BOX_HALF_EXTENT, halfZ: BOX_HALF_EXTENT, halfHeight: BOX_HALF_EXTENT };
 }
 
+/**
+ * What a shot stops at besides walls and boxes: the edge of the world, just
+ * past the outer walls. The breaches are open, so without these a shot
+ * through one would fly on into nothing.
+ */
+const EDGE = 0.5;
+export const SHOT_BOUNDS: Obstacle[] = [
+  { x: 0, z: SIGHT_BOUNDS.minZ - EDGE, halfX: 40, halfZ: EDGE, halfHeight: 2 },
+  { x: 0, z: SIGHT_BOUNDS.maxZ + EDGE, halfX: 40, halfZ: EDGE, halfHeight: 2 },
+  { x: SIGHT_BOUNDS.minX - EDGE, z: 5, halfX: EDGE, halfZ: 40, halfHeight: 2 },
+  { x: SIGHT_BOUNDS.maxX + EDGE, z: 5, halfX: EDGE, halfZ: 40, halfHeight: 2 },
+];
+
+/**
+ * How far a shot fired from (x, z) along (dirX, dirZ) gets before a wall, a
+ * box or the world's edge stops it. Shared so your own shot is drawn
+ * stopping exactly where the server will stop it.
+ */
+export function shotRange(x: number, z: number, dirX: number, dirZ: number, obstacles: Obstacle[]): number {
+  if (overlapsAnyObstacle(x, z, PROJECTILE_RADIUS, obstacles)) return 0; // point-blank into a wall
+  return rayToObstacles(x, z, dirX, dirZ, [...obstacles, ...SHOT_BOUNDS], PROJECTILE_MAX_RANGE);
+}
+
 /** the fixed walls and fixtures plus every box currently sitting on the ground */
 export function worldObstacles(items: Iterable<ItemState>): Obstacle[] {
   const result = [...OBSTACLES];
@@ -542,11 +584,88 @@ export function placementVerdict(
 
 export const DEATH_DURATION_MS = 3000;
 
-export const PROJECTILE_SPEED = 14;
-export const PROJECTILE_RADIUS = 0.15;
-export const PROJECTILE_MAX_BOUNCES = 4;
-export const PROJECTILE_TTL_MS = 6000;
-export const HIT_RADIUS = PLAYER_RADIUS + PROJECTILE_RADIUS + 0.1;
+/** a rifle round, fast enough to read as a tracer rather than a ball you could dodge */
+export const PROJECTILE_SPEED = 45;
+export const PROJECTILE_RADIUS = 0.05;
+/** the furthest a shot flies if nothing stops it */
+export const PROJECTILE_MAX_RANGE = 40;
+export const HIT_RADIUS = PLAYER_RADIUS + PROJECTILE_RADIUS;
+/** how far in front of the shooter a shot starts: past their own body, so it can't hit them */
+export const MUZZLE_OFFSET = 0.8;
+
+/**
+ * How far a ray from (x, z) along (dirX, dirZ) gets before it meets an
+ * obstacle (inflated by `radius`), up to `max`. A slab test per box, so a
+ * fast shot can't step over a thin wall between ticks.
+ */
+export function rayToObstacles(
+  x: number,
+  z: number,
+  dirX: number,
+  dirZ: number,
+  obstacles: Obstacle[],
+  max: number,
+  radius = PROJECTILE_RADIUS,
+): number {
+  let best = max;
+  for (const o of obstacles) {
+    const minX = o.x - o.halfX - radius;
+    const maxX = o.x + o.halfX + radius;
+    const minZ = o.z - o.halfZ - radius;
+    const maxZ = o.z + o.halfZ + radius;
+    let t0 = 0;
+    let t1 = best;
+    if (Math.abs(dirX) < 1e-9) {
+      if (x < minX || x > maxX) continue;
+    } else {
+      let a = (minX - x) / dirX;
+      let b = (maxX - x) / dirX;
+      if (a > b) [a, b] = [b, a];
+      t0 = Math.max(t0, a);
+      t1 = Math.min(t1, b);
+      if (t0 > t1) continue;
+    }
+    if (Math.abs(dirZ) < 1e-9) {
+      if (z < minZ || z > maxZ) continue;
+    } else {
+      let a = (minZ - z) / dirZ;
+      let b = (maxZ - z) / dirZ;
+      if (a > b) [a, b] = [b, a];
+      t0 = Math.max(t0, a);
+      t1 = Math.min(t1, b);
+      if (t0 > t1) continue;
+    }
+    if (t0 < best) best = t0;
+  }
+  return best;
+}
+
+/**
+ * Where along a segment (from distance `from` to `to` on the ray) it first
+ * passes within `radius` of point (px, pz), or undefined if it doesn't.
+ */
+export function segmentHitsCircle(
+  x: number,
+  z: number,
+  dirX: number,
+  dirZ: number,
+  from: number,
+  to: number,
+  px: number,
+  pz: number,
+  radius: number,
+): number | undefined {
+  // project the point onto the ray, then step back to where the ray enters the circle
+  const fx = px - x;
+  const fz = pz - z;
+  const along = fx * dirX + fz * dirZ;
+  const perp2 = fx * fx + fz * fz - along * along;
+  if (perp2 > radius * radius) return undefined;
+  const enter = along - Math.sqrt(radius * radius - perp2);
+  const t = Math.max(enter, from);
+  if (t > to || along + Math.sqrt(radius * radius - perp2) < from) return undefined;
+  return t;
+}
 /** minimum time between shots from one gun-holder */
 export const FIRE_COOLDOWN_MS = 250;
 

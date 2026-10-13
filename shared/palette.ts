@@ -175,6 +175,8 @@ export const EMIT_AMBER = 0xffa02e;
 export const EMIT_RED = 0xff2a2a;
 export const EMIT_CYAN = 0x4ff0ff;
 export const EMIT_REACTOR = 0x5aa8ff;
+/** a round in flight: hot, warm white, so it reads as a tracer and not as a UI signal */
+export const EMIT_TRACER = 0xffd9a0;
 
 // --- 3. Lights (by colour temperature) ---------------------------------------
 

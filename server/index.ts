@@ -10,13 +10,14 @@ import {
   DEATH_DURATION_MS,
   FIRE_COOLDOWN_MS,
   HIT_RADIUS,
+  MUZZLE_OFFSET,
+  shotRange,
+  segmentHitsCircle,
   ITEM_CAPS,
   PERSIST_INTERVAL_MS,
   PICKUP_RANGE,
-  PROJECTILE_MAX_BOUNCES,
   PROJECTILE_RADIUS,
   PROJECTILE_SPEED,
-  PROJECTILE_TTL_MS,
   PLAY_BOUNDS,
   SPAWN_POINTS,
   STATIONS,
@@ -213,7 +214,15 @@ function handlePrimary(conn: Connection, x: number, z: number, now: number): voi
     if (isInYard(conn.player.x, conn.player.z)) return;
     if (now - conn.lastFireAt < FIRE_COOLDOWN_MS) return;
     conn.lastFireAt = now;
-    spawnProjectile(conn.player);
+    // aim at the point the shooter clicked, not their last-reported facing,
+    // which can lag a move packet behind
+    let dx = x - conn.player.x;
+    let dz = z - conn.player.z;
+    if (!Number.isFinite(dx) || !Number.isFinite(dz) || Math.hypot(dx, dz) < 0.05) {
+      dx = Math.sin(conn.player.rotation);
+      dz = Math.cos(conn.player.rotation);
+    }
+    spawnProjectile(conn.player, dx, dz, now);
   } else if (item.kind === "box") {
     if (!Number.isFinite(x) || !Number.isFinite(z)) return;
     const verdict = placementVerdict(x, z, conn.player, worldObstacles(items.values()), livingPlayers(now));
@@ -264,6 +273,7 @@ wss.on("connection", (socket, req) => {
   const now = Date.now();
   const welcome: ServerMessage & { type: "welcome" } = {
     type: "welcome",
+    t: now,
     you: netPlayer(conn, now),
     players: [...connections.values()].map((c) => netPlayer(c, now)),
   };
@@ -349,34 +359,29 @@ function leastUsedColor(taken: string[]): string {
   return best;
 }
 
-interface ServerProjectile {
-  id: string;
-  ownerId: string;
-  x: number;
-  z: number;
-  vx: number;
-  vz: number;
-  bounces: number;
-  spawnedAt: number;
+/**
+ * A shot in flight. Its path is a straight line known the moment it's
+ * fired: how far it gets before a wall or box (`range`) is ray-cast then.
+ * Each tick only checks the stretch covered since the last one against
+ * players, so even a very fast shot can't skip past anyone or through
+ * anything.
+ */
+interface ServerProjectile extends ProjectileState {
+  /** how far along it had got at the last tick */
+  travelled: number;
 }
 
 const projectiles = new Map<string, ServerProjectile>();
 
-function spawnProjectile(owner: PlayerState): void {
+function spawnProjectile(owner: PlayerState, aimX: number, aimZ: number, now: number): void {
+  const len = Math.hypot(aimX, aimZ);
+  const dirX = aimX / len;
+  const dirZ = aimZ / len;
+  const x = owner.x + dirX * MUZZLE_OFFSET;
+  const z = owner.z + dirZ * MUZZLE_OFFSET;
+  const range = shotRange(x, z, dirX, dirZ, worldObstacles(items.values()));
   const id = randomUUID();
-  const dirX = Math.sin(owner.rotation);
-  const dirZ = Math.cos(owner.rotation);
-  projectiles.set(id, {
-    id,
-    ownerId: owner.id,
-    // offset forward so it doesn't immediately overlap its own shooter
-    x: owner.x + dirX * 0.8,
-    z: owner.z + dirZ * 0.8,
-    vx: dirX * PROJECTILE_SPEED,
-    vz: dirZ * PROJECTILE_SPEED,
-    bounces: 0,
-    spawnedAt: Date.now(),
-  });
+  projectiles.set(id, { id, ownerId: owner.id, x, z, dirX, dirZ, firedAt: now, range, travelled: 0 });
 }
 
 function respawn(player: PlayerState): void {
@@ -385,54 +390,46 @@ function respawn(player: PlayerState): void {
   player.z = spawn.z;
 }
 
-function stepProjectiles(dt: number): void {
-  const now = Date.now();
-  const obstacles = worldObstacles(items.values());
+/** a stopped shot stays in the broadcast this long, so every client sees it reach where it stopped */
+const PROJECTILE_LINGER_MS = 150;
+
+function stepProjectiles(now: number): void {
   for (const p of projectiles.values()) {
-    if (now - p.spawnedAt > PROJECTILE_TTL_MS || p.bounces > PROJECTILE_MAX_BOUNCES) {
-      projectiles.delete(p.id);
+    const reach = Math.min(p.range, ((now - p.firedAt) / 1000) * PROJECTILE_SPEED);
+    if (reach >= p.range && p.travelled >= p.range) {
+      // already stopped: forget it once every client has seen it land
+      if (now - p.firedAt > (p.range / PROJECTILE_SPEED) * 1000 + PROJECTILE_LINGER_MS) projectiles.delete(p.id);
       continue;
     }
-
-    const nx = p.x + p.vx * dt;
-    const nz = p.z + p.vz * dt;
-    // walls are obstacles like any other, so this is all the bouncing
-    const hitX = overlapsAnyObstacle(nx, p.z, PROJECTILE_RADIUS, obstacles);
-    const hitZ = overlapsAnyObstacle(p.x, nz, PROJECTILE_RADIUS, obstacles);
-
-    if (hitX) p.vx = -p.vx;
-    if (hitZ) p.vz = -p.vz;
-    if (hitX || hitZ) {
-      p.bounces += 1;
-    } else {
-      p.x = nx;
-      p.z = nz;
-    }
-    // a shot through the doorway fizzles at the yard line rather than
-    // reaching anyone in the no-fire zone; and nothing outlives the world
-    if (isInYard(p.x, p.z) || !inRect(PLAY_BOUNDS, p.x, p.z, -1)) {
-      projectiles.delete(p.id);
-      continue;
-    }
-
-    // Neutral: a projectile can hit its own owner too (e.g. after bouncing
-    // back), not just other players. The forward spawn offset already keeps
-    // it clear of the shooter at the moment it's fired.
+    // the stretch covered since last tick, swept against every living
+    // player (the shooter included: past the muzzle offset, a shot is
+    // neutral); the first one it meets stops it
+    let victim: Connection | undefined;
+    let at = reach;
     for (const conn of connections.values()) {
-      if (isDead(conn, now)) continue; // already down, can't be hit again
-      const dx = conn.player.x - p.x;
-      const dz = conn.player.z - p.z;
-      if (dx * dx + dz * dz < HIT_RADIUS * HIT_RADIUS) {
-        conn.deadUntil = now + DEATH_DURATION_MS;
-        conn.dirty = true;
-        dropHeld(conn.player);
-        const ownerConn = connections.get(p.ownerId);
-        if (ownerConn) {
-          ownerConn.score += conn.player.id === p.ownerId ? -1 : 1;
-        }
-        projectiles.delete(p.id);
-        break;
+      if (isDead(conn, now)) continue;
+      const t = segmentHitsCircle(p.x, p.z, p.dirX, p.dirZ, p.travelled, at, conn.player.x, conn.player.z, HIT_RADIUS);
+      if (t !== undefined && t <= at) {
+        victim = conn;
+        at = t;
       }
+    }
+    // the safe room is a no-fire zone: a shot that reaches its line stops there
+    const hx = p.x + p.dirX * at;
+    const hz = p.z + p.dirZ * at;
+    if (isInYard(hx, hz)) {
+      p.range = p.travelled;
+      p.travelled = p.range;
+      continue;
+    }
+    p.travelled = at;
+    if (victim) {
+      p.range = at;
+      victim.deadUntil = now + DEATH_DURATION_MS;
+      victim.dirty = true;
+      dropHeld(victim.player);
+      const ownerConn = connections.get(p.ownerId);
+      if (ownerConn) ownerConn.score += victim.player.id === p.ownerId ? -1 : 1;
     }
   }
 }
@@ -451,7 +448,7 @@ function processRespawns(now: number): void {
 setInterval(() => {
   if (connections.size === 0) return;
   const now = Date.now();
-  stepProjectiles(BROADCAST_INTERVAL_MS / 1000);
+  stepProjectiles(now);
   processRespawns(now);
   restockStations(now);
   const players = [...connections.values()].map((c) => netPlayer(c, now));
@@ -460,9 +457,14 @@ setInterval(() => {
     ownerId: p.ownerId,
     x: p.x,
     z: p.z,
+    dirX: p.dirX,
+    dirZ: p.dirZ,
+    firedAt: p.firedAt,
+    range: p.range,
   }));
   const state: ServerMessage = {
     type: "state",
+    t: now,
     players,
     projectiles: projectileList,
     items: [...items.values()],

@@ -17,7 +17,8 @@ import {
 import { REACTOR_LIVE, REACTOR_STANDBY, buildFacility, reactorCore } from "./models/facility.ts";
 import { mesh } from "./models/kit.ts";
 import { LAMPS, LAMP_SPECS } from "./world/dressing.ts";
-import { ACCENT, STENCIL, DANGER, OK, EMIT_GREEN, EMIT_RED } from "../shared/palette.ts";
+import { ACCENT, STENCIL, DANGER, OK, EMIT_GREEN, EMIT_RED, EMIT_TRACER } from "../shared/palette.ts";
+import { INTERP_DELAY_MS, ServerClock, SnapshotBuffer, Tracer } from "./netsync.ts";
 import {
   BOX_HALF_EXTENT,
   BREACHES,
@@ -37,7 +38,8 @@ import {
   OBSTACLES,
   PICKUP_RANGE,
   PLACE_RANGE,
-  PROJECTILE_SPEED,
+  MUZZLE_OFFSET,
+  shotRange,
   activateVerdict,
   clampToPlayBounds,
   hasPassedGate,
@@ -185,8 +187,10 @@ function updateGate(shut: boolean): void {
 
 interface RemotePlayer {
   mesh: THREE.Object3D;
-  target: THREE.Vector3;
-  targetRotation: number;
+  /** their recent positions, played back INTERP_DELAY_MS in the past */
+  snaps: SnapshotBuffer;
+  /** where they are drawn this frame (also what box placement keeps clear of) */
+  drawn: { x: number; z: number; rotation: number };
 }
 
 let myId: string | undefined;
@@ -195,6 +199,7 @@ let myRespawnAt = 0;
 /** through the gate (as the server sees it); shuts the gate behind us */
 let myEntered = false;
 const remotes = new Map<string, RemotePlayer>();
+const serverClock = new ServerClock();
 const respawnEl = document.getElementById("respawn")!;
 const leaderboardEl = document.getElementById("leaderboard")!;
 const connectionLostEl = document.getElementById("connection-lost")!;
@@ -423,7 +428,7 @@ function boxVerdict(target: { x: number; z: number }): PlacementVerdict {
   const bodies: { x: number; z: number }[] = [];
   if (localMesh) bodies.push({ x: localMesh.position.x, z: localMesh.position.z });
   for (const remote of remotes.values()) {
-    if (remote.mesh.visible) bodies.push({ x: remote.target.x, z: remote.target.z });
+    if (remote.mesh.visible) bodies.push({ x: remote.drawn.x, z: remote.drawn.z });
   }
   return placementVerdict(target.x, target.z, localMesh!.position, obstacles, bodies);
 }
@@ -584,44 +589,32 @@ function renderControls(): void {
 }
 
 // --- Projectiles -------------------------------------------------------------
+// Shots are tracers (client/netsync.ts): each is drawn from the one message
+// that announced it, on the shared server clock, so a fast round looks the
+// same on every screen. Your own shot is drawn the instant you click, along
+// the same line the server will use, and handed over to the server's copy
+// when it arrives.
 
-const projectileMaterial = new THREE.MeshBasicMaterial({ color: ACCENT, toneMapped: false });
-const projectileGeometry = new THREE.IcosahedronGeometry(0.15, 0);
+const tracerMaterial = new THREE.MeshBasicMaterial({ color: EMIT_TRACER });
+const tracers = new Map<string, Tracer>();
 
-function projectileMesh(): THREE.Mesh {
-  const mesh = new THREE.Mesh(projectileGeometry, projectileMaterial);
-  mesh.add(glow(ACCENT, 0.9));
-  return mesh;
-}
-
-interface RemoteProjectile {
-  mesh: THREE.Mesh;
-  target: THREE.Vector3;
-}
-
-const projectiles = new Map<string, RemoteProjectile>();
-
-// Locally-predicted shots: spawned the instant you click, so firing doesn't
-// wait a full round-trip to show anything. No bounce/obstacle physics ---
-// they're a short-lived visual bridge, swapped out for the server's real
-// projectile (or expired) well before they'd travel far enough to matter.
+/** shots fired here and not yet confirmed: same line as the server's, drawn straight away */
 interface PendingShot {
-  mesh: THREE.Mesh;
-  vx: number;
-  vz: number;
+  tracer: Tracer;
   createdAt: number;
 }
 const pendingShots: PendingShot[] = [];
-const PENDING_SHOT_TTL_MS = 500;
+const PENDING_SHOT_TTL_MS = 600;
 let lastFireAt = -Infinity;
+let localShotSeq = 0;
 
 function clearSceneState(): void {
   if (localMesh) scene.remove(localMesh);
   for (const remote of remotes.values()) scene.remove(remote.mesh);
   remotes.clear();
-  for (const proj of projectiles.values()) scene.remove(proj.mesh);
-  projectiles.clear();
-  for (const shot of pendingShots) scene.remove(shot.mesh);
+  for (const t of tracers.values()) scene.remove(t.mesh);
+  tracers.clear();
+  for (const shot of pendingShots) scene.remove(shot.tracer.mesh);
   pendingShots.length = 0;
   for (const item of items.values()) removeItem(item);
   items.clear();
@@ -632,40 +625,41 @@ const net = connect({
   onConnectionChange(connected) {
     connectionLostEl.style.display = connected ? "none" : "block";
   },
-  onWelcome(you, players) {
+  onWelcome(you, players, t) {
     // also fires on every reconnect, so start from a clean scene rather
     // than piling a new set of meshes on top of the last session's
     clearSceneState();
+    serverClock.observe(t);
     myId = you.id;
     myRespawnAt = you.respawnAt ?? 0;
     myEntered = !!you.entered;
     localMesh = makeCharacter(you.color, true);
     localMesh.position.set(you.x, 0, you.z);
     for (const p of players) {
-      if (p.id !== myId) addOrUpdateRemote(p);
+      if (p.id !== myId) addOrUpdateRemote(p, t);
     }
     renderLeaderboard(players);
   },
-  onState(players, incomingProjectiles, incomingItems, incomingObjective) {
+  onState(t, players, incomingProjectiles, incomingItems, incomingObjective) {
+    serverClock.observe(t);
     const seenPlayers = new Set<string>();
-    const myPrevPos = localMesh ? { x: localMesh.position.x, z: localMesh.position.z } : undefined;
     if (incomingObjective.active && !objective.active) showBanner("reactor active — defend it");
     objective = incomingObjective;
     for (const p of players) {
       if (p.id === myId) {
         myRespawnAt = p.respawnAt ?? 0;
         myEntered = !!p.entered;
-        // the server is authoritative for respawns: if it moved us further
-        // than a single frame could, snap to match (this is how a death
-        // shows up, since there's no separate "you died" message)
-        if (myPrevPos && Math.hypot(p.x - myPrevPos.x, p.z - myPrevPos.z) > 2 && localMesh) {
+        // the server is authoritative: if it has us somewhere a frame of
+        // walking couldn't explain (a respawn, or a move it refused), snap
+        // there; small differences are just our own prediction running ahead
+        if (localMesh && Math.hypot(p.x - localMesh.position.x, p.z - localMesh.position.z) > 2) {
           localMesh.position.x = p.x;
           localMesh.position.z = p.z;
         }
         continue;
       }
       seenPlayers.add(p.id);
-      addOrUpdateRemote(p);
+      addOrUpdateRemote(p, t);
     }
     for (const [id, remote] of remotes) {
       if (!seenPlayers.has(id)) {
@@ -679,80 +673,85 @@ const net = connect({
   },
 });
 
-// A fixed-duration lerp (assume an update every ~66ms, ease over exactly
-// that long) stutters on a real network: a late update leaves the
-// projectile frozen at its target, then the next one restarts a fresh
-// 66ms ease from there. A continuous, distance-proportional ease --- the
-// same style already used for remote players, just at a faster rate ---
-// doesn't assume any particular arrival cadence, so jitter just looks like
-// slightly more or less catch-up instead of a visible stair-step.
-const PROJECTILE_LERP_RATE = 20;
-
 function updateProjectiles(incoming: ProjectileState[]): void {
-  const seen = new Set<string>();
   for (const p of incoming) {
-    seen.add(p.id);
-    let proj = projectiles.get(p.id);
-    if (!proj) {
-      const mesh = projectileMesh();
-      mesh.position.set(p.x, 0.9, p.z);
-      scene.add(mesh);
-      proj = { mesh, target: new THREE.Vector3(p.x, 0.9, p.z) };
-      projectiles.set(p.id, proj);
-      // the server's real version of a shot we predicted locally has now
-      // shown up: drop the oldest placeholder rather than show both
-      if (p.ownerId === myId && pendingShots.length > 0) {
-        const oldest = pendingShots.shift()!;
-        scene.remove(oldest.mesh);
-      }
+    const known = tracers.get(p.id);
+    if (known) {
+      // the range shrinks once if it hit someone mid-flight
+      known.state = p;
       continue;
     }
-    proj.target.set(p.x, 0.9, p.z);
+    // the server's copy of a shot we already drew: take over the local
+    // tracer rather than draw a second one
+    if (p.ownerId === myId && pendingShots.length > 0) {
+      const mine = pendingShots.shift()!;
+      scene.remove(mine.tracer.mesh);
+    }
+    const tracer = new Tracer(p, tracerMaterial);
+    tracers.set(p.id, tracer);
+    scene.add(tracer.mesh);
   }
-  for (const [id, proj] of projectiles) {
-    if (!seen.has(id)) {
-      scene.remove(proj.mesh);
-      projectiles.delete(id);
+}
+
+function stepTracers(): void {
+  const t = serverClock.now();
+  for (const [id, tracer] of tracers) {
+    if (!tracer.update(t)) {
+      scene.remove(tracer.mesh);
+      tracers.delete(id);
     }
   }
-}
-
-function stepProjectileInterpolation(dt: number): void {
-  for (const proj of projectiles.values()) {
-    proj.mesh.position.lerp(proj.target, Math.min(1, dt * PROJECTILE_LERP_RATE));
-  }
-}
-
-function stepPendingShots(dt: number): void {
   const now = performance.now();
   for (let i = pendingShots.length - 1; i >= 0; i--) {
     const shot = pendingShots[i];
-    if (now - shot.createdAt > PENDING_SHOT_TTL_MS) {
-      scene.remove(shot.mesh);
+    const alive = shot.tracer.update(t);
+    if (!alive || now - shot.createdAt > PENDING_SHOT_TTL_MS) {
+      scene.remove(shot.tracer.mesh);
       pendingShots.splice(i, 1);
-      continue;
     }
-    shot.mesh.position.x += shot.vx * dt;
-    shot.mesh.position.z += shot.vz * dt;
   }
 }
 
+/**
+ * Your own shot, drawn the moment you click: the same muzzle, direction
+ * and stopping point the server will compute (towards the aim point,
+ * ray-cast against walls and boxes), so when its copy arrives the swap is
+ * invisible.
+ */
 function firePredictedShot(): void {
   if (!localMesh) return;
-  // same spawn math as the server's spawnProjectile, purely for immediate
-  // visual feedback --- the server's own projectile is still what actually
-  // bounces, hits, and scores
-  const dirX = Math.sin(aimRotation);
-  const dirZ = Math.cos(aimRotation);
-  const mesh = projectileMesh();
-  mesh.position.set(localMesh.position.x + dirX * 0.8, 0.9, localMesh.position.z + dirZ * 0.8);
-  scene.add(mesh);
-  pendingShots.push({
-    mesh,
-    vx: dirX * PROJECTILE_SPEED,
-    vz: dirZ * PROJECTILE_SPEED,
-    createdAt: performance.now(),
-  });
+  let dx = aimPoint.x - localMesh.position.x;
+  let dz = aimPoint.z - localMesh.position.z;
+  const len = Math.hypot(dx, dz);
+  if (len < 0.05) {
+    dx = Math.sin(aimRotation);
+    dz = Math.cos(aimRotation);
+  } else {
+    dx /= len;
+    dz /= len;
+  }
+  const x = localMesh.position.x + dx * MUZZLE_OFFSET;
+  const z = localMesh.position.z + dz * MUZZLE_OFFSET;
+  const range = shotRange(x, z, dx, dz, obstacles);
+  const tracer = new Tracer(
+    { id: `local-${localShotSeq++}`, ownerId: myId ?? "", x, z, dirX: dx, dirZ: dz, firedAt: serverClock.now(), range },
+    tracerMaterial,
+  );
+  scene.add(tracer.mesh);
+  pendingShots.push({ tracer, createdAt: performance.now() });
+  muzzleFlash(x, z);
+}
+
+/** a brief flash at the muzzle: a lit point the shot comes out of */
+const flashLight = new THREE.PointLight(EMIT_TRACER, 0, 5, 2);
+scene.add(flashLight);
+let flashUntilT = 0;
+function muzzleFlash(x: number, z: number): void {
+  flashLight.position.set(x, 1.1, z);
+  flashUntilT = performance.now() + 60;
+}
+function stepMuzzleFlash(): void {
+  flashLight.intensity = performance.now() < flashUntilT ? 6 : 0;
 }
 
 // --- Input --------------------------------------------------------------
@@ -837,21 +836,25 @@ window.addEventListener("keydown", (e) => {
   else if (key === "q") drop();
 });
 
-function addOrUpdateRemote(p: PlayerState): void {
+function addOrUpdateRemote(p: PlayerState, t: number): void {
   let remote = remotes.get(p.id);
   if (!remote) {
-    remote = { mesh: makeCharacter(p.color, false), target: new THREE.Vector3(), targetRotation: 0 };
+    remote = { mesh: makeCharacter(p.color, false), snaps: new SnapshotBuffer(), drawn: { x: p.x, z: p.z, rotation: p.rotation } };
     remote.mesh.position.set(p.x, 0, p.z);
     remotes.set(p.id, remote);
   }
-  // a big jump is a respawn, not movement: don't slide across the map
-  if (Math.hypot(p.x - remote.mesh.position.x, p.z - remote.mesh.position.z) > 4) {
-    remote.mesh.position.set(p.x, 0, p.z);
-  }
-  remote.target.set(p.x, 0, p.z);
-  remote.targetRotation = p.rotation;
+  remote.snaps.push(t, p.x, p.z, p.rotation);
   // the server only sends respawnAt while someone's dead
   remote.mesh.visible = p.respawnAt === undefined;
+}
+
+function stepRemotes(): void {
+  const t = serverClock.now() - INTERP_DELAY_MS;
+  for (const remote of remotes.values()) {
+    remote.snaps.sample(t, remote.drawn);
+    remote.mesh.position.set(remote.drawn.x, 0, remote.drawn.z);
+    remote.mesh.rotation.y = remote.drawn.rotation;
+  }
 }
 
 const SPEED = 6;
@@ -925,13 +928,9 @@ function animate(): void {
   updateGate(myEntered);
   gateGroup.visible = true;
 
-  for (const remote of remotes.values()) {
-    remote.mesh.position.lerp(remote.target, Math.min(1, dt * 8));
-    remote.mesh.rotation.y += angleDiff(remote.mesh.rotation.y, remote.targetRotation) * Math.min(1, dt * 8);
-  }
-
-  stepProjectileInterpolation(dt);
-  stepPendingShots(dt);
+  stepRemotes();
+  stepTracers();
+  stepMuzzleFlash();
   stepItemVisuals(time);
   renderPointerFeedback();
   renderControls();
@@ -971,11 +970,5 @@ function renderDebug(dt: number): void {
   debugTime = 0;
 }
 
-function angleDiff(a: number, b: number): number {
-  let d = b - a;
-  while (d > Math.PI) d -= Math.PI * 2;
-  while (d < -Math.PI) d += Math.PI * 2;
-  return d;
-}
 
 requestAnimationFrame(animate);
