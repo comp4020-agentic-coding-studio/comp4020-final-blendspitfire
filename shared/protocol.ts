@@ -33,7 +33,13 @@ export interface StateMessage {
   t: number;
   players: PlayerState[];
   projectiles: ProjectileState[];
-  items: ItemState[];
+  /**
+   * Every item in the world --- but only in a message where something about
+   * them changed (or the first one a client gets). Items move rarely and are
+   * most of the payload, so most ticks leave this out and the client keeps
+   * what it had.
+   */
+  items?: ItemState[];
   objective: ObjectiveState;
   enemies: EnemyState[];
   defence: DefenceState;

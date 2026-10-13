@@ -140,6 +140,8 @@ interface Connection {
   entered: boolean;
   /** when their last move was accepted, for the speed check */
   lastMoveAt: number;
+  /** has been sent the full item list at least once (see StateMessage.items) */
+  hasItems: boolean;
   /** message rate limiting: the current one-second window and how many it's had */
   windowStart: number;
   windowCount: number;
@@ -206,6 +208,7 @@ if (saved) {
 // Announcements: short lines every client shows across the screen (a new
 // wave, the reactor going down). Queued and sent with the next broadcast.
 let pendingAnnouncements: string[] = [];
+let lastItemsKey = "";
 function announce(text: string): void {
   pendingAnnouncements.push(text);
 }
@@ -340,7 +343,7 @@ wss.on("connection", (socket, req) => {
   if (!PLAYER_COLORS.includes(player.color as (typeof PLAYER_COLORS)[number]) || taken.includes(player.color)) {
     player.color = leastUsedColor(taken);
   }
-  const conn: Connection = { socket, player, dirty: true, deadUntil: 0, score: 0, lastFireAt: 0, entered: false, lastMoveAt: 0, windowStart: 0, windowCount: 0 };
+  const conn: Connection = { socket, player, dirty: true, deadUntil: 0, score: 0, lastFireAt: 0, entered: false, lastMoveAt: 0, windowStart: 0, windowCount: 0, hasItems: false };
   connections.set(playerId, conn);
 
   const now = Date.now();
@@ -599,21 +602,29 @@ setInterval(() => {
     firedAt: p.firedAt,
     range: p.range,
   }));
-  const state: ServerMessage = {
-    type: "state",
+  // items go out only when they've changed since the last tick, or to a
+  // client that hasn't had them yet (see StateMessage.items)
+  const itemList = [...items.values()];
+  const itemsKey = itemList.map((i) => `${i.id}:${i.x.toFixed(2)},${i.z.toFixed(2)},${i.heldBy ?? ""}`).join("|");
+  const itemsChanged = itemsKey !== lastItemsKey;
+  lastItemsKey = itemsKey;
+  const base = {
+    type: "state" as const,
     t: now,
     players,
     projectiles: projectileList,
-    items: [...items.values()],
     objective,
     enemies: defence.snapshot(),
     defence: defence.state,
     announcements: pendingAnnouncements.length ? pendingAnnouncements : undefined,
   };
   pendingAnnouncements = [];
-  const payload = JSON.stringify(state);
+  const withItems = JSON.stringify({ ...base, items: itemList } satisfies ServerMessage);
+  const withoutItems = itemsChanged ? withItems : JSON.stringify(base satisfies ServerMessage);
   for (const conn of connections.values()) {
-    if (conn.socket.readyState === conn.socket.OPEN) conn.socket.send(payload);
+    if (conn.socket.readyState !== conn.socket.OPEN) continue;
+    conn.socket.send(conn.hasItems ? withoutItems : withItems);
+    conn.hasItems = true;
   }
 }, BROADCAST_INTERVAL_MS);
 

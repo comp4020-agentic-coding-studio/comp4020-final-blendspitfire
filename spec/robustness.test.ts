@@ -50,6 +50,25 @@ it("survives malformed messages, floods and oversized frames", async () => {
   expect(await alive()).toBe(true);
 }, 15000);
 
+it("sends the item list to someone joining late, then only when it changes", async () => {
+  const first = await join();
+  await wait(300);
+  const late = new WebSocket(wsUrl);
+  const items: (number | null)[] = [];
+  late.on("message", (d) => {
+    const m = JSON.parse(String(d));
+    if (m.type === "state") items.push(Array.isArray(m.items) ? m.items.length : null);
+  });
+  await new Promise<void>((resolve) => late.once("open", () => resolve()));
+  await wait(500);
+  expect(items[0]).not.toBeNull();
+  expect(items[0]).toBeGreaterThan(0);
+  // with nothing moving, later ticks leave the list out
+  expect(items.slice(1).filter((n) => n === null).length).toBeGreaterThan(0);
+  late.close();
+  first.ws.close();
+}, 15000);
+
 it("won't let a client teleport, but lets an honest one walk", async () => {
   const s = await join();
   const start = { ...me(s) };

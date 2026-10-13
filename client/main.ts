@@ -676,7 +676,8 @@ const net = connect({
       }
     }
     updateProjectiles(state.projectiles);
-    updateItems(state.items);
+    // items only come when they've changed; otherwise keep what we have
+    if (state.items) updateItems(state.items);
     updateEnemies(state.enemies, t);
     renderLeaderboard(players);
   },
