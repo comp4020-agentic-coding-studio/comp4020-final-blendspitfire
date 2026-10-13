@@ -1,6 +1,7 @@
 import type {
   ItemState,
   MoveMessage,
+  ObjectiveState,
   PlayerState,
   ProjectileState,
   ServerMessage,
@@ -8,7 +9,7 @@ import type {
 
 export interface NetHandlers {
   onWelcome: (you: PlayerState, players: PlayerState[]) => void;
-  onState: (players: PlayerState[], projectiles: ProjectileState[], items: ItemState[]) => void;
+  onState: (players: PlayerState[], projectiles: ProjectileState[], items: ItemState[], objective: ObjectiveState) => void;
   /** fires on every connect/disconnect transition, including the first connect */
   onConnectionChange: (connected: boolean) => void;
 }
@@ -18,6 +19,7 @@ export interface Net {
   pickup: (itemId: string) => void;
   primary: (x: number, z: number) => void;
   drop: () => void;
+  activate: () => void;
 }
 
 const RECONNECT_BASE_MS = 500;
@@ -47,7 +49,7 @@ export function connect(handlers: NetHandlers): Net {
     ws.addEventListener("message", (event) => {
       const msg: ServerMessage = JSON.parse(event.data);
       if (msg.type === "welcome") handlers.onWelcome(msg.you, msg.players);
-      else if (msg.type === "state") handlers.onState(msg.players, msg.projectiles, msg.items);
+      else if (msg.type === "state") handlers.onState(msg.players, msg.projectiles, msg.items, msg.objective);
     });
 
     // A Fly machine that scales to zero, a wifi blip, a laptop sleeping ---
@@ -82,6 +84,9 @@ export function connect(handlers: NetHandlers): Net {
     },
     drop() {
       send({ type: "drop" });
+    },
+    activate() {
+      send({ type: "activate" });
     },
   };
 }

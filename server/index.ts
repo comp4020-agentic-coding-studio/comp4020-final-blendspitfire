@@ -21,15 +21,19 @@ import {
   SPAWN_POINTS,
   STATIONS,
   STATION_RESTOCK_MS,
+  activateVerdict,
   clampToPlayBounds,
+  hasPassedGate,
   inRect,
   isInYard,
   isWalkable,
+  obstaclesFor,
   overlapsAnyObstacle,
   placementVerdict,
   resolveObstacles,
   worldObstacles,
   type ClientMessage,
+  type ObjectiveState,
   type ItemKind,
   type ItemState,
   type MoveMessage,
@@ -122,9 +126,15 @@ interface Connection {
   /** in-memory only: resets to 0 on every (re)connect, never persisted */
   score: number;
   lastFireAt: number;
+  /** through the one-way gate since the last (re)spawn; in memory only */
+  entered: boolean;
 }
 
 const connections = new Map<string, Connection>();
+
+// The reactor: off until someone switches it on, back off once the
+// facility is empty. In memory only, like items, for now.
+const objective: ObjectiveState = { active: false };
 
 // In memory only for now: every restart puts the world's items back where
 // they started. (Persisting them is planned, just not until the item set
@@ -132,15 +142,15 @@ const connections = new Map<string, Connection>();
 const items = new Map<string, ItemState>();
 
 const INITIAL_ITEMS: { kind: ItemKind; x: number; z: number }[] = [
-  { kind: "gun", x: 3, z: 3 },
-  { kind: "gun", x: -3, z: -3 },
-  { kind: "gun", x: 9, z: -9 },
-  { kind: "box", x: 8, z: -2 },
-  { kind: "box", x: 9, z: -2 },
-  { kind: "box", x: -9, z: 3 },
-  { kind: "box", x: -10, z: 3 },
-  { kind: "box", x: 2, z: 11 },
-  { kind: "box", x: -1, z: -12 },
+  { kind: "gun", x: 0.8, z: 9 }, // corridor
+  { kind: "gun", x: -6, z: 15 }, // lab
+  { kind: "gun", x: 10, z: -10 }, // core
+  { kind: "box", x: -15, z: 5 }, // lab, near the vent
+  { kind: "box", x: -16, z: 5 },
+  { kind: "box", x: 4, z: 16.8 }, // hall
+  { kind: "box", x: 5, z: 16.8 },
+  { kind: "box", x: -6, z: -6 }, // core
+  { kind: "box", x: 6, z: -6 },
 ];
 for (const it of [...INITIAL_ITEMS, ...STATIONS]) spawnItem(it.kind, it.x, it.z);
 
@@ -223,6 +233,7 @@ function netPlayer(conn: Connection, now: number): PlayerState {
     ...conn.player,
     respawnAt: isDead(conn, now) ? conn.deadUntil : undefined,
     score: conn.score,
+    entered: conn.entered ? true : undefined,
   };
 }
 const pendingIds = new WeakMap<object, string>();
@@ -247,7 +258,7 @@ wss.on("connection", (socket, req) => {
   if (!PLAYER_COLORS.includes(player.color as (typeof PLAYER_COLORS)[number]) || taken.includes(player.color)) {
     player.color = leastUsedColor(taken);
   }
-  const conn: Connection = { socket, player, dirty: true, deadUntil: 0, score: 0, lastFireAt: 0 };
+  const conn: Connection = { socket, player, dirty: true, deadUntil: 0, score: 0, lastFireAt: 0, entered: false };
   connections.set(playerId, conn);
 
   const now = Date.now();
@@ -271,14 +282,22 @@ wss.on("connection", (socket, req) => {
       const move = msg as MoveMessage;
       if (!Number.isFinite(move.x) || !Number.isFinite(move.z)) return;
       const clamped = clampToPlayBounds(move.x, move.z);
-      const resolved = resolveObstacles(clamped.x, clamped.z, worldObstacles(items.values()));
+      const resolved = resolveObstacles(clamped.x, clamped.z, obstaclesFor(conn.entered, worldObstacles(items.values())));
       // walls stop a walking player, but a client could still claim a
-      // jump straight to the far side of one
+      // jump straight to the far side of one --- or back through the gate
       if (!isWalkable(resolved.x, resolved.z)) return;
+      if (conn.entered && isInYard(resolved.x, resolved.z)) return;
       conn.player.x = resolved.x;
       conn.player.z = resolved.z;
       conn.player.rotation = move.rotation;
+      if (!conn.entered && hasPassedGate(resolved.z)) conn.entered = true;
       conn.dirty = true;
+      return;
+    }
+
+    if (msg.type === "activate") {
+      const verdict = activateVerdict(conn.player, heldItem(playerId) !== undefined, objective);
+      if (verdict === "ok") objective.active = true;
       return;
     }
 
@@ -309,6 +328,7 @@ wss.on("connection", (socket, req) => {
     dropHeld(conn.player);
     connections.delete(playerId);
     savePlayer(conn.player);
+    if (connections.size === 0) objective.active = false;
   });
 });
 
@@ -421,6 +441,7 @@ function processRespawns(now: number): void {
   for (const conn of connections.values()) {
     if (conn.deadUntil !== 0 && now >= conn.deadUntil) {
       respawn(conn.player);
+      conn.entered = false;
       conn.deadUntil = 0;
       conn.dirty = true;
     }
@@ -445,6 +466,7 @@ setInterval(() => {
     players,
     projectiles: projectileList,
     items: [...items.values()],
+    objective,
   };
   const payload = JSON.stringify(state);
   for (const conn of connections.values()) {

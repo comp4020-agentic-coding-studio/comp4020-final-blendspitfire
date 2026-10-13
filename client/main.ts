@@ -1,43 +1,54 @@
 import * as THREE from "three";
 import { connect } from "./net.ts";
-import { configureRenderer, setupLighting } from "./look.ts";
+import { CAMERA_ALTITUDE, CAMERA_FOV, configureRenderer, createTorch, glow, lampHalos, setupLighting } from "./look.ts";
+import { createPostProcess } from "./postprocess.ts";
+import { GRADE } from "./assets/grade.ts";
+import { VisibilityMask, canSee, sightBlockers } from "./visibility.ts";
 import { buildYardGuides } from "./floorGuides.ts";
 import {
   GUN_REST_HEIGHT,
   HELD_GUN_OFFSET,
+  SHOULDER_LAMP,
   character,
-  crate,
-  ground,
+  equipmentCase,
   gun,
   heldGun,
-  pineGeometry,
-  rock,
-  wall,
 } from "./models/index.ts";
-import { rng, sharedMaterial } from "./models/kit.ts";
-import { ACCENT, CHALK, DANGER, OK } from "../shared/palette.ts";
+import { REACTOR_LIVE, REACTOR_STANDBY, buildFacility, reactorCore } from "./models/facility.ts";
+import { mesh } from "./models/kit.ts";
+import { LAMPS, LAMP_SPECS } from "./world/dressing.ts";
+import { ACCENT, STENCIL, DANGER, OK, EMIT_GREEN, EMIT_RED } from "../shared/palette.ts";
 import {
-  ARENA,
   BOX_HALF_EXTENT,
+  BREACHES,
+  DOORWAYS,
+  FACILITY_HALF,
+  FACILITY_WALL_HALF_HEIGHT,
+  FIXTURES,
+  GATE,
+  REACTOR,
+  SIGHT_BOUNDS,
+  SOLID,
+  WALLS,
+  ZONE_RECTS,
   BROADCAST_INTERVAL_MS,
   FIRE_COOLDOWN_MS,
   ITEM_KINDS,
   OBSTACLES,
   PICKUP_RANGE,
   PLACE_RANGE,
-  PLAY_BOUNDS,
   PROJECTILE_SPEED,
-  ROCKS,
-  WALLS,
-  YARD,
+  activateVerdict,
   clampToPlayBounds,
-  inRect,
+  hasPassedGate,
   isInYard,
+  obstaclesFor,
   placementVerdict,
   resolveObstacles,
   snapToGrid,
   worldObstacles,
   type ItemState,
+  type ObjectiveState,
   type Obstacle,
   type PlacementVerdict,
   type PlayerState,
@@ -75,15 +86,22 @@ const scene = new THREE.Scene();
 
 // Perspective camera, but positioned directly overhead and looking straight
 // down --- no tilt, no angled follow. Perspective (rather than orthographic)
-// means distance still reads normally; it's the angle, not the projection,
-// that's fixed at "straight down".
-const CAMERA_ALTITUDE = 22;
-const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+// means distance still reads normally, and wall faces show at the edges of
+// the view; it's the angle, not the projection, that's fixed.
+const camera = new THREE.PerspectiveCamera(CAMERA_FOV, window.innerWidth / window.innerHeight, 0.1, 100);
 camera.up.set(0, 0, -1);
+
+const params = new URLSearchParams(location.search);
+// The internal render size as a fraction of the window: a retro pixel grid
+// (see client/postprocess.ts), tuned by eye --- 0.42 keeps a player and a
+// dropped item clearly distinct at a glance. ?pixel=0 turns it off.
+const PIXEL_SCALE = params.get("pixel") === "0" ? 1 : 0.42;
 
 let renderer: THREE.WebGLRenderer;
 try {
-  renderer = new THREE.WebGLRenderer({ antialias: true });
+  // antialias is pointless once the low-res target is nearest-upscaled --- a
+  // smoothed edge at 480p just gets blown back up into a blurry one
+  renderer = new THREE.WebGLRenderer({ antialias: false });
 } catch {
   showFatalError(
     "This browser or device can't create a WebGL context, so the 3D scene can't render here. Try enabling hardware acceleration, or a different browser or device.",
@@ -93,84 +111,89 @@ try {
 configureRenderer(renderer);
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
+const post = createPostProcess(renderer, PIXEL_SCALE, GRADE);
+post.setSize(window.innerWidth, window.innerHeight);
 
 window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  post.setSize(window.innerWidth, window.innerHeight);
 });
-
-// The sun's shadow box follows the player rather than covering the whole
-// map, so one shadow map stays crisp wherever they are.
-const SHADOW_EXTENT = 16;
-const sun = setupLighting(scene, SHADOW_EXTENT);
-const SUN_OFFSET = new THREE.Vector3(12, 22, 8);
 
 // --- The static world ------------------------------------------------------
 
-const MARGIN = 12;
-const worldCenterZ = (PLAY_BOUNDS.minZ + PLAY_BOUNDS.maxZ) / 2;
-const floor = ground(
-  PLAY_BOUNDS.maxX - PLAY_BOUNDS.minX + MARGIN * 2,
-  PLAY_BOUNDS.maxZ - PLAY_BOUNDS.minZ + MARGIN * 2,
-  1,
+const lighting = setupLighting(scene, REACTOR);
+const torch = createTorch(scene);
+scene.add(
+  buildFacility({
+    zones: ZONE_RECTS,
+    walls: WALLS,
+    doorways: DOORWAYS,
+    solids: SOLID,
+    fixtures: FIXTURES,
+    breaches: BREACHES,
+    lamps: LAMPS,
+    wallHeight: FACILITY_WALL_HALF_HEIGHT * 2,
+  }),
 );
-floor.position.z = worldCenterZ;
-scene.add(floor);
-
-for (const w of WALLS) {
-  const m = wall(w.halfX, w.halfZ, w.halfHeight * 2);
-  m.position.set(w.x, 0, w.z);
-  scene.add(m);
-}
-ROCKS.forEach((r, i) => {
-  const m = rock(r.halfX, r.halfZ, r.halfHeight * 2, 100 + i);
-  m.position.set(r.x, 0, r.z);
-  scene.add(m);
-});
-
-// Pines frame the map from outside the walls --- never inside, where
-// they'd be obstacles nobody collides with.
-function plantTrees(): void {
-  const random = rng(42);
-  const spots: { x: number; z: number; s: number; r: number }[] = [];
-  const outer = { minX: PLAY_BOUNDS.minX - MARGIN + 1, maxX: PLAY_BOUNDS.maxX + MARGIN - 1 };
-  const outerZ = { minZ: PLAY_BOUNDS.minZ - MARGIN + 1, maxZ: PLAY_BOUNDS.maxZ + MARGIN - 1 };
-  for (let tries = 0; tries < 3000 && spots.length < 150; tries++) {
-    const x = outer.minX + random() * (outer.maxX - outer.minX);
-    const z = outerZ.minZ + random() * (outerZ.maxZ - outerZ.minZ);
-    if (inRect(ARENA, x, z, -2) || inRect(YARD, x, z, -2)) continue;
-    if (spots.some((s) => Math.hypot(s.x - x, s.z - z) < 1.7)) continue;
-    spots.push({ x, z, s: 0.8 + random() * 0.6, r: random() * Math.PI * 2 });
-  }
-  const trees = new THREE.InstancedMesh(pineGeometry(), sharedMaterial, spots.length);
-  const m = new THREE.Matrix4();
-  spots.forEach((spot, i) => {
-    m.compose(
-      new THREE.Vector3(spot.x, 0, spot.z),
-      new THREE.Quaternion().setFromEuler(new THREE.Euler(0, spot.r, 0)),
-      new THREE.Vector3(spot.s, spot.s, spot.s),
-    );
-    trees.setMatrixAt(i, m);
-  });
-  trees.castShadow = true;
-  trees.receiveShadow = true;
-  scene.add(trees);
-}
-plantTrees();
+scene.add(lampHalos());
 scene.add(buildYardGuides());
+
+// The reactor's core window glows dim red on standby and blue once live.
+const coreMaterial = new THREE.MeshBasicMaterial({ color: REACTOR_STANDBY });
+const core = new THREE.Mesh(reactorCore(), coreMaterial);
+core.position.set(REACTOR.x, 0, REACTOR.z);
+scene.add(core);
+const coreHalo = glow(REACTOR_STANDBY, 3.2, 0.5);
+coreHalo.position.set(REACTOR.x, 2.1, REACTOR.z);
+scene.add(coreHalo);
+let objective: ObjectiveState = { active: false };
+
+const visibility = new VisibilityMask(sightBlockers(WALLS, FIXTURES), SOLID, SIGHT_BOUNDS);
+post.setMask(visibility.postMask(FACILITY_WALL_HALF_HEIGHT * 2 - 0.05));
+
+// The one-way gate, drawn for this viewer: open (green) until they're
+// through, then shut (red) behind them.
+const gateGroup = new THREE.Group();
+const gateBar = mesh(new THREE.BoxGeometry(GATE.halfX * 2, 0.14, 0.14).toNonIndexed(), "glossy");
+const gateBarColour = new THREE.Color(0x8a8f94);
+const barColours = new Float32Array(gateBar.geometry.attributes.position.count * 3);
+for (let i = 0; i < barColours.length; i += 3) gateBarColour.toArray(barColours, i);
+gateBar.geometry.setAttribute("color", new THREE.BufferAttribute(barColours, 3));
+gateBar.geometry.computeVertexNormals();
+gateGroup.add(gateBar);
+const gateLampMaterial = new THREE.MeshBasicMaterial({ color: EMIT_GREEN });
+for (const side of [-1, 1]) {
+  const l = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.16), gateLampMaterial);
+  l.position.set(side * (GATE.halfX + 0.05), 1.9, 0);
+  gateGroup.add(l);
+}
+gateGroup.position.set(GATE.x, 0, GATE.z);
+scene.add(gateGroup);
+let gateWasShut = false;
+function updateGate(shut: boolean): void {
+  // the bar slides down into place once you're through
+  const target = shut ? 0.9 : 2.2;
+  gateBar.position.y += (target - gateBar.position.y) * 0.15;
+  gateLampMaterial.color.setHex(shut ? EMIT_RED : EMIT_GREEN);
+  if (shut && !gateWasShut) flash("the gate shuts behind you");
+  gateWasShut = shut;
+}
 
 // --- Players ---------------------------------------------------------------
 
 interface RemotePlayer {
-  mesh: THREE.Mesh;
+  mesh: THREE.Object3D;
   target: THREE.Vector3;
   targetRotation: number;
 }
 
 let myId: string | undefined;
-let localMesh: THREE.Mesh | undefined;
+let localMesh: THREE.Object3D | undefined;
 let myRespawnAt = 0;
+/** through the gate (as the server sees it); shuts the gate behind us */
+let myEntered = false;
 const remotes = new Map<string, RemotePlayer>();
 const respawnEl = document.getElementById("respawn")!;
 const leaderboardEl = document.getElementById("leaderboard")!;
@@ -182,8 +205,12 @@ function isDead(): boolean {
   return Date.now() < myRespawnAt;
 }
 
-function makeCharacter(color: string, mine: boolean): THREE.Mesh {
+function makeCharacter(color: string, mine: boolean): THREE.Object3D {
   const mesh = character(color);
+  // the shoulder lamp's halo: the one vivid thing on a player, so they're findable in the dark
+  const halo = glow(new THREE.Color(color).getHex(), 0.7, 0.8);
+  halo.position.set(SHOULDER_LAMP.x, SHOULDER_LAMP.y + 0.05, SHOULDER_LAMP.z + 0.1);
+  mesh.add(halo);
   if (mine) {
     // a ring in your own colour at your feet, so you can find yourself
     const ring = new THREE.Mesh(
@@ -275,7 +302,7 @@ let gridSnap = false;
 
 const outlineInReach = new THREE.MeshBasicMaterial({ color: ACCENT, side: THREE.BackSide, transparent: true });
 const outlineOutOfReach = new THREE.MeshBasicMaterial({
-  color: CHALK,
+  color: STENCIL,
   side: THREE.BackSide,
   transparent: true,
   opacity: 0.35,
@@ -298,8 +325,8 @@ function makeItem(state: ItemState): ClientItem {
     held = heldGun();
     held.position.set(HELD_GUN_OFFSET.x, HELD_GUN_OFFSET.y, HELD_GUN_OFFSET.z);
   } else {
-    lying = crate();
-    held = crate();
+    lying = equipmentCase();
+    held = equipmentCase();
     // carried in front, in both arms, at a smaller size so it doesn't hide the carrier
     held.scale.setScalar(0.55);
     held.position.set(0, 0.62, 0.5);
@@ -411,7 +438,7 @@ scene.add(placementPreview);
 
 // shown around the preview while grid snap is on, so "snap" is visible
 // rather than just a word in the hint
-const snapGrid = new THREE.GridHelper(7, 7, CHALK, CHALK);
+const snapGrid = new THREE.GridHelper(7, 7, STENCIL, STENCIL);
 (snapGrid.material as THREE.Material).transparent = true;
 (snapGrid.material as THREE.Material).opacity = 0.3;
 snapGrid.visible = false;
@@ -428,7 +455,7 @@ hoverRing.rotation.x = -Math.PI / 2;
 hoverRing.visible = false;
 scene.add(hoverRing);
 
-function holderMesh(playerId: string): THREE.Mesh | undefined {
+function holderMesh(playerId: string): THREE.Object3D | undefined {
   if (playerId === myId) return localMesh;
   return remotes.get(playerId)?.mesh;
 }
@@ -488,22 +515,40 @@ function flash(text: string): void {
   flashUntil = performance.now() + 1400;
 }
 
+/** whether the cursor is over the reactor (its footprint, padded a little) */
+function hoveringReactor(): boolean {
+  return Math.abs(aimPoint.x - REACTOR.x) < REACTOR.halfX + 0.3 && Math.abs(aimPoint.z - REACTOR.z) < REACTOR.halfZ + 0.3;
+}
+
+const ACTIVATE_TIPS: Record<string, string> = {
+  ok: "click to activate the reactor",
+  "too far": "move closer",
+  "hands full": "hands full — drop it first (Q)",
+  "already active": "already active — defend it",
+};
+
 function renderPointerFeedback(): void {
   let cursor = "default";
   let tip = "";
   const held = myHeldItem();
   if (localMesh && !isDead()) {
-    if (!held) {
+    if (hoveringReactor()) {
+      const verdict = activateVerdict(localMesh.position, !!held, objective);
+      tip = ACTIVATE_TIPS[verdict];
+      if (verdict === "ok") cursor = "pointer";
+    } else if (!held) {
       const hovered = hoveredItem();
       if (hovered?.inReach) {
         cursor = "pointer";
         tip = `click to pick up`;
       } else if (hovered) {
         tip = "move closer";
+      } else if (myEntered && Math.hypot(aimPoint.x - GATE.x, aimPoint.z - GATE.z) < 2.5) {
+        tip = "one way — the safe room is behind you";
       }
     } else if (held.state.kind === "gun") {
       cursor = "crosshair";
-      if (isInYard(localMesh.position.x, localMesh.position.z)) tip = "no firing in the yard";
+      if (isInYard(localMesh.position.x, localMesh.position.z)) tip = "no firing in the safe room";
     } else if (held.state.kind === "box") {
       const verdict = boxVerdict(boxTarget());
       if (verdict !== "ok") tip = verdict;
@@ -540,8 +585,14 @@ function renderControls(): void {
 
 // --- Projectiles -------------------------------------------------------------
 
-const projectileMaterial = new THREE.MeshBasicMaterial({ color: ACCENT });
+const projectileMaterial = new THREE.MeshBasicMaterial({ color: ACCENT, toneMapped: false });
 const projectileGeometry = new THREE.IcosahedronGeometry(0.15, 0);
+
+function projectileMesh(): THREE.Mesh {
+  const mesh = new THREE.Mesh(projectileGeometry, projectileMaterial);
+  mesh.add(glow(ACCENT, 0.9));
+  return mesh;
+}
 
 interface RemoteProjectile {
   mesh: THREE.Mesh;
@@ -587,6 +638,7 @@ const net = connect({
     clearSceneState();
     myId = you.id;
     myRespawnAt = you.respawnAt ?? 0;
+    myEntered = !!you.entered;
     localMesh = makeCharacter(you.color, true);
     localMesh.position.set(you.x, 0, you.z);
     for (const p of players) {
@@ -594,12 +646,15 @@ const net = connect({
     }
     renderLeaderboard(players);
   },
-  onState(players, incomingProjectiles, incomingItems) {
+  onState(players, incomingProjectiles, incomingItems, incomingObjective) {
     const seenPlayers = new Set<string>();
     const myPrevPos = localMesh ? { x: localMesh.position.x, z: localMesh.position.z } : undefined;
+    if (incomingObjective.active && !objective.active) showBanner("reactor active — defend it");
+    objective = incomingObjective;
     for (const p of players) {
       if (p.id === myId) {
         myRespawnAt = p.respawnAt ?? 0;
+        myEntered = !!p.entered;
         // the server is authoritative for respawns: if it moved us further
         // than a single frame could, snap to match (this is how a death
         // shows up, since there's no separate "you died" message)
@@ -639,7 +694,7 @@ function updateProjectiles(incoming: ProjectileState[]): void {
     seen.add(p.id);
     let proj = projectiles.get(p.id);
     if (!proj) {
-      const mesh = new THREE.Mesh(projectileGeometry, projectileMaterial);
+      const mesh = projectileMesh();
       mesh.position.set(p.x, 0.9, p.z);
       scene.add(mesh);
       proj = { mesh, target: new THREE.Vector3(p.x, 0.9, p.z) };
@@ -689,7 +744,7 @@ function firePredictedShot(): void {
   // bounces, hits, and scores
   const dirX = Math.sin(aimRotation);
   const dirZ = Math.cos(aimRotation);
-  const mesh = new THREE.Mesh(projectileGeometry, projectileMaterial);
+  const mesh = projectileMesh();
   mesh.position.set(localMesh.position.x + dirX * 0.8, 0.9, localMesh.position.z + dirZ * 0.8);
   scene.add(mesh);
   pendingShots.push({
@@ -712,6 +767,12 @@ function firePredictedShot(): void {
 function primary(): void {
   if (isDead() || !localMesh) return;
   const held = myHeldItem();
+  if (hoveringReactor()) {
+    const verdict = activateVerdict(localMesh.position, !!held, objective);
+    if (verdict === "ok") net.activate();
+    else flash(ACTIVATE_TIPS[verdict]);
+    return;
+  }
   if (!held) {
     const hovered = hoveredItem();
     if (hovered?.inReach) net.pickup(hovered.item.state.id);
@@ -720,7 +781,7 @@ function primary(): void {
   }
   if (held.state.kind === "gun") {
     if (isInYard(localMesh.position.x, localMesh.position.z)) {
-      flash("no firing in the yard");
+      flash("no firing in the safe room");
       return;
     }
     const now = performance.now();
@@ -823,7 +884,9 @@ function animate(): void {
           localMesh.position.x + dx * SPEED * dt,
           localMesh.position.z + dz * SPEED * dt,
         );
-        const resolved = resolveObstacles(next.x, next.z, obstacles);
+        // predict the gate shutting the moment we're through, rather than a round-trip later
+        if (!myEntered && hasPassedGate(localMesh.position.z)) myEntered = true;
+        const resolved = resolveObstacles(next.x, next.z, obstaclesFor(myEntered, obstacles));
         localMesh.position.x = resolved.x;
         localMesh.position.z = resolved.z;
       }
@@ -844,9 +907,23 @@ function animate(): void {
 
     camera.position.set(localMesh.position.x, CAMERA_ALTITUDE, localMesh.position.z);
     camera.lookAt(localMesh.position.x, 0, localMesh.position.z);
-    sun.position.copy(localMesh.position).add(SUN_OFFSET);
-    sun.target.position.copy(localMesh.position);
+    torch.aim(localMesh.position.x, localMesh.position.z, aimRotation);
+    torch.light.visible = !dead;
+    visibility.update(renderer, localMesh.position.x, localMesh.position.z);
   }
+
+  const time = clock.elapsedTime;
+  const view = localMesh?.position ?? new THREE.Vector3(0, 0, 24);
+  lighting.update(view.x, view.z, time, { reactorActive: objective.active }, (lamp) =>
+    // a lamp lights the scene only if its light could reach what we see: in sight, or close
+    Math.hypot(lamp.x - view.x, lamp.z - view.z) < LAMP_SPECS[lamp.kind].range * 0.5 || canSee(view.x, view.z, lamp.x, lamp.z, visibility.segs),
+  );
+  const coreColour = objective.active ? REACTOR_LIVE : REACTOR_STANDBY;
+  coreMaterial.color.setHex(coreColour);
+  coreHalo.material.color.setHex(coreColour);
+  coreHalo.material.opacity = objective.active ? 0.7 + 0.2 * Math.sin(time * 2) : 0.3 + 0.15 * Math.sin(time * 1.3);
+  updateGate(myEntered);
+  gateGroup.visible = true;
 
   for (const remote of remotes.values()) {
     remote.mesh.position.lerp(remote.target, Math.min(1, dt * 8));
@@ -855,12 +932,43 @@ function animate(): void {
 
   stepProjectileInterpolation(dt);
   stepPendingShots(dt);
-  stepItemVisuals(clock.elapsedTime);
+  stepItemVisuals(time);
   renderPointerFeedback();
   renderControls();
+  renderDebug(dt);
 
-  renderer.render(scene, camera);
+  post.render(scene, camera);
   requestAnimationFrame(animate);
+}
+
+// The objective banner: a line across the top of the screen when the reactor goes live.
+const bannerEl = document.createElement("div");
+bannerEl.style.cssText =
+  "position:fixed;top:14%;left:50%;transform:translateX(-50%);padding:10px 22px;font:700 20px system-ui,sans-serif;letter-spacing:0.08em;color:#e6f0ff;background:rgba(10,14,20,0.75);border:1px solid rgba(90,168,255,0.6);border-radius:4px;pointer-events:none;opacity:0;transition:opacity 0.6s;text-transform:uppercase";
+document.body.appendChild(bannerEl);
+function showBanner(text: string): void {
+  bannerEl.textContent = text;
+  bannerEl.style.opacity = "1";
+  setTimeout(() => (bannerEl.style.opacity = "0"), 3500);
+}
+
+// ?debug: a frame-time readout, for checking performance on a real laptop.
+const debugEl = params.has("debug") ? document.createElement("div") : undefined;
+if (debugEl) {
+  debugEl.style.cssText = "position:fixed;right:10px;top:10px;font:12px ui-monospace,monospace;color:#9fe0a0;background:rgba(0,0,0,0.6);padding:4px 8px;pointer-events:none";
+  document.body.appendChild(debugEl);
+}
+let debugFrames = 0;
+let debugTime = 0;
+function renderDebug(dt: number): void {
+  if (!debugEl) return;
+  debugFrames++;
+  debugTime += dt;
+  if (debugTime < 0.5) return;
+  const ms = (debugTime / debugFrames) * 1000;
+  debugEl.textContent = `${(1000 / ms).toFixed(0)} fps · ${ms.toFixed(1)} ms · ${renderer.info.render.calls} draws · ${(renderer.info.render.triangles / 1000).toFixed(0)}k tris`;
+  debugFrames = 0;
+  debugTime = 0;
 }
 
 function angleDiff(a: number, b: number): number {

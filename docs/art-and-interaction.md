@@ -6,34 +6,71 @@ built that's beyond what can be made reliably in code.
 
 ## Art: low poly, built in code
 
-**One material, flat shading, vertex colour.** Every model is coloured
-primitive parts merged into one geometry and drawn with the shared material
-in [`client/models/kit.ts`](../client/models/kit.ts) (`flatShading`,
-`vertexColors`, roughness 1, metalness 0). No textures, no per-model
-materials. Exceptions, and only these: unlit effects (projectiles), the
+**A few shared materials, flat shading, vertex colour.** Every model is
+coloured primitive parts merged into one geometry per finish, drawn with
+the shared materials in [`client/models/kit.ts`](../client/models/kit.ts):
+`matte` (paint, concrete, fabric), `tile` (sealed floors), `glossy` (bare
+metal) and `emissive` (lamps, LEDs, screens --- unlit). No textures, no
+per-model materials. Other exceptions, and only these: projectiles, the
 hover highlight, the placement preview, and the floor guide decals.
 
-**Colour only from the palette.** [`shared/palette.ts`](../shared/palette.ts)
-is the single source. Environment tokens have shade/base/light values; a
-model gets depth by choosing among them, never by writing its own hex.
+**Colour comes from the palette, in three kinds.**
+[`shared/palette.ts`](../shared/palette.ts) is the single source.
+- *Surfaces* --- what things are made of --- all sit inside one gamut:
+  OKLCH chroma ≤ 0.06 (about Munsell chroma 2--3) and lightness 0.26--0.82
+  (real-world albedo, about sRGB 45--200). Many hues, none loud: an oxide
+  wall is a greyed deep red. Each swatch is one hue at three lightness
+  steps with hue and chroma held still; neutrals lean toward one cool
+  "mother" grey so they hold together. (Gamut masking after James Gurney;
+  albedo range from PBR practice; real surfaces can't be very saturated.)
+- *Emitters* --- lamps, indicator LEDs, screens, the reactor, a player's
+  shoulder lamp --- are the only things allowed outside the gamut.
+- *Lights* are set by colour temperature, white-balanced to 4500K. Each
+  zone has one dominant temperature (intake: warm tungsten; corridor and
+  lab: cool fluorescent; server hall: cold LED; core: sodium by the
+  reactor against cool tubes), so most of the scene's hue variety comes
+  from the light, not the paint.
+- UI signals (cyan "can act", red "can't", green "will work") and player
+  colours only ever appear as UI or as an emitter.
 
-**Saturation is a signal.** The environment (ground, rock, wood, foliage,
-walls) stays low-to-mid saturation. Only players and things you can act on
-are saturated. Accent yellow means "you can act on this", danger orange
-means "you can't" --- nothing else uses those hues, players included.
+`spec/assets.test.ts` fails any registered model with a non-emissive
+colour outside the gamut, and any palette swatch outside it.
 
-**Consistent density.** Radial segments 5--8; spheres are icosahedra at
+**The grade is separate from the models.** Exposure, contrast,
+saturation, shadow/highlight tint, vignette and dither live in
+[`client/assets/grade.ts`](../client/assets/grade.ts) and are applied once
+to the whole frame (`client/postprocess.ts`). Tune the look there; no
+model needs rebuilding.
+
+**Lighting.** Underground: no sun, a very dim cold ambient, and the lamps
+in [`client/world/dressing.ts`](../client/world/dressing.ts). A fixed pool
+of 8 point lights (no shadows) follows the lamps the player can see; every
+lamp's fixture also glows, so lamps outside the pool still read. The
+player's torch is the only shadow-casting light. Keep floors and walls
+mid-dark so light pools instead of washing the room.
+
+**Line of sight.** What the player can't see is black: other rooms, the
+far side of tall fixtures, and every wall top (`client/visibility.ts`).
+Walls are dressed on their room-facing faces only. Fixtures with half-height
+≥ 0.95 block sight; lower ones are seen over.
+
+**Consistent density.** Radial segments 5--10; spheres are icosahedra at
 detail 0--1. A smooth 32-segment sphere next to a 6-sided cone breaks the
 style more than any colour choice.
 
-**Budgets (triangles):** character 150--400 · handheld item 20--150 ·
-crate 40--150 · rock 20--120 · tree 40--120. Draw calls matter more than
-triangles: merge static scenery, use `InstancedMesh` for repeated props,
-stay under ~100 draw calls.
+**Budgets (triangles)**, enforced per category by `spec/assets.test.ts`
+from [`client/models/registry.ts`](../client/models/registry.ts):
+character 700 · character carrying 1000 · handheld 300 · item 260 ·
+fixture 1400. Draw calls matter more than triangles: the facility is
+merged into one mesh per finish.
 
-**Designed for the camera.** The camera looks straight down from 22 units,
-so about 53 px per world unit at 1080p. What reads is the top outline,
-value contrast against the ground, and the cast shadow --- not side detail.
+**Every asset is registered.** A new model goes into
+`client/models/registry.ts` --- that puts it in the model sheet and under
+the budget and gamut tests.
+
+**Designed for the camera.** The camera looks straight down from 16 units,
+so about 72 px per world unit at 1080p. What reads is the top outline,
+value contrast against the floor, and light --- not side detail.
 
 - Anything under ~0.15 units won't show; don't model it.
 - Facing must show from the top outline alone (visor forward, backpack
@@ -55,13 +92,13 @@ signature features. The M4A1 is barrel + A-frame front sight + handguard +
 carry handle + pistol grip + curved magazine + collapsible stock, nothing
 finer.
 
-**Depth from value and shadow, not fog.** Distance fog is useless from
-straight overhead (every ground point is about the same distance away). The
-background is the palette's darkest far layer; height reads through lighter
-tops and the sun's sideways shadows.
+**Depth from light and value, not fog.** Distance fog is useless from
+straight overhead (every floor point is about the same distance away).
+Depth reads through pools of lamp light, the torch's moving shadows, and
+the black of what's out of sight.
 
-**Randomness is seeded.** Rocks, trees and ground tones come from `rng(seed)`
-so every client builds the identical world.
+**Randomness is seeded.** Rubble, floor tones and clutter come from
+`rng(seed)` so every client builds the identical world.
 
 **Stay in reach.** Build from boxes, low-segment cylinders/cones,
 icosahedra/dodecahedra, extruded flat profiles (`profile()` in the kit) and
@@ -93,9 +130,12 @@ Every right-click action also has Space, and Mac ctrl+click is treated as a
 right-click (not as a left click as well).
 
 **The world explains itself.** Boundaries are visible (no invisible walls),
-your own character is easy to find, the controls for what you're holding
-are on screen, and new players learn from guides painted on the floor next
-to the thing they're about.
+your own character is easy to find (a ring at your feet, and your shoulder
+lamp in the dark), the controls for what you're holding are on screen, and
+new players learn from guides painted on the floor next to the thing
+they're about. One-way things say so before you commit: the gate into the
+facility is marked "one way" on the intake side, and shuts visibly behind
+you.
 
 **Before calling any mechanic done, check:** cursor, hover state, success
 feedback, failure feedback and reason, what happens at the edges (out of

@@ -8,6 +8,13 @@ export interface PlayerState {
   respawnAt?: number;
   /** wire-only: in-memory for the current connection, not persisted */
   score?: number;
+  /** wire-only: through the one-way gate since their last (re)spawn, so it's shut behind them */
+  entered?: true;
+}
+
+/** the facility's objective: for now just whether someone has switched the reactor on */
+export interface ObjectiveState {
+  active: boolean;
 }
 
 export interface WelcomeMessage {
@@ -21,6 +28,7 @@ export interface StateMessage {
   players: PlayerState[];
   projectiles: ProjectileState[];
   items: ItemState[];
+  objective: ObjectiveState;
 }
 
 export interface MoveMessage {
@@ -50,6 +58,11 @@ export interface DropMessage {
   type: "drop";
 }
 
+/** switch the reactor on: empty hands, within reach of it */
+export interface ActivateMessage {
+  type: "activate";
+}
+
 export interface ProjectileState {
   id: string;
   ownerId: string;
@@ -58,7 +71,7 @@ export interface ProjectileState {
 }
 
 export type ServerMessage = WelcomeMessage | StateMessage;
-export type ClientMessage = MoveMessage | PickupMessage | PrimaryMessage | DropMessage;
+export type ClientMessage = MoveMessage | PickupMessage | PrimaryMessage | DropMessage | ActivateMessage;
 
 /**
  * Every pickup-able thing in the world is one of these: same shape, same
@@ -100,10 +113,30 @@ export const BROADCAST_INTERVAL_MS = 66;
 export const PERSIST_INTERVAL_MS = 1000;
 
 // --- World layout ----------------------------------------------------------
-// A square arena with a walled yard off its south side (screen-down, +Z),
-// joined by a door in the arena's south wall. Every player spawns and
-// respawns in the yard, where the floor teaches the controls and firing is
-// off; the door leads up into the arena.
+// An underground facility, with a safe intake room off its south side
+// (screen-down, +Z). Every player spawns and respawns in the intake room,
+// where the floor teaches the controls and firing is off; a one-way gate
+// lets them into the facility's main corridor and not back. (What the
+// intake room *is* --- a lift, a decon chamber --- waits on the setting; in
+// code it keeps the name YARD.)
+//
+//   z=-18  +------+======== ~~ ====+------+   ~~ breach: stuck elevator shaft
+//          |######|      CORE       |######|
+//          |######|    (reactor)    |######|
+//   z=-4   |######+-  -+##+-  -+##+-  -+####|
+//          |######|WPAS|##|AIRL|##|EPAS|####|
+//   z=2    +------+-  -+--+=BD=+--+-  -+----+   BD sealed blast door
+//          |              |    |            |
+//          ~~    LAB      D  C |   HALL     ~~  ~~ breaches: vent (W), collapse (E)
+//          |              |  O D            |   D doorways off the corridor
+//   z=18   +--------------+-><-+------------+   >< the one-way gate
+//                        |INTAKE|
+//
+// The corridor branches into the lab and the server hall, each of which
+// reaches the core through its own narrow passage, so the core can be come
+// at from two sides --- and every room except the corridor has a breach,
+// the way a horde would get in. The loop the facility is built for:
+// activate the reactor, then hold it.
 
 export interface Rect {
   minX: number;
@@ -112,37 +145,130 @@ export interface Rect {
   maxZ: number;
 }
 
-export const ARENA_HALF = 18;
-export const ARENA: Rect = { minX: -ARENA_HALF, maxX: ARENA_HALF, minZ: -ARENA_HALF, maxZ: ARENA_HALF };
+export const FACILITY_HALF = 18;
+/** the facility's overall footprint: every room lies inside it */
+export const FACILITY: Rect = {
+  minX: -FACILITY_HALF,
+  maxX: FACILITY_HALF,
+  minZ: -FACILITY_HALF,
+  maxZ: FACILITY_HALF,
+};
 const WALL_HALF = 0.3;
 /** the yard's open interior (inside its walls) */
-export const YARD: Rect = { minX: -7, maxX: 7, minZ: ARENA_HALF + 2 * WALL_HALF, maxZ: 28 };
+export const YARD: Rect = { minX: -7, maxX: 7, minZ: FACILITY_HALF + 2 * WALL_HALF, maxZ: 28 };
 export const DOOR_HALF_WIDTH = 2;
 /** everything anyone can stand in; movement is clamped to it before walls */
-export const PLAY_BOUNDS: Rect = { minX: ARENA.minX, maxX: ARENA.maxX, minZ: ARENA.minZ, maxZ: YARD.maxZ };
+export const PLAY_BOUNDS: Rect = { minX: FACILITY.minX, maxX: FACILITY.maxX, minZ: FACILITY.minZ, maxZ: YARD.maxZ };
+/** as far as sight reaches: a little past the outer walls, so a breach shows what's just beyond it and no further */
+export const SIGHT_BOUNDS: Rect = { minX: -FACILITY_HALF - 3, maxX: FACILITY_HALF + 3, minZ: -FACILITY_HALF - 3, maxZ: YARD.maxZ + 1 };
 
 export const inRect = (r: Rect, x: number, z: number, margin = 0): boolean =>
   x >= r.minX + margin && x <= r.maxX - margin && z >= r.minZ + margin && z <= r.maxZ - margin;
 
-/** the gap in the arena's south wall */
+/** the gap in the facility's south wall, out to the yard */
 export const DOOR: Rect = {
   minX: -DOOR_HALF_WIDTH,
   maxX: DOOR_HALF_WIDTH,
-  minZ: ARENA_HALF,
-  maxZ: ARENA_HALF + 2 * WALL_HALF,
+  minZ: FACILITY_HALF,
+  maxZ: FACILITY_HALF + 2 * WALL_HALF,
+};
+
+/** the facility's rooms: open floor, inside their walls */
+export const ROOMS = {
+  core: { minX: -13.7, maxX: 13.7, minZ: -18, maxZ: -4.3 },
+  westPassage: { minX: -13.7, maxX: -10.3, minZ: -3.7, maxZ: 1.7 },
+  airlock: { minX: -2, maxX: 2, minZ: -3.7, maxZ: 1.7 },
+  eastPassage: { minX: 10.3, maxX: 13.7, minZ: -3.7, maxZ: 1.7 },
+  lab: { minX: -18, maxX: -2.6, minZ: 2.3, maxZ: 18 },
+  corridor: { minX: -2, maxX: 2, minZ: 2.3, maxZ: 18 },
+  hall: { minX: 2.6, maxX: 18, minZ: 2.3, maxZ: 18 },
+} satisfies Record<string, Rect>;
+const ROOM_LIST: Rect[] = Object.values(ROOMS);
+
+/** the openings between rooms (and out to the yard), where a wall would otherwise be */
+export const DOORWAYS: Rect[] = [
+  DOOR,
+  { minX: -2.6, maxX: -2, minZ: 9, maxZ: 12 }, // corridor -> lab
+  { minX: 2, maxX: 2.6, minZ: 12, maxZ: 15 }, // corridor -> hall
+  { minX: -13.7, maxX: -10.3, minZ: 1.7, maxZ: 2.3 }, // lab -> west passage
+  { minX: 10.3, maxX: 13.7, minZ: 1.7, maxZ: 2.3 }, // hall -> east passage
+  { minX: -13.7, maxX: -10.3, minZ: -4.3, maxZ: -3.7 }, // west passage -> core
+  { minX: -2, maxX: 2, minZ: -4.3, maxZ: -3.7 }, // airlock -> core
+  { minX: 10.3, maxX: 13.7, minZ: -4.3, maxZ: -3.7 }, // east passage -> core
+];
+
+/**
+ * Where a horde would get in: openings in the facility's outer wall that
+ * lead nowhere a player can go (movement is clamped to the facility), so
+ * for now they're scenery --- and a place to build in front of. Not
+ * no-build: blocking a breach is the point.
+ */
+export type BreachKind = "vent" | "collapse" | "shaft";
+export interface Breach {
+  kind: BreachKind;
+  /** which outer wall it's in */
+  side: "west" | "east" | "north";
+  /** the opening's centre, on the wall's centre line */
+  x: number;
+  z: number;
+  width: number;
+}
+export const BREACHES: Breach[] = [
+  { kind: "vent", side: "west", x: -FACILITY_HALF - WALL_HALF, z: 10, width: 2 },
+  { kind: "collapse", side: "east", x: FACILITY_HALF + WALL_HALF, z: 8, width: 4 },
+  { kind: "shaft", side: "north", x: 5.5, z: -FACILITY_HALF - WALL_HALF, width: 3 },
+];
+const breachGap = (b: Breach): [number, number] => {
+  const c = b.side === "north" ? b.x : b.z;
+  return [c - b.width / 2, c + b.width / 2];
 };
 
 /**
- * Somewhere a player can actually be: the arena, the yard, or the doorway
- * between. The play bounds' outer corners (beside the yard, outside its
- * walls) are not.
+ * Inside the facility's footprint but in no room: solid structure, drawn
+ * as a block. Nothing reaches it (walls close every room), so it isn't an
+ * obstacle, just not walkable.
+ */
+export const SOLID: Rect[] = [
+  { minX: -18.6, maxX: -14.3, minZ: -18.6, maxZ: 1.7 },
+  { minX: 14.3, maxX: 18.6, minZ: -18.6, maxZ: 1.7 },
+  { minX: -9.7, maxX: -2.6, minZ: -3.7, maxZ: 1.7 },
+  { minX: 2.6, maxX: 9.7, minZ: -3.7, maxZ: 1.7 },
+];
+
+/**
+ * Somewhere a player can actually be: a room, the yard, or a doorway
+ * between. Solid structure, and the play bounds' corners beside the yard,
+ * are not.
  */
 export const isWalkable = (x: number, z: number): boolean =>
-  inRect(ARENA, x, z) || inRect(YARD, x, z) || inRect(DOOR, x, z);
+  ROOM_LIST.some((r) => inRect(r, x, z)) || inRect(YARD, x, z) || DOORWAYS.some((r) => inRect(r, x, z));
 
-/** the yard, counted from the middle of the doorway so the door is a clean line */
+/** the intake room, counted from the middle of the doorway so the door is a clean line */
 export const isInYard = (x: number, z: number): boolean =>
-  x > YARD.minX - WALL_HALF && x < YARD.maxX + WALL_HALF && z > ARENA_HALF + WALL_HALF;
+  x > YARD.minX - WALL_HALF && x < YARD.maxX + WALL_HALF && z > FACILITY_HALF + WALL_HALF;
+
+/**
+ * Past the gate: once a player is this far into the corridor they've
+ * entered, and the gate shuts behind them until they respawn. A little
+ * inside the corridor rather than on the wall line, so standing in the
+ * doorway doesn't count.
+ */
+export const GATE_ENTERED_Z = FACILITY_HALF - 0.6;
+export const hasPassedGate = (z: number): boolean => z < GATE_ENTERED_Z;
+
+/** the shut gate, as an obstacle --- only for players who've entered */
+export const GATE: Obstacle = {
+  x: 0,
+  z: FACILITY_HALF + WALL_HALF,
+  halfX: DOOR_HALF_WIDTH,
+  halfZ: WALL_HALF,
+  halfHeight: 0.6,
+};
+
+/** what a given player collides with: the gate only exists for those who've come through it */
+export function obstaclesFor(entered: boolean, base: Obstacle[]): Obstacle[] {
+  return entered ? [...base, GATE] : base;
+}
 
 export interface Obstacle {
   x: number;
@@ -155,46 +281,188 @@ export interface Obstacle {
   halfHeight: number;
 }
 
-export type ObstacleKind = "wall" | "rock";
-
-const WALL_HALF_HEIGHT = 0.4;
-const wallBetween = (x1: number, z1: number, x2: number, z2: number): Obstacle => ({
+const wallBetween = (x1: number, z1: number, x2: number, z2: number, halfHeight: number): Obstacle => ({
   x: (x1 + x2) / 2,
   z: (z1 + z2) / 2,
   halfX: Math.max(WALL_HALF, Math.abs(x2 - x1) / 2),
   halfZ: Math.max(WALL_HALF, Math.abs(z2 - z1) / 2),
-  halfHeight: WALL_HALF_HEIGHT,
+  halfHeight,
 });
 
-const A = ARENA_HALF + WALL_HALF; // arena wall centre line
-const Y = YARD.maxX + WALL_HALF; // yard side wall centre line
-export const WALLS: Obstacle[] = [
-  wallBetween(-A - WALL_HALF, -A, A + WALL_HALF, -A), // north
-  wallBetween(-A, -A, -A, A), // west
-  wallBetween(A, -A, A, A), // east
-  wallBetween(-A - WALL_HALF, A, -DOOR_HALF_WIDTH, A), // south, left of the door
-  wallBetween(DOOR_HALF_WIDTH, A, A + WALL_HALF, A), // south, right of the door
-  wallBetween(-Y, A + WALL_HALF, -Y, YARD.maxZ + 2 * WALL_HALF), // yard west
-  wallBetween(Y, A + WALL_HALF, Y, YARD.maxZ + 2 * WALL_HALF), // yard east
-  wallBetween(-Y - WALL_HALF, YARD.maxZ + WALL_HALF, Y + WALL_HALF, YARD.maxZ + WALL_HALF), // yard south
+/** walls run well over head height: everything is indoors */
+export const FACILITY_WALL_HALF_HEIGHT = 1.25;
+
+const facilityWall = (x1: number, z1: number, x2: number, z2: number) =>
+  wallBetween(x1, z1, x2, z2, FACILITY_WALL_HALF_HEIGHT);
+
+// Wall centre lines. Segments overlap at corners so every room is closed.
+const O = FACILITY_HALF + WALL_HALF; // outer walls
+const Y = YARD.maxX + WALL_HALF; // yard side walls
+const [ventFrom, ventTo] = breachGap(BREACHES[0]);
+const [collapseFrom, collapseTo] = breachGap(BREACHES[1]);
+const [shaftFrom, shaftTo] = breachGap(BREACHES[2]);
+
+export const FACILITY_WALLS: Obstacle[] = [
+  // outer: south (either side of the yard door), the lab's west, the
+  // hall's east, the core's north --- each with its breach left open
+  facilityWall(-O - WALL_HALF, O, -DOOR_HALF_WIDTH, O),
+  facilityWall(DOOR_HALF_WIDTH, O, O + WALL_HALF, O),
+  facilityWall(-O, 1.7, -O, ventFrom),
+  facilityWall(-O, ventTo, -O, O),
+  facilityWall(O, 1.7, O, collapseFrom),
+  facilityWall(O, collapseTo, O, O),
+  facilityWall(-14.3, -O, shaftFrom, -O),
+  facilityWall(shaftTo, -O, 14.3, -O),
+  // the corridor's sides, which carry on north as the airlock's
+  facilityWall(-2.3, -4.3, -2.3, 9),
+  facilityWall(-2.3, 12, -2.3, O),
+  facilityWall(2.3, -4.3, 2.3, 12),
+  facilityWall(2.3, 15, 2.3, O),
+  // the row between the lab/corridor/hall and the passages (the blast
+  // door fills the corridor's end)
+  facilityWall(-O - WALL_HALF, 2, -13.7, 2),
+  facilityWall(-10.3, 2, -2, 2),
+  facilityWall(2, 2, 10.3, 2),
+  facilityWall(13.7, 2, O + WALL_HALF, 2),
+  // the passages' sides, and the core's west and east
+  facilityWall(-14, -O, -14, 2.3),
+  facilityWall(-10, -4.3, -10, 2.3),
+  facilityWall(10, -4.3, 10, 2.3),
+  facilityWall(14, -O, 14, 2.3),
+  // the core's south wall, between the three ways in
+  facilityWall(-10.3, -4, -2, -4),
+  facilityWall(2, -4, 10.3, -4),
 ];
 
-/** the arena's fixed rocks */
-export const ROCKS: Obstacle[] = [
-  { x: 6, z: 4, halfX: 1, halfZ: 1, halfHeight: 1 },
-  { x: -7, z: -3, halfX: 1, halfZ: 1, halfHeight: 1.5 },
-  { x: 3, z: -8, halfX: 1, halfZ: 1, halfHeight: 0.8 },
-  { x: -4, z: 7, halfX: 1, halfZ: 1, halfHeight: 1 },
+export const YARD_WALLS: Obstacle[] = [
+  facilityWall(-Y, O + WALL_HALF, -Y, YARD.maxZ + 2 * WALL_HALF), // west
+  facilityWall(Y, O + WALL_HALF, Y, YARD.maxZ + 2 * WALL_HALF), // east
+  facilityWall(-Y - WALL_HALF, YARD.maxZ + WALL_HALF, Y + WALL_HALF, YARD.maxZ + WALL_HALF), // south
 ];
 
-export const OBSTACLES: Obstacle[] = [...WALLS, ...ROCKS];
+export const WALLS: Obstacle[] = [...FACILITY_WALLS, ...YARD_WALLS];
+
+/** every wall, as the room it faces: so a wall's two faces can be painted for the rooms either side */
+export type Zone = keyof typeof ROOMS | "intake";
+export const ZONE_RECTS: Record<Zone, Rect> = { ...ROOMS, intake: YARD };
 
 /**
- * Where boxes can't be put down: the doorway (so nobody can wall the yard
- * shut) and the spawn strip (so nobody spawns inside a box).
+ * The facility's fixed furniture and structure: everything solid a player
+ * walks around and takes cover behind. A footprint like any obstacle (it
+ * blocks movement and projectiles alike); `kind` says which model the
+ * client draws to fill it, turned to run along the footprint's long side.
+ */
+export type FixtureKind =
+  | "blastDoor"
+  | "barrier"
+  | "bench"
+  | "lockers"
+  | "terminal"
+  | "crates"
+  | "rack"
+  | "toppledRack"
+  | "rubble"
+  | "reactor"
+  | "console"
+  | "pillar"
+  | "fumeHood"
+  | "gasRack"
+  | "cooler"
+  | "vending"
+  | "seating"
+  | "table";
+
+/** which way a fixture's working side points, for the ones that have one (a desk, a locker door) */
+export type Facing = "north" | "south" | "east" | "west";
+
+export interface Fixture extends Obstacle {
+  kind: FixtureKind;
+  facing?: Facing;
+}
+
+const fixture = (
+  kind: FixtureKind,
+  x: number,
+  z: number,
+  halfX: number,
+  halfZ: number,
+  halfHeight: number,
+  facing?: Facing,
+): Fixture => ({ kind, x, z, halfX, halfZ, halfHeight, facing });
+
+const RACK_HALF_HEIGHT = 1.1;
+export const FIXTURES: Fixture[] = [
+  // the corridor: a sealed blast door at its end, a checkpoint barrier
+  // narrowing the way in to one lane, a dead vending machine and a bench
+  fixture("blastDoor", 0, 2, 2, WALL_HALF, FACILITY_WALL_HALF_HEIGHT),
+  fixture("barrier", -1, 15.5, 1, 0.34, 0.4),
+  fixture("vending", 1.55, 6.5, 0.45, 0.6, 1, "west"),
+  fixture("seating", -1.65, 5, 0.35, 1, 0.25, "east"),
+  // the lab: two bench islands to duck behind, lockers, a terminal, a fume
+  // hood and gas cylinders against the walls, stores by the door
+  fixture("bench", -9.5, 7, 2.5, 0.6, 0.45),
+  fixture("bench", -9.5, 12.5, 2.5, 0.6, 0.45),
+  fixture("lockers", -13.5, 17.55, 2.5, 0.45, 1, "north"),
+  fixture("terminal", -5, 2.8, 1.2, 0.5, 0.45, "south"),
+  fixture("fumeHood", -16.5, 2.85, 1.2, 0.55, 1.1, "south"),
+  fixture("gasRack", -17.6, 14.5, 0.4, 1, 0.8, "east"),
+  fixture("crates", -3.6, 17.4, 1, 0.5, 0.5),
+  // the passages: each half-blocked, so the way into the core is narrow
+  fixture("barrier", -12.7, -1, 1, 0.34, 0.4),
+  fixture("crates", 13.1, -2.5, 0.5, 1, 0.5),
+  // the server hall: rack rows make aisles, cooling units on the south
+  // wall; by the collapse a rack has gone over and rubble has spilled in
+  ...[5.5, 8.5, 11.5].map((x) => fixture("rack", x, 7, 0.5, 2.5, RACK_HALF_HEIGHT)),
+  ...[5.5, 8.5, 11.5, 14.5].map((x) => fixture("rack", x, 13.25, 0.5, 2.25, RACK_HALF_HEIGHT)),
+  fixture("cooler", 8, 17.45, 1.1, 0.55, 1, "north"),
+  fixture("cooler", 13.5, 17.45, 1.1, 0.55, 1, "north"),
+  fixture("toppledRack", 15.2, 5.4, 1.1, 0.5, 0.3),
+  fixture("rubble", 17.1, 9.3, 0.8, 0.7, 0.4),
+  // the intake room: lockers to suit up at, a briefing table
+  fixture("lockers", -6.55, 26, 0.45, 1.5, 1, "east"),
+  fixture("table", 5.6, 26.6, 0.8, 1.2, 0.38),
+  // the core: the objective in the middle, its consoles, four pillars for
+  // cover, and stores in a corner
+  fixture("reactor", 0, -11.5, 2.2, 2.2, 0.9),
+  fixture("console", -4.2, -11.5, 0.45, 1.2, 0.5, "east"),
+  fixture("console", 4.2, -11.5, 0.45, 1.2, 0.5, "west"),
+  ...[
+    [-8, -8],
+    [8, -8],
+    [-8, -15],
+    [8, -15],
+  ].map(([x, z]) => fixture("pillar", x, z, 0.6, 0.6, FACILITY_WALL_HALF_HEIGHT)),
+  fixture("crates", -12.2, -16.5, 1, 1, 0.5),
+];
+
+export const OBSTACLES: Obstacle[] = [...WALLS, ...FIXTURES];
+
+export const REACTOR = FIXTURES.find((f) => f.kind === "reactor")!;
+/** how close (centre to centre) a player has to be to switch the reactor on */
+export const ACTIVATE_RANGE = REACTOR.halfX + PICKUP_RANGE;
+
+export type ActivateVerdict = "ok" | "too far" | "hands full" | "already active";
+
+/** shared, so the client's hint says exactly what the server would decide */
+export function activateVerdict(
+  player: { x: number; z: number },
+  holding: boolean,
+  objective: ObjectiveState,
+): ActivateVerdict {
+  if (objective.active) return "already active";
+  if (Math.hypot(player.x - REACTOR.x, player.z - REACTOR.z) > ACTIVATE_RANGE) return "too far";
+  if (holding) return "hands full";
+  return "ok";
+}
+
+/**
+ * Where boxes can't be put down: the yard door (so nobody can wall the
+ * yard shut) and the spawn strip (so nobody spawns inside a box). Doorways
+ * inside the facility are fair game --- holding a chokepoint is what
+ * they're for.
  */
 export const NO_BUILD: Rect[] = [
-  { minX: -DOOR_HALF_WIDTH - 0.5, maxX: DOOR_HALF_WIDTH + 0.5, minZ: ARENA_HALF - 2, maxZ: ARENA_HALF + 2.5 },
+  { minX: -DOOR_HALF_WIDTH - 0.5, maxX: DOOR_HALF_WIDTH + 0.5, minZ: FACILITY_HALF - 2, maxZ: FACILITY_HALF + 2.5 },
   { minX: -3.5, maxX: 3.5, minZ: 25.5, maxZ: YARD.maxZ },
 ];
 
@@ -225,7 +493,7 @@ export function boxObstacle(item: { x: number; z: number }): Obstacle {
   return { x: item.x, z: item.z, halfX: BOX_HALF_EXTENT, halfZ: BOX_HALF_EXTENT, halfHeight: BOX_HALF_EXTENT };
 }
 
-/** the fixed walls and rocks plus every box currently sitting on the ground */
+/** the fixed walls and fixtures plus every box currently sitting on the ground */
 export function worldObstacles(items: Iterable<ItemState>): Obstacle[] {
   const result = [...OBSTACLES];
   for (const item of items) {
@@ -242,8 +510,9 @@ export type PlacementVerdict = "ok" | "too far" | "blocked" | "no building here"
 
 /**
  * Whether a box may be put down centered at (x, z), and if not, why: in
- * reach of the placer, inside the arena or yard, outside the no-build
- * zones, and not overlapping a wall, rock, box, or anyone's body. Shared so
+ * reach of the placer, somewhere walkable (a room, a doorway, the yard),
+ * outside the no-build zones, and not overlapping a wall, fixture, box, or
+ * anyone's body. Shared so
  * the client's preview refuses exactly what the server would --- and can
  * say why.
  */
@@ -255,7 +524,9 @@ export function placementVerdict(
   players: { x: number; z: number }[],
 ): PlacementVerdict {
   if (Math.hypot(x - placer.x, z - placer.z) > PLACE_RANGE) return "too far";
-  if (!inRect(ARENA, x, z, BOX_HALF_EXTENT) && !inRect(YARD, x, z, BOX_HALF_EXTENT)) return "blocked";
+  // the box's own overlap with walls is caught below; this just keeps its
+  // centre out of solid structure and off the outdoor margins
+  if (!isWalkable(x, z)) return "blocked";
   if (NO_BUILD.some((r) => inRect(r, x, z))) return "no building here";
   for (const obs of obstacles) {
     if (Math.abs(x - obs.x) < obs.halfX + BOX_HALF_EXTENT && Math.abs(z - obs.z) < obs.halfZ + BOX_HALF_EXTENT) {

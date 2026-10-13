@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import { ACCENT, CHALK, hex } from "../shared/palette.ts";
-import { ARENA_HALF, STATIONS } from "../shared/protocol.ts";
+import { ACCENT, STENCIL, hex } from "../shared/palette.ts";
+import { FACILITY_HALF, STATIONS } from "../shared/protocol.ts";
 
 // The yard's tutorial: controls painted on the floor right next to the
 // thing they're about, so a new player reads them where they need them
@@ -9,7 +9,7 @@ import { ARENA_HALF, STATIONS } from "../shared/protocol.ts";
 // one place the art rules allow a texture.
 
 const PX_PER_UNIT = 128;
-const INK = hex(CHALK);
+const INK = hex(STENCIL);
 const HIGHLIGHT = hex(ACCENT);
 
 type Draw = (ctx: CanvasRenderingContext2D) => void;
@@ -155,7 +155,7 @@ export function buildYardGuides(): THREE.Group {
         decal(3.4, 1.5, x, 25.0, (ctx) => {
           mouse(ctx, 0.35, 0.05, "left");
           text(ctx, "fire", 1.0, 0.25);
-          text(ctx, "not in the yard", 1.0, 0.55, 0.2);
+          text(ctx, "not in the safe room", 1.0, 0.55, 0.2);
           key(ctx, "Q", 0.32, 0.9);
           text(ctx, "drop", 1.0, 1.15);
         }),
@@ -174,16 +174,12 @@ export function buildYardGuides(): THREE.Group {
     }
   }
 
-  // the way out, inside the doorway; and the reminder on the arena side
+  // the way in, at the gate: and the warning that there's no coming back
   group.add(
-    decal(2.4, 1.3, 0, ARENA_HALF + 1.8, (ctx) => {
+    decal(3.2, 1.6, 0, FACILITY_HALF + 1.9, (ctx) => {
       arrowUp(ctx, 0.5, 0.15, 1.0);
-      text(ctx, "arena", 0.95, 0.65, 0.4);
-    }),
-  );
-  group.add(
-    decal(3.2, 0.7, 0, ARENA_HALF - 1.2, (ctx) => {
-      text(ctx, "yard · no firing", 0.2, 0.35, 0.3);
+      text(ctx, "facility", 0.95, 0.5, 0.4);
+      text(ctx, "one way — no coming back", 0.95, 1.0, 0.2);
     }),
   );
 
