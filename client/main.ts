@@ -886,6 +886,10 @@ function updateEnemies(incoming: EnemyState[], t: number): void {
     let ce = enemies.get(e.id);
     if (!ce) {
       const mesh = crawler();
+      // a faint red glow at the eyes: in the dark, the pack is seen by its eyes first
+      const eyes = glow(EMIT_RED, 0.55, 0.55);
+      eyes.position.set(0, 0.48, 0.66);
+      mesh.add(eyes);
       const bar = new THREE.Mesh(enemyBarGeometry, new THREE.MeshBasicMaterial({ color: DANGER, depthTest: false }));
       bar.position.set(0, 1.0, 0);
       bar.renderOrder = 10;
@@ -1023,7 +1027,7 @@ function animate(): void {
 // fighting over --- and a countdown between waves.
 const hudEl = document.createElement("div");
 hudEl.style.cssText =
-  "position:fixed;top:12px;left:50%;transform:translateX(-50%);width:min(360px,70vw);font:700 12px system-ui,sans-serif;letter-spacing:0.06em;color:#dfe8f2;text-transform:uppercase;pointer-events:none;display:none;text-align:center";
+  "position:fixed;top:12px;left:50%;transform:translateX(-50%);width:min(360px,70vw);padding:8px 12px;background:rgba(6,8,12,0.72);border-radius:4px;font:700 12px system-ui,sans-serif;letter-spacing:0.06em;color:#dfe8f2;text-transform:uppercase;pointer-events:none;display:none;text-align:center";
 hudEl.innerHTML =
   '<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>reactor</span><span id="hud-wave"></span></div>' +
   '<div style="height:8px;background:rgba(10,14,20,0.8);border:1px solid rgba(90,168,255,0.5);border-radius:2px;overflow:hidden"><div id="hud-hp" style="height:100%;width:100%;background:#5aa8ff;transition:width 0.2s"></div></div>' +

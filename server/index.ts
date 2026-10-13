@@ -495,7 +495,19 @@ function spawnProjectile(owner: PlayerState, aimX: number, aimZ: number, now: nu
   projectiles.set(id, { id, ownerId: owner.id, x, z, dirX, dirZ, firedAt: now, range, travelled: 0 });
 }
 
+/**
+ * For local testing only: DEV_SPAWN="x,z" puts every player there instead
+ * of the safe room, so a scene deep in the facility can be checked without
+ * walking to it. Never set in production (fly.toml doesn't set it).
+ */
+const DEV_SPAWN = process.env.DEV_SPAWN?.split(",").map(Number);
+
 function respawn(player: PlayerState): void {
+  if (DEV_SPAWN && DEV_SPAWN.length === 2 && DEV_SPAWN.every(Number.isFinite)) {
+    player.x = DEV_SPAWN[0];
+    player.z = DEV_SPAWN[1];
+    return;
+  }
   const spawn = SPAWN_POINTS[Math.floor(Math.random() * SPAWN_POINTS.length)];
   player.x = spawn.x;
   player.z = spawn.z;

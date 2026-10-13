@@ -39,22 +39,26 @@ export interface DefenceState {
 }
 
 export const ENEMY_RADIUS = 0.38;
-export const ENEMY_SPEED = 2.4;
+export const ENEMY_SPEED = 2.2;
 export const ENEMY_HIT_POINTS = 3;
 /** how close (centre to the reactor's footprint edge, or to a player) an enemy attacks from */
 export const ENEMY_REACH = 0.7;
 export const ENEMY_ATTACK_INTERVAL_MS = 900;
-/** damage to the reactor per hit, as a share of its total */
-export const ENEMY_REACTOR_DAMAGE = 0.02;
+/**
+ * damage to the reactor per hit, as a share of its total: a whole early
+ * wave chewing on it unopposed takes it down in about half a minute, so a
+ * wave left alone loses the round but a defended one doesn't
+ */
+export const ENEMY_REACTOR_DAMAGE = 0.007;
 /** hits it takes an enemy to break a box blocking its way */
 export const BOX_HIT_POINTS = 6;
 
-export const FIRST_WAVE_DELAY_MS = 8000;
+export const FIRST_WAVE_DELAY_MS = 10000;
 export const WAVE_GAP_MS = 15000;
 /** never more than this many alive at once: the 256 MB machine is the limit */
 export const MAX_ENEMIES = 40;
 /** how many come in wave n (1-based) */
-export const waveSize = (n: number): number => Math.min(4 + n * 3, 30);
+export const waveSize = (n: number): number => Math.min(3 + n * 2, 30);
 /** gap between spawns within a wave */
 export const SPAWN_INTERVAL_MS = 700;
 
