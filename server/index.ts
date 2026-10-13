@@ -18,6 +18,7 @@ import {
   OBSTACLES,
   PERSIST_INTERVAL_MS,
   PICKUP_RANGE,
+  PLAYER_SPEED,
   PROJECTILE_RADIUS,
   PROJECTILE_SPEED,
   PLAY_BOUNDS,
@@ -118,7 +119,13 @@ const server = createServer((req, res) => {
   });
 });
 
-const wss = new WebSocketServer({ server, path: "/ws" });
+// no client message is more than a few hundred bytes: cap frames well below
+// ws's 100 MB default so one connection can't exhaust a 256 MB machine
+const wss = new WebSocketServer({ server, path: "/ws", maxPayload: 4 * 1024 });
+// same for the listener itself and for malformed HTTP (port scanners,
+// half-open connections): log and carry on, never crash the shared world
+wss.on("error", (err) => console.error("ws server error:", err.message));
+server.on("clientError", (_err, sock) => sock.destroy());
 
 interface Connection {
   socket: WebSocket;
@@ -131,7 +138,19 @@ interface Connection {
   lastFireAt: number;
   /** through the one-way gate since the last (re)spawn; in memory only */
   entered: boolean;
+  /** when their last move was accepted, for the speed check */
+  lastMoveAt: number;
+  /** message rate limiting: the current one-second window and how many it's had */
+  windowStart: number;
+  windowCount: number;
 }
+
+/** an honest client sends a move ~20 times a second plus the odd action */
+const MAX_MESSAGES_PER_SECOND = 60;
+/** packets can arrive bunched after a stall: allow up to this long's worth of walking in one move */
+const MOVE_BURST_S = 0.5;
+/** and a margin over walking speed, for timing jitter */
+const MOVE_SLACK = 1.5;
 
 const connections = new Map<string, Connection>();
 
@@ -321,7 +340,7 @@ wss.on("connection", (socket, req) => {
   if (!PLAYER_COLORS.includes(player.color as (typeof PLAYER_COLORS)[number]) || taken.includes(player.color)) {
     player.color = leastUsedColor(taken);
   }
-  const conn: Connection = { socket, player, dirty: true, deadUntil: 0, score: 0, lastFireAt: 0, entered: false };
+  const conn: Connection = { socket, player, dirty: true, deadUntil: 0, score: 0, lastFireAt: 0, entered: false, lastMoveAt: 0, windowStart: 0, windowCount: 0 };
   connections.set(playerId, conn);
 
   const now = Date.now();
@@ -333,8 +352,23 @@ wss.on("connection", (socket, req) => {
   };
   socket.send(JSON.stringify(welcome));
 
+  // a protocol error on one socket (an oversized frame, a bad handshake
+  // byte) is emitted as an 'error' event; with no listener Node treats it as
+  // uncaught and the whole server --- everyone's game --- goes down. Drop
+  // just that connection instead.
+  socket.on("error", () => socket.terminate());
+
   socket.on("message", (raw) => {
-    if (isDead(conn, Date.now())) return; // frozen while waiting to respawn
+    const now = Date.now();
+    // a flood of messages is dropped rather than processed: an honest
+    // client sends ~20 a second, so this only ever catches a broken or
+    // hostile one
+    if (now - conn.windowStart >= 1000) {
+      conn.windowStart = now;
+      conn.windowCount = 0;
+    }
+    if (++conn.windowCount > MAX_MESSAGES_PER_SECOND) return;
+    if (isDead(conn, now)) return; // frozen while waiting to respawn
 
     let msg: ClientMessage;
     try {
@@ -342,10 +376,27 @@ wss.on("connection", (socket, req) => {
     } catch {
       return;
     }
+    // valid JSON isn't necessarily an object (null, a number): never let a
+    // malformed message throw, or one client could take the server down
+    if (typeof msg !== "object" || msg === null || typeof msg.type !== "string") return;
     if (msg.type === "move") {
       const move = msg as MoveMessage;
-      if (!Number.isFinite(move.x) || !Number.isFinite(move.z)) return;
-      const clamped = clampToPlayBounds(move.x, move.z);
+      if (!Number.isFinite(move.x) || !Number.isFinite(move.z) || !Number.isFinite(move.rotation)) return;
+      // no teleporting: a move can only cover as far as the player could
+      // have walked since the last one (with slack for packets that arrive
+      // bunched up); a longer claim is cut short along the way
+      // (the first move after joining or respawning gets one tick's worth, not a burst)
+      const elapsed = conn.lastMoveAt === 0 ? BROADCAST_INTERVAL_MS / 1000 : (now - conn.lastMoveAt) / 1000;
+      const budget = PLAYER_SPEED * Math.min(MOVE_BURST_S, elapsed) * MOVE_SLACK + 0.05;
+      conn.lastMoveAt = now;
+      let tx = move.x;
+      let tz = move.z;
+      const dist = Math.hypot(tx - conn.player.x, tz - conn.player.z);
+      if (dist > budget) {
+        tx = conn.player.x + ((tx - conn.player.x) / dist) * budget;
+        tz = conn.player.z + ((tz - conn.player.z) / dist) * budget;
+      }
+      const clamped = clampToPlayBounds(tx, tz);
       const resolved = resolveObstacles(clamped.x, clamped.z, obstaclesFor(conn.entered, worldObstacles(items.values())));
       // walls stop a walking player, but a client could still claim a
       // jump straight to the far side of one --- or back through the gate
@@ -371,6 +422,7 @@ wss.on("connection", (socket, req) => {
     }
 
     if (msg.type === "pickup") {
+      if (typeof msg.itemId !== "string") return;
       const item = items.get(msg.itemId);
       if (!item || item.heldBy !== undefined || heldItem(playerId)) return;
       const reach = Math.hypot(item.x - conn.player.x, item.z - conn.player.z);
@@ -510,6 +562,7 @@ function processRespawns(now: number): void {
     if (conn.deadUntil !== 0 && now >= conn.deadUntil) {
       respawn(conn.player);
       conn.entered = false;
+      conn.lastMoveAt = 0;
       conn.deadUntil = 0;
       conn.dirty = true;
     }

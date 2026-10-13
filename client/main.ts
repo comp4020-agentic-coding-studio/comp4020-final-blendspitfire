@@ -39,6 +39,7 @@ import {
   ITEM_KINDS,
   OBSTACLES,
   PICKUP_RANGE,
+  PLAYER_SPEED,
   PLACE_RANGE,
   MUZZLE_OFFSET,
   segmentHitsCircle,
@@ -933,7 +934,6 @@ function stepRemotes(): void {
   }
 }
 
-const SPEED = 6;
 // Decoupled from the render loop so the network doesn't get a message per
 // animation frame; matches the server's own broadcast cadence.
 const MOVE_SEND_INTERVAL_MS = BROADCAST_INTERVAL_MS;
@@ -960,8 +960,8 @@ function animate(): void {
         dx /= len;
         dz /= len;
         const next = clampToPlayBounds(
-          localMesh.position.x + dx * SPEED * dt,
-          localMesh.position.z + dz * SPEED * dt,
+          localMesh.position.x + dx * PLAYER_SPEED * dt,
+          localMesh.position.z + dz * PLAYER_SPEED * dt,
         );
         // predict the gate shutting the moment we're through, rather than a round-trip later
         if (!myEntered && hasPassedGate(localMesh.position.z)) myEntered = true;

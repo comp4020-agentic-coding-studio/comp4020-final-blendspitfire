@@ -520,6 +520,8 @@ export const STATION_RESTOCK_MS = 3000;
 export const ITEM_CAPS: Record<ItemKind, number> = { gun: 12, box: 30 };
 
 export const PLAYER_RADIUS = 0.4;
+/** walking speed, units/second: the client moves at it and the server won't accept faster */
+export const PLAYER_SPEED = 6;
 
 /** a box resting in the world, as an obstacle: it blocks players and projectiles */
 export function boxObstacle(item: { x: number; z: number }): Obstacle {
