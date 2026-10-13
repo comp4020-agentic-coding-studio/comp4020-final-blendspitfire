@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import { readFile, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
-import { loadItems, loadObjective, loadOrCreatePlayer, saveWorld, savePlayer } from "./db.ts";
+import { loadDefence, loadItems, loadObjective, loadOrCreatePlayer, saveWorld, savePlayer } from "./db.ts";
+import { Defence } from "./defence.ts";
 import { PLAYER_COLORS } from "../shared/palette.ts";
 import {
   BROADCAST_INTERVAL_MS,
@@ -183,6 +184,28 @@ if (saved) {
   console.log("world: fresh, seeded the starting items");
 }
 
+// Announcements: short lines every client shows across the screen (a new
+// wave, the reactor going down). Queued and sent with the next broadcast.
+let pendingAnnouncements: string[] = [];
+function announce(text: string): void {
+  pendingAnnouncements.push(text);
+}
+
+const defence = new Defence(
+  {
+    objective,
+    items,
+    players: () => [...connections.values()].filter((c) => !isDead(c, Date.now())).map((c) => c.player),
+    hurtPlayer: (id, now) => {
+      const conn = connections.get(id);
+      if (conn && !isDead(conn, now)) kill(conn, now);
+    },
+    changed: markWorldDirty,
+    announce,
+  },
+  loadDefence(),
+);
+
 function spawnItem(kind: ItemKind, x: number, z: number): void {
   const id = randomUUID();
   items.set(id, { id, kind, x, z });
@@ -340,6 +363,8 @@ wss.on("connection", (socket, req) => {
       const verdict = activateVerdict(conn.player, heldItem(playerId) !== undefined, objective);
       if (verdict === "ok") {
         objective.active = true;
+        defence.start(Date.now());
+        announce("the reactor is live — hold it");
         markWorldDirty();
       }
       return;
@@ -456,16 +481,28 @@ function stepProjectiles(now: number): void {
       p.travelled = p.range;
       continue;
     }
-    p.travelled = at;
-    if (victim) {
+    // an enemy nearer along the line than any player takes the shot instead
+    const enemyHit = defence.firstHit(p.x, p.z, p.dirX, p.dirZ, p.travelled, at);
+    p.travelled = enemyHit ? enemyHit.at : at;
+    if (enemyHit) {
+      p.range = enemyHit.at;
+      if (defence.damage(enemyHit.id)) {
+        const ownerConn = connections.get(p.ownerId);
+        if (ownerConn) ownerConn.score += 1;
+      }
+    } else if (victim) {
       p.range = at;
-      victim.deadUntil = now + DEATH_DURATION_MS;
-      victim.dirty = true;
-      dropHeld(victim.player);
+      kill(victim, now);
       const ownerConn = connections.get(p.ownerId);
       if (ownerConn) ownerConn.score += victim.player.id === p.ownerId ? -1 : 1;
     }
   }
+}
+
+function kill(conn: Connection, now: number): void {
+  conn.deadUntil = now + DEATH_DURATION_MS;
+  conn.dirty = true;
+  dropHeld(conn.player);
 }
 
 function processRespawns(now: number): void {
@@ -482,6 +519,7 @@ function processRespawns(now: number): void {
 setInterval(() => {
   if (connections.size === 0) return;
   const now = Date.now();
+  defence.step(now, BROADCAST_INTERVAL_MS / 1000);
   stepProjectiles(now);
   processRespawns(now);
   restockStations(now);
@@ -503,7 +541,11 @@ setInterval(() => {
     projectiles: projectileList,
     items: [...items.values()],
     objective,
+    enemies: defence.snapshot(),
+    defence: defence.state,
+    announcements: pendingAnnouncements.length ? pendingAnnouncements : undefined,
   };
+  pendingAnnouncements = [];
   const payload = JSON.stringify(state);
   for (const conn of connections.values()) {
     if (conn.socket.readyState === conn.socket.OPEN) conn.socket.send(payload);
@@ -513,7 +555,7 @@ setInterval(() => {
 function flushWorld(): void {
   if (!worldDirty) return;
   worldDirty = false;
-  saveWorld(items.values(), objective, (id) => connections.get(id)?.player);
+  saveWorld(items.values(), objective, defence.state, (id) => connections.get(id)?.player);
 }
 
 function flushPlayers(): void {

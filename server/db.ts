@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ItemState, ObjectiveState, PlayerState } from "../shared/protocol.ts";
+import type { DefenceState } from "../shared/enemies.ts";
 import { PLAYER_COLORS } from "../shared/palette.ts";
 
 const DB_PATH = process.env.DB_PATH ?? "/data/game.db";
@@ -63,6 +64,15 @@ export function loadObjective(): ObjectiveState {
   return row ? (JSON.parse(row.value) as ObjectiveState) : { active: false };
 }
 
+/** the reactor's health and the wave count, so a restart mid-attack picks up where it was */
+export function loadDefence(): DefenceState | undefined {
+  const row = getWorldStmt.get("defence") as { value: string } | undefined;
+  if (!row) return undefined;
+  const d = JSON.parse(row.value) as DefenceState;
+  // a wave timer from before the restart means nothing now
+  return { reactorHealth: d.reactorHealth, wave: d.wave };
+}
+
 /**
  * Write the whole world in one transaction: a few dozen rows, so replacing
  * them all is simpler than tracking each change and still cheap.
@@ -71,6 +81,7 @@ export function loadObjective(): ObjectiveState {
 export function saveWorld(
   items: Iterable<ItemState>,
   objective: ObjectiveState,
+  defence: DefenceState,
   positionOf: (playerId: string) => { x: number; z: number } | undefined,
 ): void {
   db.exec("BEGIN");
@@ -81,6 +92,7 @@ export function saveWorld(
       insertItemStmt.run(item.id, item.kind, at.x, at.z);
     }
     setWorldStmt.run("objective", JSON.stringify(objective));
+    setWorldStmt.run("defence", JSON.stringify(defence));
     setWorldStmt.run("seeded", "1");
     db.exec("COMMIT");
   } catch (err) {

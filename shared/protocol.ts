@@ -1,3 +1,5 @@
+import type { DefenceState, EnemyState } from "./enemies.ts";
+
 export interface PlayerState {
   id: string;
   color: string;
@@ -33,6 +35,10 @@ export interface StateMessage {
   projectiles: ProjectileState[];
   items: ItemState[];
   objective: ObjectiveState;
+  enemies: EnemyState[];
+  defence: DefenceState;
+  /** one-off lines to show everyone (a wave starting, the reactor going down) */
+  announcements?: string[];
 }
 
 export interface MoveMessage {
@@ -454,9 +460,17 @@ export const FIXTURES: Fixture[] = [
   fixture("crates", -12.2, -16.5, 1, 1, 0.5),
 ];
 
-export const OBSTACLES: Obstacle[] = [...WALLS, ...FIXTURES];
-
 export const REACTOR = FIXTURES.find((f) => f.kind === "reactor")!;
+/**
+ * The reactor's solid body, for collision. Its footprint above is the
+ * whole plinth it stands on (what gets drawn), but the plinth is only
+ * knee-high: people stand on its rim to defend the reactor and shoot past
+ * it, so only the cylinder in the middle blocks movement and shots.
+ */
+export const REACTOR_BODY: Obstacle = { x: REACTOR.x, z: REACTOR.z, halfX: 1.5, halfZ: 1.5, halfHeight: REACTOR.halfHeight };
+
+export const OBSTACLES: Obstacle[] = [...WALLS, ...FIXTURES.map((f) => (f === REACTOR ? REACTOR_BODY : f))];
+
 /** how close (centre to centre) a player has to be to switch the reactor on */
 export const ACTIVATE_RANGE = REACTOR.halfX + PICKUP_RANGE;
 

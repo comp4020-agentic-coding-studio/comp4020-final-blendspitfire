@@ -2,6 +2,7 @@ import * as THREE from "three";
 import {
   ALUMINIUM,
   CLOTH,
+  EMIT_RED,
   FLOOR,
   HAIR,
   HAZARD,
@@ -213,6 +214,48 @@ export function equipmentCaseGeometry(): THREE.BufferGeometry {
 
 export function equipmentCase(): THREE.Mesh {
   return outlined(mesh(equipmentCaseGeometry()));
+}
+
+/**
+ * What comes through the breaches: a hunched, eyeless-looking thing on
+ * four legs, the colour of old meat and wet concrete (greyed, inside the
+ * gamut) --- except for two small red eyes, its one emitter, so it's found
+ * in the dark by its eyes before its shape. Low and wide from above, so it
+ * never reads as a player.
+ */
+export function crawler(): THREE.Group {
+  const flesh = surfaceVersion(0x8a4a3a, 0.4);
+  const hide = surfaceVersion(0x5a5048, 0.32);
+  const body = merge(
+    [
+      // torso: a low, wide wedge, heavier at the shoulders
+      part(new THREE.CylinderGeometry(0.26, 0.34, 0.7, 6, 1), hide.base, 0, 0.42, -0.05, PI / 2, 0, 0, 1.1, 0.8),
+      part(new THREE.IcosahedronGeometry(0.3, 0), flesh.base, 0, 0.5, 0.22, 0, 0, 0, 1.15, 0.9),
+      // spine ridges, what shows from straight above
+      part(box(0.1, 0.12, 0.12), flesh.shade, 0, 0.72, 0.1),
+      part(box(0.09, 0.1, 0.11), flesh.shade, 0, 0.68, -0.1),
+      part(box(0.08, 0.08, 0.1), flesh.shade, 0, 0.62, -0.28),
+      // head, thrust forward and low
+      part(new THREE.IcosahedronGeometry(0.17, 0), flesh.light, 0, 0.42, 0.5, 0, 0, 0, 1, 1.25),
+      part(box(0.2, 0.06, 0.14), hide.shade, 0, 0.32, 0.6),
+      // four splayed legs
+      ...[
+        [-1, 1],
+        [1, 1],
+        [-1, -1],
+        [1, -1],
+      ].flatMap(([sx, sz]) => [
+        part(box(0.09, 0.3, 0.09), hide.base, sx * 0.3, 0.3, sz * 0.22, sz * 0.3, 0, -sx * 0.6),
+        part(box(0.08, 0.28, 0.08), hide.shade, sx * 0.44, 0.12, sz * 0.28, 0, 0, sx * 0.2),
+      ]),
+    ],
+    "ground",
+    0.25,
+  );
+  const eyes = [-1, 1].map((s) => glowPart(box(0.05, 0.04, 0.03), EMIT_RED, s * 0.07, 0.46, 0.66));
+  const g = multiMesh({ matte: [body], emissive: eyes });
+  outlined(g.children[0] as THREE.Mesh, 0.025);
+  return g;
 }
 
 /** A plain stretch of facility floor, for model-sheet backdrops. */

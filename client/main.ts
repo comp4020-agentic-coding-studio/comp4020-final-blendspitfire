@@ -10,6 +10,7 @@ import {
   HELD_GUN_OFFSET,
   SHOULDER_LAMP,
   character,
+  crawler,
   equipmentCase,
   gun,
   heldGun,
@@ -19,6 +20,7 @@ import { mesh } from "./models/kit.ts";
 import { LAMPS, LAMP_SPECS } from "./world/dressing.ts";
 import { ACCENT, STENCIL, DANGER, OK, EMIT_GREEN, EMIT_RED, EMIT_TRACER } from "../shared/palette.ts";
 import { INTERP_DELAY_MS, ServerClock, SnapshotBuffer, Tracer } from "./netsync.ts";
+import { ENEMY_RADIUS, type DefenceState, type EnemyState } from "../shared/enemies.ts";
 import {
   BOX_HALF_EXTENT,
   BREACHES,
@@ -39,6 +41,7 @@ import {
   PICKUP_RANGE,
   PLACE_RANGE,
   MUZZLE_OFFSET,
+  segmentHitsCircle,
   shotRange,
   activateVerdict,
   clampToPlayBounds,
@@ -618,6 +621,8 @@ function clearSceneState(): void {
   pendingShots.length = 0;
   for (const item of items.values()) removeItem(item);
   items.clear();
+  for (const e of enemies.values()) scene.remove(e.mesh);
+  enemies.clear();
   obstacles = OBSTACLES;
 }
 
@@ -640,11 +645,13 @@ const net = connect({
     }
     renderLeaderboard(players);
   },
-  onState(t, players, incomingProjectiles, incomingItems, incomingObjective) {
+  onState(state) {
+    const { t, players } = state;
     serverClock.observe(t);
     const seenPlayers = new Set<string>();
-    if (incomingObjective.active && !objective.active) showBanner("reactor active — defend it");
-    objective = incomingObjective;
+    objective = state.objective;
+    defenceState = state.defence;
+    for (const line of state.announcements ?? []) showBanner(line);
     for (const p of players) {
       if (p.id === myId) {
         myRespawnAt = p.respawnAt ?? 0;
@@ -667,8 +674,9 @@ const net = connect({
         remotes.delete(id);
       }
     }
-    updateProjectiles(incomingProjectiles);
-    updateItems(incomingItems);
+    updateProjectiles(state.projectiles);
+    updateItems(state.items);
+    updateEnemies(state.enemies, t);
     renderLeaderboard(players);
   },
 });
@@ -732,7 +740,12 @@ function firePredictedShot(): void {
   }
   const x = localMesh.position.x + dx * MUZZLE_OFFSET;
   const z = localMesh.position.z + dz * MUZZLE_OFFSET;
-  const range = shotRange(x, z, dx, dz, obstacles);
+  let range = shotRange(x, z, dx, dz, obstacles);
+  // stop at the first crawler on the line too, as the server will
+  for (const ce of enemies.values()) {
+    const t = segmentHitsCircle(x, z, dx, dz, 0, range, ce.drawn.x, ce.drawn.z, ENEMY_RADIUS + 0.05);
+    if (t !== undefined) range = t;
+  }
   const tracer = new Tracer(
     { id: `local-${localShotSeq++}`, ownerId: myId ?? "", x, z, dirX: dx, dirZ: dz, firedAt: serverClock.now(), range },
     tracerMaterial,
@@ -848,6 +861,69 @@ function addOrUpdateRemote(p: PlayerState, t: number): void {
   remote.mesh.visible = p.respawnAt === undefined;
 }
 
+// --- Enemies -----------------------------------------------------------------
+// Drawn like other players: played back from snapshots, a little in the
+// past, so they move smoothly however the updates arrive. A health bar over
+// each once it's been hit, and a flash when a shot lands.
+
+interface ClientEnemy {
+  mesh: THREE.Object3D;
+  snaps: SnapshotBuffer;
+  drawn: { x: number; z: number; rotation: number };
+  health: number;
+  bar: THREE.Mesh;
+  hitUntil: number;
+}
+const enemies = new Map<string, ClientEnemy>();
+let defenceState: DefenceState = { reactorHealth: 1, wave: 0 };
+const enemyBarGeometry = new THREE.PlaneGeometry(0.7, 0.07).rotateX(-Math.PI / 2);
+
+function updateEnemies(incoming: EnemyState[], t: number): void {
+  const seen = new Set<string>();
+  for (const e of incoming) {
+    seen.add(e.id);
+    let ce = enemies.get(e.id);
+    if (!ce) {
+      const mesh = crawler();
+      const bar = new THREE.Mesh(enemyBarGeometry, new THREE.MeshBasicMaterial({ color: DANGER, depthTest: false }));
+      bar.position.set(0, 1.0, 0);
+      bar.renderOrder = 10;
+      bar.visible = false;
+      mesh.add(bar);
+      mesh.position.set(e.x, 0, e.z);
+      scene.add(mesh);
+      ce = { mesh, snaps: new SnapshotBuffer(), drawn: { x: e.x, z: e.z, rotation: e.rotation }, health: e.health, bar, hitUntil: 0 };
+      enemies.set(e.id, ce);
+    }
+    if (e.health < ce.health) ce.hitUntil = performance.now() + 120;
+    ce.health = e.health;
+    ce.snaps.push(t, e.x, e.z, e.rotation);
+  }
+  for (const [id, ce] of enemies) {
+    if (!seen.has(id)) {
+      scene.remove(ce.mesh);
+      enemies.delete(id);
+    }
+  }
+}
+
+function stepEnemies(time: number): void {
+  const t = serverClock.now() - INTERP_DELAY_MS;
+  const now = performance.now();
+  for (const ce of enemies.values()) {
+    ce.snaps.sample(t, ce.drawn);
+    // a scuttle: a small bob and sway while they move
+    const bob = Math.sin(time * 14 + ce.drawn.x * 3) * 0.03;
+    ce.mesh.position.set(ce.drawn.x, bob, ce.drawn.z);
+    ce.mesh.rotation.y = ce.drawn.rotation;
+    ce.bar.visible = ce.health < 1;
+    ce.bar.scale.x = Math.max(0.02, ce.health);
+    // flash on a hit: brief scale pop
+    const s = now < ce.hitUntil ? 1.15 : 1;
+    ce.mesh.scale.setScalar(s);
+  }
+}
+
 function stepRemotes(): void {
   const t = serverClock.now() - INTERP_DELAY_MS;
   for (const remote of remotes.values()) {
@@ -929,6 +1005,8 @@ function animate(): void {
   gateGroup.visible = true;
 
   stepRemotes();
+  stepEnemies(time);
+  renderDefenceHud();
   stepTracers();
   stepMuzzleFlash();
   stepItemVisuals(time);
@@ -940,10 +1018,36 @@ function animate(): void {
   requestAnimationFrame(animate);
 }
 
+// The defence HUD: while the reactor is live, its health and the wave
+// across the top of the screen --- the one number the whole room is
+// fighting over --- and a countdown between waves.
+const hudEl = document.createElement("div");
+hudEl.style.cssText =
+  "position:fixed;top:12px;left:50%;transform:translateX(-50%);width:min(360px,70vw);font:700 12px system-ui,sans-serif;letter-spacing:0.06em;color:#dfe8f2;text-transform:uppercase;pointer-events:none;display:none;text-align:center";
+hudEl.innerHTML =
+  '<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>reactor</span><span id="hud-wave"></span></div>' +
+  '<div style="height:8px;background:rgba(10,14,20,0.8);border:1px solid rgba(90,168,255,0.5);border-radius:2px;overflow:hidden"><div id="hud-hp" style="height:100%;width:100%;background:#5aa8ff;transition:width 0.2s"></div></div>' +
+  '<div id="hud-next" style="margin-top:4px;opacity:0.75"></div>';
+document.body.appendChild(hudEl);
+const hudHp = hudEl.querySelector<HTMLDivElement>("#hud-hp")!;
+const hudWave = hudEl.querySelector<HTMLSpanElement>("#hud-wave")!;
+const hudNext = hudEl.querySelector<HTMLDivElement>("#hud-next")!;
+function renderDefenceHud(): void {
+  hudEl.style.display = objective.active ? "block" : "none";
+  if (!objective.active) return;
+  const hp = defenceState.reactorHealth;
+  hudHp.style.width = `${Math.round(hp * 100)}%`;
+  // the bar turns from the reactor's blue to alarm red as it's worn down
+  hudHp.style.background = hp > 0.5 ? "#5aa8ff" : hp > 0.25 ? "#ffa02e" : "#ff3346";
+  hudWave.textContent = defenceState.wave > 0 ? `wave ${defenceState.wave}` : "";
+  const next = defenceState.nextWaveAt;
+  hudNext.textContent = next ? `next wave in ${Math.max(0, Math.ceil((next - serverClock.now()) / 1000))}s` : enemies.size ? `${enemies.size} hostile` : "";
+}
+
 // The objective banner: a line across the top of the screen when the reactor goes live.
 const bannerEl = document.createElement("div");
 bannerEl.style.cssText =
-  "position:fixed;top:14%;left:50%;transform:translateX(-50%);padding:10px 22px;font:700 20px system-ui,sans-serif;letter-spacing:0.08em;color:#e6f0ff;background:rgba(10,14,20,0.75);border:1px solid rgba(90,168,255,0.6);border-radius:4px;pointer-events:none;opacity:0;transition:opacity 0.6s;text-transform:uppercase";
+  "position:fixed;top:18%;left:50%;transform:translateX(-50%);padding:10px 22px;font:700 20px system-ui,sans-serif;letter-spacing:0.08em;color:#e6f0ff;background:rgba(10,14,20,0.75);border:1px solid rgba(90,168,255,0.6);border-radius:4px;pointer-events:none;opacity:0;transition:opacity 0.6s;text-transform:uppercase";
 document.body.appendChild(bannerEl);
 function showBanner(text: string): void {
   bannerEl.textContent = text;

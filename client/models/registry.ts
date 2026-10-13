@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { PLAYER_COLORS } from "../../shared/palette.ts";
 import type { FixtureKind } from "../../shared/protocol.ts";
-import { GUN_REST_HEIGHT, character, equipmentCase, gun, heldGun, HELD_GUN_OFFSET } from "./index.ts";
+import { GUN_REST_HEIGHT, character, crawler, equipmentCase, gun, heldGun, HELD_GUN_OFFSET } from "./index.ts";
 import { fixtureModel } from "./facility.ts";
 
 // Every reviewable asset in one list. The model sheet (/gallery.html) is
@@ -13,6 +13,7 @@ import { fixtureModel } from "./facility.ts";
 /** triangle budgets per category (docs/art-and-interaction.md) */
 export const BUDGETS = {
   character: 700,
+  enemy: 500,
   /** a character with what they're holding */
   carrying: 1000,
   handheld: 300,
@@ -61,6 +62,7 @@ export const ASSETS: AssetEntry[] = [
     frame: 1.8,
   },
   { id: "equipment case (box item)", category: "item", build: equipmentCase, frame: 1.8 },
+  { id: "crawler (enemy)", category: "enemy", build: crawler, frame: 2 },
   fixture("blastDoor", 4, 0.6, 2.5, 6),
   fixture("barrier", 2, 0.68, 0.8, 3),
   fixture("bench", 5, 1.2, 0.9, 6),
