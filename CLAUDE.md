@@ -71,6 +71,14 @@ cost $1.70 in a single request. Images and file reads matter far less.
   a new one each time.
 - **Don't re-read files already in context, and keep replies compact.**
 
+## Committing
+
+Commit on your own; don't wait to be asked. Once a change is finished and
+verified (`pnpm check` green, plus whatever screenshot or repro the change
+needed), commit it locally with a message that says what changed and why.
+One logical change per commit. Pushing is different: a push to `main`
+deploys the live game, so never push unless I say so.
+
 ## Session handoff
 
 `.claude/notes/handoff.md` (gitignored, local only) is the agent's own
