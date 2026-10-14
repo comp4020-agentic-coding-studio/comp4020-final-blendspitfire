@@ -92,15 +92,21 @@ export function setupLighting(scene: THREE.Scene, reactor?: { x: number; z: numb
 }
 
 /**
- * The local player's torch: a spotlight from the shoulder in the aim
- * direction, and the only shadow-casting light --- its shadows swing as
- * you turn, the thing that makes a dark room feel unsafe.
+ * The local player's torch: a headlamp at the front edge of the cap brim,
+ * pointing where you aim, and the only shadow-casting light --- its shadows
+ * swing as you turn, the thing that makes a dark room feel unsafe. Sitting
+ * at the brim's edge, your head and cap are behind it while your hands and
+ * whatever you hold are in front and below, so they throw a shadow down the
+ * beam the way a real headlamp would.
  */
+/** the headlamp's place on a character: the front edge of the cap brim */
+const HEADLAMP = { y: 1.43, forward: 0.37 };
+
 export function createTorch(scene: THREE.Scene): { light: THREE.SpotLight; aim(x: number, z: number, rotation: number): void } {
   const light = new THREE.SpotLight(LIGHT_INCANDESCENT, 18, 13, 0.62, 0.55, 1.4);
   light.castShadow = true;
   light.shadow.mapSize.set(512, 512);
-  light.shadow.camera.near = 0.3;
+  light.shadow.camera.near = 0.1;
   light.shadow.camera.far = 14;
   light.shadow.bias = -0.002;
   scene.add(light);
@@ -108,7 +114,7 @@ export function createTorch(scene: THREE.Scene): { light: THREE.SpotLight; aim(x
   return {
     light,
     aim(x, z, rotation) {
-      light.position.set(x, 1.5, z);
+      light.position.set(x + Math.sin(rotation) * HEADLAMP.forward, HEADLAMP.y, z + Math.cos(rotation) * HEADLAMP.forward);
       light.target.position.set(x + Math.sin(rotation) * 4, 0.2, z + Math.cos(rotation) * 4);
     },
   };

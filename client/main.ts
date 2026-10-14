@@ -220,21 +220,8 @@ function isDead(): boolean {
   return myRespawnAt !== 0;
 }
 
-/**
- * Whether an object (and everything on it) casts shadows. Your own body and
- * whatever you're holding never shadow your own torch: the light sits at
- * your shoulder, so your cap brim and gun would throw a huge shadow down
- * the beam right in front of you. Everyone and everything else still does.
- */
-function setCastShadow(obj: THREE.Object3D, cast: boolean): void {
-  obj.traverse((o) => {
-    if ((o as THREE.Mesh).isMesh) o.castShadow = cast;
-  });
-}
-
 function makeCharacter(color: string, mine: boolean): THREE.Object3D {
   const mesh = character(color);
-  if (mine) setCastShadow(mesh, false);
   // the shoulder lamp's halo: the one vivid thing on a player, so they're findable in the dark
   const halo = glow(new THREE.Color(color).getHex(), 0.7, 0.8);
   halo.position.set(SHOULDER_LAMP.x, SHOULDER_LAMP.y + 0.05, SHOULDER_LAMP.z + 0.1);
@@ -509,10 +496,7 @@ function stepItemVisuals(time: number): void {
     }
     lying.visible = false;
     const holder = holderMesh(state.heldBy);
-    if (holder && held.parent !== holder) {
-      holder.add(held);
-      setCastShadow(held, holder !== localMesh);
-    }
+    if (holder && held.parent !== holder) holder.add(held);
     if (!holder) held.removeFromParent();
   }
 
