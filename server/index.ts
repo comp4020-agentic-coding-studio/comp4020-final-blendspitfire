@@ -217,10 +217,10 @@ const defence = new Defence(
   {
     objective,
     items,
-    players: () => [...connections.values()].filter((c) => !isDead(c, Date.now())).map((c) => c.player),
+    players: () => [...connections.values()].filter((c) => !isDead(c)).map((c) => c.player),
     hurtPlayer: (id, now) => {
       const conn = connections.get(id);
-      if (conn && !isDead(conn, now)) kill(conn, now);
+      if (conn && !isDead(conn)) kill(conn, now);
     },
     changed: markWorldDirty,
     announce,
@@ -278,7 +278,7 @@ function dropHeld(player: PlayerState): void {
 }
 
 function livingPlayers(now: number): PlayerState[] {
-  return [...connections.values()].filter((c) => !isDead(c, now)).map((c) => c.player);
+  return [...connections.values()].filter((c) => !isDead(c)).map((c) => c.player);
 }
 
 function handlePrimary(conn: Connection, x: number, z: number, now: number): void {
@@ -309,14 +309,20 @@ function handlePrimary(conn: Connection, x: number, z: number, now: number): voi
   }
 }
 
-function isDead(conn: Connection, now: number): boolean {
-  return conn.deadUntil > now;
+/**
+ * Dead until the server has actually moved them back to the safe room ---
+ * not merely until the timer runs out. Between the two (up to one tick) a
+ * player counted as alive would still be standing where they died, and
+ * anything there would kill them again the moment the timer expired.
+ */
+function isDead(conn: Connection): boolean {
+  return conn.deadUntil !== 0;
 }
 
 function netPlayer(conn: Connection, now: number): PlayerState {
   return {
     ...conn.player,
-    respawnAt: isDead(conn, now) ? conn.deadUntil : undefined,
+    respawnAt: isDead(conn) ? conn.deadUntil : undefined,
     score: conn.score,
     entered: conn.entered ? true : undefined,
   };
@@ -338,7 +344,7 @@ wss.on("connection", (socket, req) => {
   const player = loadOrCreatePlayer(playerId);
   // Everyone starts in the yard: the saved position only matters while
   // connected (it's what a reconnect mid-session would otherwise restore).
-  respawn(player);
+  respawn(player, true);
   const taken = [...connections.values()].map((c) => c.player.color);
   if (!PLAYER_COLORS.includes(player.color as (typeof PLAYER_COLORS)[number]) || taken.includes(player.color)) {
     player.color = leastUsedColor(taken);
@@ -371,7 +377,7 @@ wss.on("connection", (socket, req) => {
       conn.windowCount = 0;
     }
     if (++conn.windowCount > MAX_MESSAGES_PER_SECOND) return;
-    if (isDead(conn, now)) return; // frozen while waiting to respawn
+    if (isDead(conn)) return; // frozen while waiting to respawn
 
     let msg: ClientMessage;
     try {
@@ -499,16 +505,23 @@ function spawnProjectile(owner: PlayerState, aimX: number, aimZ: number, now: nu
 }
 
 /**
- * For local testing only: DEV_SPAWN="x,z" puts every player there instead
- * of the safe room, so a scene deep in the facility can be checked without
- * walking to it. Never set in production (fly.toml doesn't set it).
+ * For local testing only, never set in production (fly.toml doesn't):
+ * DEV_SPAWN="x,z" puts every player there instead of the safe room, every
+ * time; DEV_JOIN="x,z" only on joining, so deaths still respawn normally.
+ * Lets a scene deep in the facility be checked without walking to it.
  */
-const DEV_SPAWN = process.env.DEV_SPAWN?.split(",").map(Number);
+const devPoint = (v: string | undefined) => {
+  const p = v?.split(",").map(Number);
+  return p && p.length === 2 && p.every(Number.isFinite) ? { x: p[0], z: p[1] } : undefined;
+};
+const DEV_SPAWN = devPoint(process.env.DEV_SPAWN);
+const DEV_JOIN = devPoint(process.env.DEV_JOIN);
 
-function respawn(player: PlayerState): void {
-  if (DEV_SPAWN && DEV_SPAWN.length === 2 && DEV_SPAWN.every(Number.isFinite)) {
-    player.x = DEV_SPAWN[0];
-    player.z = DEV_SPAWN[1];
+function respawn(player: PlayerState, joining = false): void {
+  const dev = DEV_SPAWN ?? (joining ? DEV_JOIN : undefined);
+  if (dev) {
+    player.x = dev.x;
+    player.z = dev.z;
     return;
   }
   const spawn = SPAWN_POINTS[Math.floor(Math.random() * SPAWN_POINTS.length)];
@@ -533,7 +546,7 @@ function stepProjectiles(now: number): void {
     let victim: Connection | undefined;
     let at = reach;
     for (const conn of connections.values()) {
-      if (isDead(conn, now)) continue;
+      if (isDead(conn)) continue;
       const t = segmentHitsCircle(p.x, p.z, p.dirX, p.dirZ, p.travelled, at, conn.player.x, conn.player.z, HIT_RADIUS);
       if (t !== undefined && t <= at) {
         victim = conn;
@@ -587,9 +600,11 @@ function processRespawns(now: number): void {
 setInterval(() => {
   if (connections.size === 0) return;
   const now = Date.now();
+  // respawn first: someone whose timer just ran out is back in the safe
+  // room before enemies or shots get a turn at them
+  processRespawns(now);
   defence.step(now, BROADCAST_INTERVAL_MS / 1000);
   stepProjectiles(now);
-  processRespawns(now);
   restockStations(now);
   const players = [...connections.values()].map((c) => netPlayer(c, now));
   const projectileList: ProjectileState[] = [...projectiles.values()].map((p) => ({

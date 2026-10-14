@@ -210,8 +210,14 @@ const connectionLostEl = document.getElementById("connection-lost")!;
 const controlsEl = document.getElementById("controls")!;
 const tipEl = document.getElementById("tip")!;
 
+/**
+ * Dead for as long as the server says so --- not until this machine's own
+ * clock passes the respawn time. Deciding locally let the client think it
+ * was alive a moment early and send a move from where it died, which put it
+ * back among whatever had just killed it.
+ */
 function isDead(): boolean {
-  return Date.now() < myRespawnAt;
+  return myRespawnAt !== 0;
 }
 
 function makeCharacter(color: string, mine: boolean): THREE.Object3D {
@@ -986,7 +992,7 @@ function animate(): void {
     localMesh.visible = !dead;
     respawnEl.style.display = dead ? "block" : "none";
     if (dead) {
-      respawnEl.textContent = `${Math.ceil((myRespawnAt - Date.now()) / 1000)}`;
+      respawnEl.textContent = `${Math.max(1, Math.ceil((myRespawnAt - serverClock.now()) / 1000))}`;
     }
 
     camera.position.set(localMesh.position.x, CAMERA_ALTITUDE, localMesh.position.z);
