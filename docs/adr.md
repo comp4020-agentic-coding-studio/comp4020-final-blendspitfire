@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-10-14, Ceiling lamps visible in top-down view
+Synced from the draft up to: 2026-10-14, Autonomous round
 
 ---
 
@@ -435,3 +435,20 @@ Suggested minimal topology: safe room, one main corridor (bottleneck), a fork in
 **Decision.** A and B combined (the developer's call). Narrow rooms and room edges get wall lamps; lights in the middle of rooms stay overhead with no visible fixture and a faint floor pool as the halo. The intake room got an extra overhead fill bulb.
 
 **Why.** It keeps the lighting look. Walls are in view, so wall lamps read as real. The ceiling is implicitly above the camera's cut, the same logic as the black wall tops.
+
+## ADR-035: Autonomous round: full-auto, wounds, enemy targeting, permadeath with spectating
+*2026-10-14 · Status: Proposed (built; awaiting the developer's playtest)*
+
+**Context.** The developer listed future directions (lighting option C, a full-auto rifle, smarter enemy AI, simple wounds, permadeath with spectating, a resource loop, a tutorial prep room), then left the agent alone for about an hour to choose its own work, with the instruction to leave anything it was very unsure about.
+
+**Options.** The agent took the items that complete existing mechanics and need little aesthetic judgement. It left lighting C and the "fewer, wider lamps" change (art judgement), the resource loop (a large design question), and the prep room (the developer said it comes last).
+
+**Decision.** The parameters and effects below are the agent's choices, not the developer's:
+- Full-auto: a click fires one shot and holding fires at the gun's rate. Holding is only a bonus, so the "no hold-to-act" trackpad rule holds. Rate of fire went from 250 ms to 150 ms.
+- Wounds: three wounds, and the fourth hit kills. In order: slower movement (×0.75), a dazed blur with a red edge, then a shaking aim (±0.12 rad). This order was chosen from the developer's examples. There is a 1 s grace between hits so a pack can't chain-kill. The aim shake is applied client-side and trusted, since the game is co-op and this keeps the shot prediction exact.
+- Enemy targeting: an enemy chases a player it can see and walk straight to within 6 units. It gives up beyond 10 units, searches the last sighting for 2 s, then returns to the reactor. Once within 2.5 units of the reactor it stays on it. There is no pathing around corners to reach players yet.
+- Permadeath applies only while the reactor is live. Deaths while roaming freely still respawn after 3 s. The attempt is wiped only when every player who went through the gate is out, and a wipe takes the same failure path as the reactor being destroyed.
+- Spectating is through a living teammate's eyes (their camera, torch and line of sight), on an old-CRT post effect. A click switches to the next teammate.
+- Chewed boxes show their wear: they shudder at each bite, slump as wear builds, and leave dust when they break.
+
+**Consequences.** All of these numbers need tuning through play. Known gap: a player who is out and reconnects comes back fresh.
