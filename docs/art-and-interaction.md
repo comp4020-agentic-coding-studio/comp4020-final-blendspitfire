@@ -45,7 +45,11 @@ model needs rebuilding.
 **Lighting.** Underground: no sun, a very dim cold ambient, and the lamps
 in [`client/world/dressing.ts`](../client/world/dressing.ts). A fixed pool
 of 8 point lights (no shadows) follows the lamps the player can see; every
-lamp's fixture also glows, so lamps outside the pool still read. The
+lamp also has a halo, so lamps outside the pool still read. The camera
+looks down through the ceiling, so nothing is drawn hanging from it: put
+a lamp on a wall where a wall can light the space (corridors, passages,
+room margins), and where only an overhead light will do, keep the light
+but draw no fixture --- its halo is a faint pool on the floor. The
 player's torch is the only shadow-casting light, and it sits where a real
 light would be worn (a headlamp at the cap brim's front edge), never
 inside the body: from a point inside, the character's own geometry throws

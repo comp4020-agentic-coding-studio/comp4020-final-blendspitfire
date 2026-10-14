@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { AMBIENT_GROUND, AMBIENT_SKY, EMIT_REACTOR, EMIT_RED, FAR, LIGHT_INCANDESCENT } from "../shared/palette.ts";
-import { LAMPS, LAMP_SPECS, type Lamp } from "./world/dressing.ts";
+import { FACING_DIR, LAMPS, LAMP_SPECS, lampSource, type Lamp } from "./world/dressing.ts";
 
 /**
  * How high the camera sits over the player, looking straight down. At 16
@@ -16,8 +16,9 @@ export const CAMERA_FOV = 50;
  * comes from the lamps --- a fixed pool of point lights (no shadows),
  * handed each frame to the lamps nearest the viewer. A fixed count means
  * shaders never recompile as you walk; no shadows and a low internal
- * resolution keep 8 lights cheap. Every lamp's fixture also glows
- * (emissive), so lamps outside the pool still read as lights.
+ * resolution keep 8 lights cheap. Every lamp also has a halo (a wall
+ * lamp's at its fixture, a ceiling lamp's on the floor under it), so lamps
+ * outside the pool still read as lights.
  */
 const POOL = 8;
 const AMBIENT = 0.55;
@@ -49,7 +50,13 @@ export function setupLighting(scene: THREE.Scene, reactor?: { x: number; z: numb
     scene.add(reactorLight);
   }
 
-  const lamps = LAMPS.map((lamp, i) => ({ lamp, spec: LAMP_SPECS[lamp.kind], seed: i + 1, color: new THREE.Color(LAMP_SPECS[lamp.kind].light) }));
+  const lamps = LAMPS.map((lamp, i) => ({
+    lamp,
+    at: lampSource(lamp),
+    spec: LAMP_SPECS[lamp.kind],
+    seed: i + 1,
+    color: new THREE.Color(LAMP_SPECS[lamp.kind].light),
+  }));
 
   return {
     update(viewX, viewZ, time, state, visible) {
@@ -66,7 +73,7 @@ export function setupLighting(scene: THREE.Scene, reactor?: { x: number; z: numb
         return 1;
       };
       const ranked = lamps
-        .map((l) => ({ l, d: Math.hypot(l.lamp.x - viewX, l.lamp.z - viewZ), b: brightness(l) }))
+        .map((l) => ({ l, d: Math.hypot(l.at.x - viewX, l.at.z - viewZ), b: brightness(l) }))
         .filter((r) => r.b > 0 && (!visible || visible(r.l.lamp)))
         .sort((a, b) => a.d - b.d);
       lights.forEach((light, i) => {
@@ -75,10 +82,10 @@ export function setupLighting(scene: THREE.Scene, reactor?: { x: number; z: numb
           light.intensity = 0;
           return;
         }
-        const { lamp, spec, color } = r.l;
+        const { at, spec, color } = r.l;
         light.color.copy(color);
         light.distance = spec.range;
-        light.position.set(lamp.x, spec.height - 0.1, lamp.z);
+        light.position.set(at.x, spec.height - 0.1, at.z);
         // ease the farthest pooled lamps out, so a light swapping in or out isn't a pop
         const fade = i < pool - 2 ? 1 : 1 - (i - (pool - 3)) * 0.3;
         light.intensity = spec.intensity * r.b * fade;
@@ -163,15 +170,27 @@ export function glow(color: number, size: number, opacity = 1): THREE.Sprite {
   return sprite;
 }
 
-/** a glow halo at every live lamp's fixture, as one group */
+/**
+ * A halo for every live lamp, as one group. A wall lamp's sits on its
+ * fixture. A ceiling lamp's fixture isn't drawn (it's above the camera's
+ * cut), so its halo is a faint wide pool on the floor beneath it --- the
+ * light arriving, not the lamp.
+ */
 export function lampHalos(): THREE.Group {
   const g = new THREE.Group();
   for (const lamp of LAMPS) {
     if (lamp.dead) continue;
     const spec = LAMP_SPECS[lamp.kind];
-    const s = glow(spec.emit, lamp.kind === "emergency" ? 0.9 : 1.6, lamp.kind === "emergency" ? 0.5 : 0.35);
-    s.position.set(lamp.x, spec.height - 0.05, lamp.z);
-    g.add(s);
+    if (lamp.mount === "wall") {
+      const d = FACING_DIR[lamp.facing ?? "south"];
+      const s = glow(spec.emit, lamp.kind === "emergency" ? 0.9 : 1.4, lamp.kind === "emergency" ? 0.5 : 0.35);
+      s.position.set(lamp.x + d.x * 0.25, spec.height, lamp.z + d.z * 0.25);
+      g.add(s);
+    } else {
+      const s = glow(spec.light, spec.range * 0.6, 0.1);
+      s.position.set(lamp.x, 0.05, lamp.z);
+      g.add(s);
+    }
   }
   return g;
 }

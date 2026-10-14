@@ -72,48 +72,76 @@ const ceiling = (kind: LampKind, x: number, z: number, extra: Partial<Lamp> = {}
   mount: "ceiling",
   ...extra,
 });
-const wall = (kind: LampKind, x: number, z: number, facing: Lamp["facing"]): Lamp => ({
+const wall = (kind: LampKind, x: number, z: number, facing: Lamp["facing"], extra: Partial<Lamp> = {}): Lamp => ({
   kind,
   x,
   z,
   mount: "wall",
   facing,
+  ...extra,
 });
+
+/** which way each facing points on the floor plan */
+export const FACING_DIR: Record<NonNullable<Lamp["facing"]>, { x: number; z: number }> = {
+  south: { x: 0, z: 1 },
+  north: { x: 0, z: -1 },
+  east: { x: 1, z: 0 },
+  west: { x: -1, z: 0 },
+};
+
+/**
+ * Where a lamp's light comes from on the floor plan: a wall lamp's sits a
+ * little out from the wall, so it lights the room rather than the wall
+ * behind it, and a sight line to it isn't cut by that wall.
+ */
+export function lampSource(lamp: Lamp): { x: number; z: number } {
+  if (lamp.mount !== "wall") return lamp;
+  const d = FACING_DIR[lamp.facing ?? "south"];
+  return { x: lamp.x + d.x * 0.35, z: lamp.z + d.z * 0.35 };
+}
 
 const Y_MID = (YARD.minZ + YARD.maxZ) / 2;
 
+// The camera looks down through the ceiling, so a fixture hung from it
+// would float over everyone's heads. Where a room's edges can light it ---
+// the narrow corridor and passages, the intake, the core's margins ---
+// lamps are on the walls, where they're seen the way they'd really be
+// mounted. Out in the middle of the big rooms the light stays overhead,
+// but its fixture is above the camera's cut and isn't drawn: you see the
+// pool it throws on the floor, not the lamp.
 export const LAMPS: Lamp[] = [
-  // intake room: warm bulbs
-  ceiling("bulb", -3.5, Y_MID),
-  ceiling("bulb", 3.5, Y_MID),
-  // corridor: a line of tubes, one failing, one dead
-  ceiling("fluoro", 0, 16),
-  ceiling("fluoro", 0, 11.5, { flicker: true }),
-  ceiling("fluoro", 0, 7, { dead: true }),
-  ceiling("fluoro", 0, 3.5),
+  // intake room: warm bulbs on the side walls, one overhead to fill the middle
+  ceiling("bulb", 0, Y_MID),
+  wall("bulb", -6.95, 22, "east"),
+  wall("bulb", 6.95, 22, "west"),
+  // corridor: tubes down alternate walls (clear of the doorways), one failing, one dead
+  wall("fluoro", -1.95, 16, "east"),
+  wall("fluoro", 1.95, 10.5, "west", { flicker: true }),
+  wall("fluoro", -1.95, 7, "east", { dead: true }),
+  wall("fluoro", 1.95, 3.5, "west"),
   // lab: cool tubes over the benches
   ceiling("fluoro", -9.5, 9.75),
   ceiling("fluoro", -14.5, 5),
   ceiling("fluoro", -5, 15),
   ceiling("fluoro", -14.5, 15.5, { flicker: true }),
   // passages: one bulb each
-  ceiling("bulb", -12, -1.5),
-  ceiling("bulb", 12, 0),
-  ceiling("bulb", 0, -1, { dead: true }),
+  wall("bulb", -13.65, -1.5, "east"),
+  wall("bulb", 13.65, 0, "west"),
+  wall("bulb", -1.95, -1, "east", { dead: true }),
   // server hall: cold LED panels down the aisles
   ceiling("led", 7, 10),
   ceiling("led", 13, 10),
   ceiling("led", 10, 4, { flicker: true }),
   ceiling("led", 5, 16),
-  // core: sodium flanking the reactor, cool tubes out at the edges --- the
+  // core: sodium flanking the reactor, cool tubes out on the walls --- the
   // warm/cool split is what keeps a big room from going one flat colour
   ceiling("sodium", -6, -11.5),
   ceiling("sodium", 6, -11.5),
   ceiling("fluoro", 0, -6),
-  ceiling("fluoro", -10, -16.5, { flicker: true }),
-  ceiling("fluoro", 10, -16),
-  ceiling("fluoro", -11, -7),
-  ceiling("fluoro", 11, -7, { dead: true }),
+  wall("fluoro", -10, -17.95, "south", { flicker: true }),
+  wall("fluoro", 10, -17.95, "south"),
+  wall("fluoro", -13.65, -7, "east"),
+  wall("fluoro", 13.65, -7, "west", { dead: true }),
   // emergency beacons by every way in (dim until the reactor's live)
   wall("emergency", 0, FACILITY_HALF - 0.05, "north"),
   wall("emergency", -17.95, 12.5, "east"),

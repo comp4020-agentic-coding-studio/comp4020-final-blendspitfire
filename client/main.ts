@@ -17,7 +17,7 @@ import {
 } from "./models/index.ts";
 import { REACTOR_LIVE, REACTOR_STANDBY, buildFacility, reactorCore } from "./models/facility.ts";
 import { mesh } from "./models/kit.ts";
-import { LAMPS, LAMP_SPECS } from "./world/dressing.ts";
+import { LAMPS, LAMP_SPECS, lampSource } from "./world/dressing.ts";
 import { ACCENT, STENCIL, DANGER, OK, EMIT_GREEN, EMIT_RED, EMIT_TRACER } from "../shared/palette.ts";
 import { INTERP_DELAY_MS, ServerClock, SnapshotBuffer, Tracer } from "./netsync.ts";
 import { ENEMY_RADIUS, type DefenceState, type EnemyState } from "../shared/enemies.ts";
@@ -1004,10 +1004,11 @@ function animate(): void {
 
   const time = clock.elapsedTime;
   const view = localMesh?.position ?? new THREE.Vector3(0, 0, 24);
-  lighting.update(view.x, view.z, time, { reactorActive: objective.active }, (lamp) =>
+  lighting.update(view.x, view.z, time, { reactorActive: objective.active }, (lamp) => {
     // a lamp lights the scene only if its light could reach what we see: in sight, or close
-    Math.hypot(lamp.x - view.x, lamp.z - view.z) < LAMP_SPECS[lamp.kind].range * 0.5 || canSee(view.x, view.z, lamp.x, lamp.z, visibility.segs),
-  );
+    const at = lampSource(lamp);
+    return Math.hypot(at.x - view.x, at.z - view.z) < LAMP_SPECS[lamp.kind].range * 0.5 || canSee(view.x, view.z, at.x, at.z, visibility.segs);
+  });
   const coreColour = objective.active ? REACTOR_LIVE : REACTOR_STANDBY;
   coreMaterial.color.setHex(coreColour);
   coreHalo.material.color.setHex(coreColour);

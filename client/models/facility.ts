@@ -572,29 +572,28 @@ function breachModel(b: Breach, height: number): THREE.BufferGeometry {
  * light even where its light isn't in the active pool.
  */
 function lampModel(lamp: Lamp, bins: Bins): void {
+  // A ceiling lamp's fixture is above the camera's cut through the ceiling,
+  // so it isn't drawn: what shows is the light it throws (lampHalos). Only
+  // wall lamps have a model.
+  if (lamp.mount !== "wall") return;
   const spec = LAMP_SPECS[lamp.kind];
   const housing: THREE.BufferGeometry[] = [];
   const glowing: THREE.BufferGeometry[] = [];
   const emit = lamp.dead ? STEEL.shade : spec.emit;
   const y = spec.height;
-  if (lamp.mount === "wall") {
-    const angle = FACING_ANGLE[lamp.facing ?? "south"];
-    const m = new THREE.Matrix4().makeRotationY(angle).setPosition(lamp.x, 0, lamp.z);
+  const m = new THREE.Matrix4().makeRotationY(FACING_ANGLE[lamp.facing ?? "south"]).setPosition(lamp.x, 0, lamp.z);
+  if (lamp.kind === "fluoro" || lamp.kind === "led") {
+    // a batten along the wall: a steel channel with the tube lying in it,
+    // the tube's top showing from overhead
+    housing.push(part(box(1.3, 0.12, 0.16), STEEL.light, 0, y, 0.08).applyMatrix4(m));
+    glowing.push(glowPart(box(1.16, 0.08, 0.1), emit, 0, y + 0.03, 0.17).applyMatrix4(m));
+  } else if (lamp.kind === "emergency") {
     housing.push(part(box(0.3, 0.3, 0.12), RUBBER.base, 0, y, 0.06).applyMatrix4(m));
     glowing.push(glowPart(cyl(0.11, 0.13, 0.14, 8), emit, 0, y, 0.18, PI / 2, 0, 0).applyMatrix4(m));
-  } else if (lamp.kind === "fluoro" || lamp.kind === "led") {
-    // The camera looks down on the fixture from above, where a real one
-    // would show only its housing. So the diffuser is drawn as the top face
-    // --- an open tray seen from above --- with a thin frame round it: what
-    // reads from overhead is "a lit panel here".
-    const long = lamp.kind === "fluoro" ? 1.4 : 0.9;
-    const wide = lamp.kind === "fluoro" ? 0.3 : 0.9;
-    housing.push(part(box(long + 0.12, 0.06, wide + 0.12), STEEL.light, lamp.x, y, lamp.z));
-    glowing.push(glowPart(box(long, 0.02, wide - 0.06), emit, lamp.x, y + 0.035, lamp.z));
   } else {
-    // a caged bulb / sodium lantern: a glowing globe sitting in a shallow dish, seen from above
-    housing.push(part(cyl(0.26, 0.2, 0.08, 8), STEEL.base, lamp.x, y - 0.04, lamp.z));
-    glowing.push(glowPart(new THREE.IcosahedronGeometry(0.15, 0), emit, lamp.x, y + 0.08, lamp.z));
+    // a bulkhead lamp: a bracket off the wall holding a caged globe
+    housing.push(part(box(0.22, 0.08, 0.3), STEEL.base, 0, y - 0.1, 0.15).applyMatrix4(m));
+    glowing.push(glowPart(new THREE.IcosahedronGeometry(0.15, 0), emit, 0, y, 0.24).applyMatrix4(m));
   }
   bins.matte.push(merge(housing, "none"));
   for (const g of glowing) bins.emissive.push(g);
