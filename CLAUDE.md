@@ -91,3 +91,10 @@ It's written for an agent, not for me --- terse, facts over prose.
   Always before suggesting `/clear`, `/compact` or a new session.
 - Overwrite stale lines rather than appending history (decision history
   belongs in the ADR draft); keep it short enough to read in one go.
+- **The test it must pass:** a brand-new session that reads only this file
+  and the handoff can pick up development straight away, with no question
+  to me about where things stand. So it always carries an ordered "next
+  work" list, the open decisions that are mine, what's committed but not
+  pushed, and nothing that describes code which no longer exists. If a
+  session's work would leave it failing that test, fix the handoff before
+  the session ends.
