@@ -86,3 +86,28 @@ describe("enemy targeting", () => {
     expect(Math.hypot(e.x - REACTOR.x, e.z - REACTOR.z)).toBeLessThan(4);
   });
 });
+
+describe("chewing through boxes", () => {
+  it("wears a box that seals the way, step by step, until it breaks", () => {
+    // an enemy in the open core, boxed in on all sides: no route anywhere, so it has to chew out
+    const { w } = world([]);
+    const ring: [number, number][] = [];
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) if (dx || dz) ring.push([-8 + dx, -12 + dz]);
+    ring.forEach(([x, z], i) => w.items.set(`b${i}`, { id: `b${i}`, kind: "box", x, z }));
+    const d = new Defence(w, { reactorHealth: 1, wave: 1, nextWaveAt: 1e12 });
+    d.spawnAt(-8, -12);
+    const wears: number[] = [];
+    let now = 0;
+    for (let i = 0; i < 20 * 20 && w.items.size === ring.length; i++) {
+      now += 50;
+      d.step(now, 0.05);
+      const worst = Math.max(...[...w.items.values()].map((b) => b.wear ?? 0));
+      if (worst !== wears[wears.length - 1]) wears.push(worst);
+    }
+    expect(w.items.size).toBe(ring.length - 1);
+    // wear went up in steps before the box gave way (the last reading is after it broke)
+    const before = wears.slice(0, -1);
+    expect(before.length).toBeGreaterThan(2);
+    expect(before).toEqual([...before].sort((a, b) => a - b));
+  });
+});

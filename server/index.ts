@@ -688,7 +688,7 @@ setInterval(() => {
   // items go out only when they've changed since the last tick, or to a
   // client that hasn't had them yet (see StateMessage.items)
   const itemList = [...items.values()];
-  const itemsKey = itemList.map((i) => `${i.id}:${i.x.toFixed(2)},${i.z.toFixed(2)},${i.heldBy ?? ""}`).join("|");
+  const itemsKey = itemList.map((i) => `${i.id}:${i.x.toFixed(2)},${i.z.toFixed(2)},${i.heldBy ?? ""},${i.wear ?? 0}`).join("|");
   const itemsChanged = itemsKey !== lastItemsKey;
   lastItemsKey = itemsKey;
   const base = {

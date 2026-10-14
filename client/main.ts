@@ -321,6 +321,8 @@ interface ClientItem {
   lying: THREE.Mesh;
   held: THREE.Mesh;
   outline: THREE.Mesh;
+  /** a box: shudders until this (performance.now()) after a bite */
+  bittenUntil: number;
 }
 
 const items = new Map<string, ClientItem>();
@@ -366,7 +368,7 @@ function makeItem(state: ItemState): ClientItem {
   outline.visible = false;
   lying.add(outline);
   scene.add(lying);
-  return { state, lying, held, outline };
+  return { state, lying, held, outline, bittenUntil: 0 };
 }
 
 function removeItem(item: ClientItem): void {
@@ -374,16 +376,45 @@ function removeItem(item: ClientItem): void {
   item.held.removeFromParent();
 }
 
+// A box that's chewed shows it: it shudders at each bite, and slumps and
+// tilts further the closer it is to giving way. When it breaks, a puff of
+// dust where it stood, so it doesn't just vanish.
+const dustPuffs: { sprite: THREE.Sprite; born: number }[] = [];
+function boxBroke(x: number, z: number): void {
+  const sprite = glow(STENCIL, 1.2, 0.6);
+  sprite.position.set(x, 0.4, z);
+  scene.add(sprite);
+  dustPuffs.push({ sprite, born: performance.now() });
+}
+function stepDust(): void {
+  const now = performance.now();
+  for (let i = dustPuffs.length - 1; i >= 0; i--) {
+    const p = dustPuffs[i];
+    const k = (now - p.born) / 600;
+    if (k >= 1) {
+      scene.remove(p.sprite);
+      dustPuffs.splice(i, 1);
+      continue;
+    }
+    p.sprite.scale.setScalar(1.2 + k * 1.6);
+    p.sprite.material.opacity = 0.6 * (1 - k);
+  }
+}
+
 function updateItems(incoming: ItemState[]): void {
   const seen = new Set<string>();
   for (const state of incoming) {
     seen.add(state.id);
     const existing = items.get(state.id);
-    if (existing) existing.state = state;
-    else items.set(state.id, makeItem(state));
+    if (existing) {
+      if ((state.wear ?? 0) > (existing.state.wear ?? 0)) existing.bittenUntil = performance.now() + 180;
+      existing.state = state;
+    } else items.set(state.id, makeItem(state));
   }
   for (const [id, item] of items) {
     if (!seen.has(id)) {
+      // a chewed box that's gone from the ground broke (rather than being picked up, which keeps it in the list)
+      if (item.state.kind === "box" && item.state.heldBy === undefined && item.state.wear) boxBroke(item.state.x, item.state.z);
       removeItem(item);
       items.delete(id);
     }
@@ -506,6 +537,14 @@ function stepItemVisuals(time: number): void {
       lying.visible = true;
       lying.position.x = state.x;
       lying.position.z = state.z;
+      if (state.kind === "box") {
+        const wear = state.wear ?? 0;
+        const shudder = performance.now() < item.bittenUntil ? Math.sin(time * 90) * 0.08 : 0;
+        lying.position.x += shudder;
+        lying.rotation.z = wear * 0.12 + shudder;
+        lying.rotation.x = wear * -0.07;
+        lying.scale.y = 1 - wear * 0.15;
+      }
       continue;
     }
     lying.visible = false;
@@ -1092,6 +1131,7 @@ function animate(): void {
   renderDefenceHud();
   stepTrigger();
   stepWounds(dt);
+  stepDust();
   stepTracers();
   stepMuzzleFlash();
   stepItemVisuals(time);

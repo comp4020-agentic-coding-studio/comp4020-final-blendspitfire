@@ -322,6 +322,7 @@ export class Defence {
       this.world.changed();
     } else {
       this.boxDamage.set(near.id, dmg);
+      near.wear = Math.round((dmg / BOX_HIT_POINTS) * 100) / 100;
     }
   }
 

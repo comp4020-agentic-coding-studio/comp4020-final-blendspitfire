@@ -122,6 +122,8 @@ export interface ItemState {
   z: number;
   /** id of the player holding it; absent while it's lying in the world */
   heldBy?: string;
+  /** wire-only: a box being chewed, 0..1 of the way to breaking (absent = intact) */
+  wear?: number;
 }
 
 export interface ItemKindInfo {
