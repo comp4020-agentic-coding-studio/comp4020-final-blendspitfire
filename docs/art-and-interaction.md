@@ -46,7 +46,11 @@ model needs rebuilding.
 in [`client/world/dressing.ts`](../client/world/dressing.ts). A fixed pool
 of 8 point lights (no shadows) follows the lamps the player can see; every
 lamp's fixture also glows, so lamps outside the pool still read. The
-player's torch is the only shadow-casting light. Keep floors and walls
+player's torch is the only shadow-casting light, and it sits where a real
+light would be worn (a headlamp at the cap brim's front edge), never
+inside the body: from a point inside, the character's own geometry throws
+shadows no real light could. Don't fix self-shadowing by switching shadows
+off; move the light. Keep floors and walls
 mid-dark so light pools instead of washing the room.
 
 **Line of sight.** What the player can't see is black: other rooms, the
