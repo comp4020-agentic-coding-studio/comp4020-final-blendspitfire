@@ -6,8 +6,10 @@ export interface PlayerState {
   x: number;
   z: number;
   rotation: number;
-  /** wire-only: set while dead, the timestamp (Date.now()-scale) they respawn at */
+  /** wire-only: set while dead and coming back, the timestamp (Date.now()-scale) they respawn at */
   respawnAt?: number;
+  /** wire-only: dead for the rest of this attempt (died while the reactor was live): spectating */
+  out?: true;
   /** wire-only: in-memory for the current connection, not persisted */
   score?: number;
   /** wire-only: through the one-way gate since their last (re)spawn, so it's shut behind them */

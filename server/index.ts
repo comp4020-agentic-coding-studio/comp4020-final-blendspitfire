@@ -133,7 +133,10 @@ interface Connection {
   socket: WebSocket;
   player: PlayerState;
   dirty: boolean;
-  /** 0 while alive; otherwise the Date.now()-scale timestamp they respawn at */
+  /**
+   * 0 while alive; otherwise the Date.now()-scale timestamp they respawn
+   * at, or Infinity if they're out until the current attempt ends
+   */
   deadUntil: number;
   /** in-memory only: resets to 0 on every (re)connect, never persisted */
   score: number;
@@ -231,6 +234,7 @@ const defence = new Defence(
     },
     changed: markWorldDirty,
     announce,
+    ended: reviveTheFallen,
   },
   loadDefence(),
 );
@@ -329,7 +333,8 @@ function isDead(conn: Connection): boolean {
 function netPlayer(conn: Connection, now: number): PlayerState {
   return {
     ...conn.player,
-    respawnAt: isDead(conn) ? conn.deadUntil : undefined,
+    respawnAt: isDead(conn) && conn.deadUntil !== Infinity ? conn.deadUntil : undefined,
+    out: conn.deadUntil === Infinity ? true : undefined,
     score: conn.score,
     entered: conn.entered ? true : undefined,
     wounds: conn.wounds || undefined,
@@ -616,10 +621,33 @@ function wound(conn: Connection, now: number): boolean {
   return false;
 }
 
+/**
+ * Dying while the reactor's live is final for that attempt: you're out,
+ * and watch your team from then on. Any other time (exploring, building,
+ * shooting yourself in the foot) you're back in the safe room shortly.
+ */
 function kill(conn: Connection, now: number): void {
-  conn.deadUntil = now + DEATH_DURATION_MS;
+  conn.deadUntil = objective.active ? Infinity : now + DEATH_DURATION_MS;
   conn.dirty = true;
   dropHeld(conn.player);
+}
+
+/** the attempt's over: everyone who's out comes back to the safe room now */
+function reviveTheFallen(): void {
+  for (const conn of connections.values()) {
+    if (conn.deadUntil === Infinity) conn.deadUntil = 1;
+  }
+}
+
+/**
+ * Everyone defending is dead: the attempt fails. "Defending" means through
+ * the gate --- someone still in the safe room (just joined, or never went
+ * in) isn't holding anything, and can't keep a lost attempt going.
+ */
+function checkWipe(): void {
+  if (!objective.active) return;
+  const inside = [...connections.values()].filter((c) => c.entered || c.deadUntil === Infinity);
+  if (inside.length > 0 && inside.every((c) => c.deadUntil === Infinity)) defence.fail("everyone's down");
 }
 
 function processRespawns(now: number): void {
@@ -644,6 +672,7 @@ setInterval(() => {
   processRespawns(now);
   defence.step(now, BROADCAST_INTERVAL_MS / 1000);
   stepProjectiles(now);
+  checkWipe();
   restockStations(now);
   const players = [...connections.values()].map((c) => netPlayer(c, now));
   const projectileList: ProjectileState[] = [...projectiles.values()].map((p) => ({

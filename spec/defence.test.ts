@@ -16,6 +16,7 @@ function world(players: { id: string; x: number; z: number }[]) {
     hurtPlayer: (id) => hurt.push(id),
     changed: () => {},
     announce: () => {},
+    ended: () => {},
   };
   return { w, hurt };
 }

@@ -62,6 +62,8 @@ export interface World {
   changed(): void;
   /** tell everyone something happened */
   announce(text: string): void;
+  /** the attempt just ended in failure: bring everyone who's out back */
+  ended(): void;
 }
 
 export class Defence {
@@ -327,12 +329,22 @@ export class Defence {
     this.state.reactorHealth = Math.max(0, this.state.reactorHealth - ENEMY_REACTOR_DAMAGE);
     this.world.changed();
     if (this.state.reactorHealth > 0) return;
-    // the attempt has failed: the reactor goes dark and the attack stops,
-    // but every box players built stays for the next attempt
+    this.fail("the reactor is down");
+  }
+
+  /**
+   * The attempt has failed (the reactor's destroyed, or everyone defending
+   * it is dead): the reactor goes dark and the attack stops, but every box
+   * players built stays for the next attempt.
+   */
+  fail(reason: string): void {
+    if (!this.world.objective.active) return;
     this.world.objective.active = false;
     this.enemies.clear();
     this.toSpawn = 0;
-    this.world.announce(`the reactor is down — survived ${Math.max(0, this.state.wave - 1)} wave(s)`);
+    this.world.announce(`${reason} — survived ${Math.max(0, this.state.wave - 1)} wave(s)`);
     this.state = { reactorHealth: 1, wave: 0 };
+    this.world.changed();
+    this.world.ended();
   }
 }

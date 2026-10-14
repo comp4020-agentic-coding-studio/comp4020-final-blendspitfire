@@ -198,11 +198,17 @@ interface RemotePlayer {
   snaps: SnapshotBuffer;
   /** where they are drawn this frame (also what box placement keeps clear of) */
   drawn: { x: number; z: number; rotation: number };
+  /** alive and through the gate: someone a spectator can watch */
+  watchable: boolean;
 }
 
 let myId: string | undefined;
 let localMesh: THREE.Object3D | undefined;
 let myRespawnAt = 0;
+/** out for the rest of this attempt (died while the reactor was live): spectating */
+let myOut = false;
+/** whose view we're watching while out */
+let watchingId: string | undefined;
 /** wounds taken since we last (re)spawned, as the server sees it */
 let myWounds = 0;
 /** through the gate (as the server sees it); shuts the gate behind us */
@@ -222,7 +228,7 @@ const tipEl = document.getElementById("tip")!;
  * back among whatever had just killed it.
  */
 function isDead(): boolean {
-  return myRespawnAt !== 0;
+  return myRespawnAt !== 0 || myOut;
 }
 
 function makeCharacter(color: string, mine: boolean): THREE.Object3D {
@@ -588,7 +594,9 @@ let lastControlsText = "";
 function renderControls(): void {
   const held = myHeldItem();
   let text: string;
-  if (!held) {
+  if (myOut) {
+    text = "you're out until this attempt ends";
+  } else if (!held) {
     text = "WASD to move · click an item next to you to pick it up";
   } else {
     const info = ITEM_KINDS[held.state.kind];
@@ -652,6 +660,7 @@ const net = connect({
     serverClock.observe(t);
     myId = you.id;
     myRespawnAt = you.respawnAt ?? 0;
+    myOut = !!you.out;
     myWounds = you.wounds ?? 0;
     myEntered = !!you.entered;
     localMesh = makeCharacter(you.color, true);
@@ -671,6 +680,7 @@ const net = connect({
     for (const p of players) {
       if (p.id === myId) {
         myRespawnAt = p.respawnAt ?? 0;
+        myOut = !!p.out;
         const wounds = p.wounds ?? 0;
         if (wounds > myWounds) onWounded(wounds);
         myWounds = wounds;
@@ -797,6 +807,10 @@ function stepMuzzleFlash(): void {
 //   drop      --- Q
 
 function primary(): void {
+  if (myOut) {
+    watchNext();
+    return;
+  }
   if (isDead() || !localMesh) return;
   const held = myHeldItem();
   if (hoveringReactor()) {
@@ -910,13 +924,15 @@ window.addEventListener("keydown", (e) => {
 function addOrUpdateRemote(p: PlayerState, t: number): void {
   let remote = remotes.get(p.id);
   if (!remote) {
-    remote = { mesh: makeCharacter(p.color, false), snaps: new SnapshotBuffer(), drawn: { x: p.x, z: p.z, rotation: p.rotation } };
+    remote = { mesh: makeCharacter(p.color, false), snaps: new SnapshotBuffer(), drawn: { x: p.x, z: p.z, rotation: p.rotation }, watchable: false };
     remote.mesh.position.set(p.x, 0, p.z);
     remotes.set(p.id, remote);
   }
   remote.snaps.push(t, p.x, p.z, p.rotation);
-  // the server only sends respawnAt while someone's dead
-  remote.mesh.visible = p.respawnAt === undefined;
+  // the server only sends respawnAt / out while someone's dead
+  const alive = p.respawnAt === undefined && !p.out;
+  remote.mesh.visible = alive;
+  remote.watchable = alive && !!p.entered;
 }
 
 // --- Enemies -----------------------------------------------------------------
@@ -1040,20 +1056,25 @@ function animate(): void {
     }
 
     localMesh.visible = !dead;
-    respawnEl.style.display = dead ? "block" : "none";
-    if (dead) {
+    respawnEl.style.display = dead && !myOut ? "block" : "none";
+    if (dead && !myOut) {
       respawnEl.textContent = `${Math.max(1, Math.ceil((myRespawnAt - serverClock.now()) / 1000))}`;
     }
 
-    camera.position.set(localMesh.position.x, CAMERA_ALTITUDE, localMesh.position.z);
-    camera.lookAt(localMesh.position.x, 0, localMesh.position.z);
-    torch.aim(localMesh.position.x, localMesh.position.z, aimRotation);
-    torch.light.visible = !dead;
-    visibility.update(renderer, localMesh.position.x, localMesh.position.z);
+    // out: watch a teammate (their view, their torch); otherwise our own
+    const watched = myOut ? spectateTarget() : undefined;
+    const eye = watched ? watched.drawn : { x: localMesh.position.x, z: localMesh.position.z, rotation: aimRotation };
+    camera.position.set(eye.x, CAMERA_ALTITUDE, eye.z);
+    camera.lookAt(eye.x, 0, eye.z);
+    torch.aim(eye.x, eye.z, eye.rotation);
+    torch.light.visible = !dead || !!watched;
+    visibility.update(renderer, eye.x, eye.z);
+    viewPoint.set(eye.x, 0, eye.z);
   }
+  renderSpectating(dt);
 
   const time = clock.elapsedTime;
-  const view = localMesh?.position ?? new THREE.Vector3(0, 0, 24);
+  const view = viewPoint;
   lighting.update(view.x, view.z, time, { reactorActive: objective.active }, (lamp) => {
     // a lamp lights the scene only if its light could reach what we see: in sight, or close
     const at = lampSource(lamp);
@@ -1124,6 +1145,50 @@ function stepWounds(dt: number): void {
     `<span style="display:inline-block;width:10px;height:10px;margin-right:4px;border-radius:2px;background:${i < wounds ? "#ff3346" : "rgba(223,232,242,0.25)"}"></span>`,
   ).join("");
   woundsEl.innerHTML = `<div style="margin-bottom:4px">${pips}</div>` + WOUNDS.slice(0, wounds).map((w) => `<div style="opacity:0.8">${w.label}</div>`).join("");
+}
+
+// Spectating. Out for the rest of an attempt, you watch a teammate who's
+// still in it --- through their eyes: their view, their torch, their line
+// of sight --- on an old CRT (see client/postprocess.ts). Click for the
+// next teammate. With nobody left to watch, the view rests where you fell
+// until the attempt ends and everyone's back in the safe room.
+// ?crt=0..1 forces the CRT, for checking it.
+const viewPoint = new THREE.Vector3(0, 0, 24);
+const spectateEl = document.createElement("div");
+spectateEl.style.cssText =
+  "position:fixed;left:50%;bottom:64px;transform:translateX(-50%);padding:6px 14px;background:rgba(6,8,12,0.72);border-radius:4px;font:700 12px ui-monospace,monospace;letter-spacing:0.12em;color:#cfe8d0;text-transform:uppercase;pointer-events:none;display:none;text-align:center";
+document.body.appendChild(spectateEl);
+const forcedCrt = params.has("crt") ? Number(params.get("crt")) || 0 : undefined;
+let crtLevel = 0;
+
+function watchableIds(): string[] {
+  return [...remotes.entries()].filter(([, r]) => r.watchable).map(([id]) => id);
+}
+
+/** who we're watching: the one picked, if still in it, else the first teammate who is */
+function spectateTarget(): RemotePlayer | undefined {
+  const ids = watchableIds();
+  if (!watchingId || !ids.includes(watchingId)) watchingId = ids[0];
+  return watchingId ? remotes.get(watchingId) : undefined;
+}
+
+function watchNext(): void {
+  const ids = watchableIds();
+  if (ids.length < 2) return;
+  watchingId = ids[(ids.indexOf(watchingId ?? "") + 1) % ids.length];
+}
+
+function renderSpectating(dt: number): void {
+  const want = forcedCrt ?? (myOut ? 1 : 0);
+  crtLevel += (want - crtLevel) * Math.min(1, dt * 4);
+  post.effects.crt = crtLevel < 0.01 ? 0 : crtLevel;
+  spectateEl.style.display = myOut ? "block" : "none";
+  if (!myOut) return;
+  const ids = watchableIds();
+  spectateEl.textContent =
+    ids.length === 0
+      ? "you're down · nobody left standing"
+      : `you're down · watching ${ids.indexOf(watchingId ?? "") + 1}/${ids.length}${ids.length > 1 ? " · click: next" : ""}`;
 }
 
 // The defence HUD: while the reactor is live, its health and the wave
