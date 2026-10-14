@@ -12,6 +12,8 @@ export interface PlayerState {
   score?: number;
   /** wire-only: through the one-way gate since their last (re)spawn, so it's shut behind them */
   entered?: true;
+  /** wire-only: wounds taken since their last (re)spawn, 0..MAX_WOUNDS-1 (absent = unhurt); see WOUNDS */
+  wounds?: number;
 }
 
 /** the facility's objective: for now just whether someone has switched the reactor on */
@@ -605,6 +607,26 @@ export function placementVerdict(
 }
 
 export const DEATH_DURATION_MS = 3000;
+
+// Wounds. A player isn't a health bar: they can take a few hits, and each
+// one leaves something you feel rather than a number going down --- the
+// first slows you, the second blurs your sight, the third shakes your aim.
+// The next hit after that is fatal. Wounds last until you die.
+
+/** hits a player can take and keep going; the one after this kills */
+export const MAX_WOUNDS = 3;
+/** after a hit, a short grace before the next can land, so a pack can't take you from fine to dead in one bite */
+export const WOUND_GRACE_MS = 1000;
+/** what each wound adds, in the order they're taken */
+export const WOUNDS = [
+  { label: "leg hurt: slower" },
+  { label: "dazed: vision blurred" },
+  { label: "arm hurt: aim shaking" },
+] as const;
+/** walking speed with this many wounds: the first one costs a quarter */
+export const woundedSpeed = (wounds: number): number => PLAYER_SPEED * (wounds >= 1 ? 0.75 : 1);
+/** with an arm wound, each shot strays up to this far (radians) either side of where you aim */
+export const WOUNDED_AIM_SPREAD = 0.12;
 
 /** a rifle round, fast enough to read as a tracer rather than a ball you could dodge */
 export const PROJECTILE_SPEED = 45;

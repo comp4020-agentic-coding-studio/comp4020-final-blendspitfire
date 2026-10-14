@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  AGGRO_RANGE,
   BOX_HIT_POINTS,
   ENEMY_ATTACK_INTERVAL_MS,
   ENEMY_HIT_POINTS,
@@ -9,9 +10,13 @@ import {
   ENEMY_SPEED,
   FIRST_WAVE_DELAY_MS,
   FlowField,
+  LEASH_RANGE,
   MAX_ENEMIES,
+  REACTOR_COMMIT,
+  SEARCH_MS,
   SPAWNS,
   SPAWN_INTERVAL_MS,
+  THINK_MS,
   WAVE_GAP_MS,
   waveSize,
   type DefenceState,
@@ -23,6 +28,7 @@ import {
   REACTOR,
   REACTOR_BODY,
   boxObstacle,
+  rayToObstacles,
   resolveObstacles,
   segmentHitsCircle,
   type ItemState,
@@ -37,6 +43,11 @@ import {
 interface Enemy extends EnemyState {
   hp: number;
   nextAttackAt: number;
+  /** the player it's after, if any (otherwise the reactor) */
+  target?: string;
+  /** where its target was last seen, and until when it'll search there */
+  lastSeen?: { x: number; z: number; until: number };
+  nextThinkAt: number;
 }
 
 /** what the defence needs from the rest of the server */
@@ -74,6 +85,13 @@ export class Defence {
   start(now: number): void {
     this.state = { reactorHealth: 1, wave: 0, nextWaveAt: now + FIRST_WAVE_DELAY_MS };
     this.world.changed();
+  }
+
+  /** put one enemy at (x, z) straight away, outside the wave schedule (tests, debugging) */
+  spawnAt(x: number, z: number): string {
+    const id = randomUUID();
+    this.enemies.set(id, { id, x, z, rotation: 0, health: 1, hp: ENEMY_HIT_POINTS, nextAttackAt: 0, nextThinkAt: 0 });
+    return id;
   }
 
   snapshot(): EnemyState[] {
@@ -151,6 +169,7 @@ export class Defence {
         health: 1,
         hp: ENEMY_HIT_POINTS,
         nextAttackAt: 0,
+        nextThinkAt: 0,
       });
       this.toSpawn -= 1;
       this.nextSpawnAt = now + SPAWN_INTERVAL_MS;
@@ -172,10 +191,21 @@ export class Defence {
         }
         continue;
       }
-      // at the reactor: attack it
       const gapX = Math.abs(e.x - REACTOR.x) - REACTOR_BODY.halfX;
       const gapZ = Math.abs(e.z - REACTOR.z) - REACTOR_BODY.halfZ;
-      if (Math.max(gapX, gapZ) < ENEMY_REACH + ENEMY_RADIUS) {
+      const reactorGap = Math.max(gapX, gapZ);
+      if (now >= e.nextThinkAt) {
+        e.nextThinkAt = now + THINK_MS;
+        this.chooseTarget(e, players, solid, reactorGap, now);
+      }
+      // after a player: walk straight at them, or to where they were last seen
+      const chase = this.chasePoint(e, players, now);
+      if (chase) {
+        this.walk(e, chase.x - e.x, chase.z - e.z, dt, solid, boxes, now, false);
+        continue;
+      }
+      // at the reactor: attack it
+      if (reactorGap < ENEMY_REACH + ENEMY_RADIUS) {
         e.rotation = Math.atan2(REACTOR.x - e.x, REACTOR.z - e.z);
         if (now >= e.nextAttackAt) {
           e.nextAttackAt = now + ENEMY_ATTACK_INTERVAL_MS;
@@ -192,18 +222,71 @@ export class Defence {
         dir = { dx: REACTOR.x - e.x, dz: REACTOR.z - e.z };
         sealed = true;
       }
-      const len = Math.hypot(dir.dx, dir.dz) || 1;
-      const step = ENEMY_SPEED * dt;
-      const nx = e.x + (dir.dx / len) * step;
-      const nz = e.z + (dir.dz / len) * step;
-      e.rotation = Math.atan2(dir.dx, dir.dz);
-      const moved = this.collide(e, nx, nz, solid);
-      if (sealed || Math.hypot(moved.x - e.x, moved.z - e.z) < step * 0.25) {
-        this.chewNearestBox(e, boxes, now);
-      }
-      e.x = moved.x;
-      e.z = moved.z;
+      this.walk(e, dir.dx, dir.dz, dt, solid, boxes, now, sealed);
     }
+  }
+
+  /** one step along (dx, dz); stuck (or sealed in), chew whatever box is in the way */
+  private walk(e: Enemy, dx: number, dz: number, dt: number, solid: typeof OBSTACLES, boxes: ItemState[], now: number, sealed: boolean): void {
+    const len = Math.hypot(dx, dz) || 1;
+    const step = ENEMY_SPEED * dt;
+    e.rotation = Math.atan2(dx, dz);
+    const moved = this.collide(e, e.x + (dx / len) * step, e.z + (dz / len) * step, solid);
+    if (sealed || Math.hypot(moved.x - e.x, moved.z - e.z) < step * 0.25) this.chewNearestBox(e, boxes, now);
+    e.x = moved.x;
+    e.z = moved.z;
+  }
+
+  /** whether an enemy at (x, z) could walk in a straight line to (tx, tz): nothing solid in between */
+  private clearLine(x: number, z: number, tx: number, tz: number, solid: typeof OBSTACLES): boolean {
+    const d = Math.hypot(tx - x, tz - z);
+    if (d < 1e-6) return true;
+    return rayToObstacles(x, z, (tx - x) / d, (tz - z) / d, solid, d, ENEMY_RADIUS * 0.8) >= d - 0.05;
+  }
+
+  /** reactor or player: see AGGRO_RANGE in shared/enemies.ts */
+  private chooseTarget(e: Enemy, players: { id: string; x: number; z: number }[], solid: typeof OBSTACLES, reactorGap: number, now: number): void {
+    const current = e.target ? players.find((p) => p.id === e.target) : undefined;
+    if (current) {
+      const d = Math.hypot(current.x - e.x, current.z - e.z);
+      if (d <= LEASH_RANGE && this.clearLine(e.x, e.z, current.x, current.z, solid)) {
+        e.lastSeen = { x: current.x, z: current.z, until: now + SEARCH_MS };
+        return;
+      }
+      // lost sight (or too far): search where they were last seen, then give up
+      e.target = undefined;
+    }
+    if (reactorGap < REACTOR_COMMIT) {
+      e.lastSeen = undefined;
+      return;
+    }
+    let best: { id: string; x: number; z: number } | undefined;
+    let bestD = AGGRO_RANGE;
+    for (const p of players) {
+      const d = Math.hypot(p.x - e.x, p.z - e.z);
+      if (d < bestD && this.clearLine(e.x, e.z, p.x, p.z, solid)) {
+        best = p;
+        bestD = d;
+      }
+    }
+    if (best) {
+      e.target = best.id;
+      e.lastSeen = { x: best.x, z: best.z, until: now + SEARCH_MS };
+    }
+  }
+
+  /** where a chasing enemy is heading this tick, or undefined if it's going for the reactor */
+  private chasePoint(e: Enemy, players: { id: string; x: number; z: number }[], now: number): { x: number; z: number } | undefined {
+    const target = e.target ? players.find((p) => p.id === e.target) : undefined;
+    if (target) return target;
+    e.target = undefined;
+    if (!e.lastSeen) return undefined;
+    // searching: head for the last sighting, give up on arriving or when time runs out
+    if (now > e.lastSeen.until || Math.hypot(e.lastSeen.x - e.x, e.lastSeen.z - e.z) < 0.4) {
+      e.lastSeen = undefined;
+      return undefined;
+    }
+    return e.lastSeen;
   }
 
   /** move, pushed out of walls/boxes and gently apart from each other so a crowd doesn't stack */

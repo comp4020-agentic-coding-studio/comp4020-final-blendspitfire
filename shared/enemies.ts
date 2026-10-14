@@ -50,6 +50,20 @@ export const ENEMY_ATTACK_INTERVAL_MS = 900;
  * wave left alone loses the round but a defended one doesn't
  */
 export const ENEMY_REACTOR_DAMAGE = 0.007;
+/**
+ * Choosing a target. An enemy goes for the reactor unless a player is the
+ * better target: one it can see and walk straight at within AGGRO_RANGE.
+ * It keeps after them out to LEASH_RANGE, and if they break line of sight
+ * it searches where they were last seen for SEARCH_MS before going back to
+ * the reactor. One already at the reactor stays on it: a player walking
+ * past can't pull the whole pack off. Targets are re-picked every THINK_MS.
+ */
+export const AGGRO_RANGE = 6;
+export const LEASH_RANGE = 10;
+export const SEARCH_MS = 2000;
+export const THINK_MS = 400;
+/** within this of the reactor's footprint an enemy is committed to it */
+export const REACTOR_COMMIT = 2.5;
 /** hits it takes an enemy to break a box blocking its way */
 export const BOX_HIT_POINTS = 6;
 

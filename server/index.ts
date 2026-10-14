@@ -18,11 +18,13 @@ import {
   OBSTACLES,
   PERSIST_INTERVAL_MS,
   PICKUP_RANGE,
-  PLAYER_SPEED,
   PROJECTILE_RADIUS,
   PROJECTILE_SPEED,
   PLAY_BOUNDS,
+  MAX_WOUNDS,
   SPAWN_POINTS,
+  WOUND_GRACE_MS,
+  woundedSpeed,
   STATIONS,
   STATION_RESTOCK_MS,
   activateVerdict,
@@ -138,6 +140,10 @@ interface Connection {
   lastFireAt: number;
   /** through the one-way gate since the last (re)spawn; in memory only */
   entered: boolean;
+  /** wounds taken since the last (re)spawn; in memory only */
+  wounds: number;
+  /** no further wound lands before this (Date.now()-scale) */
+  woundGraceUntil: number;
   /** when their last move was accepted, for the speed check */
   lastMoveAt: number;
   /** has been sent the full item list at least once (see StateMessage.items) */
@@ -217,10 +223,11 @@ const defence = new Defence(
   {
     objective,
     items,
-    players: () => [...connections.values()].filter((c) => !isDead(c)).map((c) => c.player),
+    // enemies never come into the safe room, so a player in there isn't a target
+    players: () => [...connections.values()].filter((c) => !isDead(c) && !isInYard(c.player.x, c.player.z)).map((c) => c.player),
     hurtPlayer: (id, now) => {
       const conn = connections.get(id);
-      if (conn && !isDead(conn)) kill(conn, now);
+      if (conn && !isDead(conn)) wound(conn, now);
     },
     changed: markWorldDirty,
     announce,
@@ -325,6 +332,7 @@ function netPlayer(conn: Connection, now: number): PlayerState {
     respawnAt: isDead(conn) ? conn.deadUntil : undefined,
     score: conn.score,
     entered: conn.entered ? true : undefined,
+    wounds: conn.wounds || undefined,
   };
 }
 const pendingIds = new WeakMap<object, string>();
@@ -349,7 +357,21 @@ wss.on("connection", (socket, req) => {
   if (!PLAYER_COLORS.includes(player.color as (typeof PLAYER_COLORS)[number]) || taken.includes(player.color)) {
     player.color = leastUsedColor(taken);
   }
-  const conn: Connection = { socket, player, dirty: true, deadUntil: 0, score: 0, lastFireAt: 0, entered: false, lastMoveAt: 0, windowStart: 0, windowCount: 0, hasItems: false };
+  const conn: Connection = {
+    socket,
+    player,
+    dirty: true,
+    deadUntil: 0,
+    score: 0,
+    lastFireAt: 0,
+    entered: false,
+    wounds: 0,
+    woundGraceUntil: 0,
+    lastMoveAt: 0,
+    windowStart: 0,
+    windowCount: 0,
+    hasItems: false,
+  };
   connections.set(playerId, conn);
 
   const now = Date.now();
@@ -396,7 +418,7 @@ wss.on("connection", (socket, req) => {
       // bunched up); a longer claim is cut short along the way
       // (the first move after joining or respawning gets one tick's worth, not a burst)
       const elapsed = conn.lastMoveAt === 0 ? BROADCAST_INTERVAL_MS / 1000 : (now - conn.lastMoveAt) / 1000;
-      const budget = PLAYER_SPEED * Math.min(MOVE_BURST_S, elapsed) * MOVE_SLACK + 0.05;
+      const budget = woundedSpeed(conn.wounds) * Math.min(MOVE_BURST_S, elapsed) * MOVE_SLACK + 0.05;
       conn.lastMoveAt = now;
       let tx = move.x;
       let tz = move.z;
@@ -572,11 +594,26 @@ function stepProjectiles(now: number): void {
       }
     } else if (victim) {
       p.range = at;
-      kill(victim, now);
-      const ownerConn = connections.get(p.ownerId);
-      if (ownerConn) ownerConn.score += victim.player.id === p.ownerId ? -1 : 1;
+      // friendly fire only counts against the score when it kills
+      if (wound(victim, now)) {
+        const ownerConn = connections.get(p.ownerId);
+        if (ownerConn) ownerConn.score += victim.player.id === p.ownerId ? -1 : 1;
+      }
     }
   }
+}
+
+/** a hit on a player: one more wound, or death if they've taken all they can; true if it killed */
+function wound(conn: Connection, now: number): boolean {
+  if (now < conn.woundGraceUntil) return false;
+  if (conn.wounds >= MAX_WOUNDS) {
+    kill(conn, now);
+    return true;
+  }
+  conn.wounds += 1;
+  conn.woundGraceUntil = now + WOUND_GRACE_MS;
+  conn.dirty = true;
+  return false;
 }
 
 function kill(conn: Connection, now: number): void {
@@ -590,6 +627,8 @@ function processRespawns(now: number): void {
     if (conn.deadUntil !== 0 && now >= conn.deadUntil) {
       respawn(conn.player);
       conn.entered = false;
+      conn.wounds = 0;
+      conn.woundGraceUntil = 0;
       conn.lastMoveAt = 0;
       conn.deadUntil = 0;
       conn.dirty = true;

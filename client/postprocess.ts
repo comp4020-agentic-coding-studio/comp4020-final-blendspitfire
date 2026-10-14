@@ -6,6 +6,9 @@ import type { Grade } from "./assets/grade.ts";
 // pass composites it onto the canvas --- exposure, tone mapping, the colour
 // grade from client/assets/grade.ts, sRGB output, the line-of-sight mask
 // (what the player can't see is black), a vignette and an ordered dither.
+// On top of that, two effects the game turns on: being dazed by a wound
+// (blur, a pulsing dark-red closing-in) and spectating (an old CRT: barrel
+// distortion, scanlines, colour fringing, noise and the odd rolling jolt).
 //
 // Rendering into a target skips three.js's own tone mapping and sRGB
 // conversion (it only applies them when drawing to the canvas), so both
@@ -46,6 +49,10 @@ const fragment = /* glsl */ `
   uniform float vignette;
   uniform float ditherAmount;
   uniform vec2 aspect;
+  uniform vec2 texel;
+  uniform float daze;
+  uniform float crt;
+  uniform float time;
   varying vec2 vUv;
 
   // three.js's Neutral tone mapper (Khronos PBR Neutral), ported
@@ -90,8 +97,44 @@ const fragment = /* glsl */ `
     return 5.0 / 16.0 - 0.5;
   }
 
+  float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+  }
+
+  // the scene at uv, blurred by up to radius texels (a ring of taps around the centre)
+  vec3 sampleScene(vec2 uv, float radius) {
+    vec3 c = texture2D(tColor, uv).rgb;
+    if (radius <= 0.0) return c;
+    for (int i = 0; i < 8; i++) {
+      float a = float(i) * 0.785398;
+      c += texture2D(tColor, uv + vec2(cos(a), sin(a)) * texel * radius).rgb;
+    }
+    return c / 9.0;
+  }
+
   void main() {
-    vec3 c = texture2D(tColor, vUv).rgb * exposure;
+    vec2 uv = vUv;
+    // CRT: bulge the picture as if on curved glass, and now and then a band rolls sideways
+    if (crt > 0.0) {
+      vec2 cc = uv - 0.5;
+      uv = 0.5 + cc * (1.0 + crt * 0.12 * dot(cc, cc) * 4.0) * (1.0 - crt * 0.04);
+      float band = step(0.985, hash(vec2(floor(time * 6.0), 1.0)));
+      uv.x += crt * band * 0.012 * sin(uv.y * 40.0 + time * 30.0);
+    }
+    vec3 c;
+    if (crt > 0.0) {
+      // colour fringing: red and blue a hair either side
+      float shift = crt * 1.6;
+      c = vec3(
+        sampleScene(uv + vec2(texel.x * shift, 0.0), 0.0).r,
+        sampleScene(uv, 0.0).g,
+        sampleScene(uv - vec2(texel.x * shift, 0.0), 0.0).b
+      );
+    } else {
+      // dazed: the picture swims in and out of focus
+      c = sampleScene(uv, daze * (2.0 + 1.5 * sin(time * 2.2)));
+    }
+    c *= exposure;
     c = neutral(c);
     // grade, in linear light
     float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -105,8 +148,8 @@ const fragment = /* glsl */ `
     // line of sight: rebuild the world position of this pixel from depth
     // and look it up in the mask; unseen goes to true black
     if (maskOn > 0.5) {
-      float depth = texture2D(tDepth, vUv).r;
-      vec4 ndc = vec4(vUv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+      float depth = texture2D(tDepth, uv).r;
+      vec4 ndc = vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
       vec4 world = invViewProj * ndc;
       world /= world.w;
       vec2 muv = (world.xz - maskCenter) / (2.0 * maskExtent) + 0.5;
@@ -122,6 +165,20 @@ const fragment = /* glsl */ `
 
     vec2 v = (vUv - 0.5) * aspect;
     c *= 1.0 - vignette * smoothstep(0.35, 0.95, length(v));
+    if (daze > 0.0) {
+      // the edges close in, dark red, pulsing with the swim
+      float edge = smoothstep(0.35, 0.9, length(v)) * daze * (0.8 + 0.2 * sin(time * 2.2));
+      c = mix(c, vec3(0.2, 0.01, 0.01), edge * 0.75);
+    }
+    if (crt > 0.0) {
+      // greyed-green phosphor, scanlines, noise, and black outside the curved glass
+      float l = dot(c, vec3(0.299, 0.587, 0.114));
+      c = mix(c, vec3(l * 0.85, l * 1.05, l * 0.9), crt * 0.55);
+      c *= 1.0 - crt * 0.35 * (0.5 + 0.5 * sin(gl_FragCoord.y * 3.14159 * 0.5));
+      c += crt * (hash(gl_FragCoord.xy + fract(time) * 100.0) - 0.5) * 0.12;
+      c *= 1.0 - crt * 0.6 * smoothstep(0.3, 0.75, length(v));
+      if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) c = vec3(0.0);
+    }
     c += bayer(gl_FragCoord.xy) * ditherAmount;
     gl_FragColor = vec4(c, 1.0);
   }
@@ -136,6 +193,8 @@ export interface PostProcess {
    * wall tops).
    */
   setMask(mask: { texture: THREE.Texture; center: THREE.Vector2; extent: number; topCutoff: number } | null): void;
+  /** the game's screen effects, 0 (off) to 1 (full): dazed by a wound, and the spectator's CRT */
+  effects: { daze: number; crt: number };
 }
 
 /**
@@ -182,7 +241,13 @@ export function createPostProcess(renderer: THREE.WebGLRenderer, scale: number, 
     vignette: { value: 0 },
     ditherAmount: { value: 0 },
     aspect: { value: new THREE.Vector2(1, 1) },
+    texel: { value: new THREE.Vector2(1, 1) },
+    daze: { value: 0 },
+    crt: { value: 0 },
+    time: { value: 0 },
   };
+  const effects = { daze: 0, crt: 0 };
+  const started = performance.now();
   const material = new THREE.RawShaderMaterial({
     vertexShader: vertex,
     fragmentShader: fragment,
@@ -197,8 +262,12 @@ export function createPostProcess(renderer: THREE.WebGLRenderer, scale: number, 
   const blitCamera = new THREE.Camera();
 
   return {
+    effects,
     setSize(width, height) {
-      target.setSize(Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale)));
+      const w = Math.max(1, Math.round(width * scale));
+      const h = Math.max(1, Math.round(height * scale));
+      target.setSize(w, h);
+      uniforms.texel.value.set(1 / w, 1 / h);
       const a = width / height;
       uniforms.aspect.value.set(a > 1 ? a : 1, a > 1 ? 1 : 1 / a);
     },
@@ -224,6 +293,9 @@ export function createPostProcess(renderer: THREE.WebGLRenderer, scale: number, 
       uniforms.blackLift.value = grade.blackLift;
       uniforms.vignette.value = grade.vignette;
       uniforms.ditherAmount.value = grade.dither;
+      uniforms.daze.value = effects.daze;
+      uniforms.crt.value = effects.crt;
+      uniforms.time.value = (performance.now() - started) / 1000;
       camera.updateMatrixWorld();
       uniforms.invViewProj.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();
 

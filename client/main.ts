@@ -39,7 +39,10 @@ import {
   ITEM_KINDS,
   OBSTACLES,
   PICKUP_RANGE,
-  PLAYER_SPEED,
+  MAX_WOUNDS,
+  WOUNDED_AIM_SPREAD,
+  WOUNDS,
+  woundedSpeed,
   PLACE_RANGE,
   MUZZLE_OFFSET,
   segmentHitsCircle,
@@ -200,6 +203,8 @@ interface RemotePlayer {
 let myId: string | undefined;
 let localMesh: THREE.Object3D | undefined;
 let myRespawnAt = 0;
+/** wounds taken since we last (re)spawned, as the server sees it */
+let myWounds = 0;
 /** through the gate (as the server sees it); shuts the gate behind us */
 let myEntered = false;
 const remotes = new Map<string, RemotePlayer>();
@@ -647,6 +652,7 @@ const net = connect({
     serverClock.observe(t);
     myId = you.id;
     myRespawnAt = you.respawnAt ?? 0;
+    myWounds = you.wounds ?? 0;
     myEntered = !!you.entered;
     localMesh = makeCharacter(you.color, true);
     localMesh.position.set(you.x, 0, you.z);
@@ -665,6 +671,9 @@ const net = connect({
     for (const p of players) {
       if (p.id === myId) {
         myRespawnAt = p.respawnAt ?? 0;
+        const wounds = p.wounds ?? 0;
+        if (wounds > myWounds) onWounded(wounds);
+        myWounds = wounds;
         myEntered = !!p.entered;
         // the server is authoritative: if it has us somewhere a frame of
         // walking couldn't explain (a respawn, or a move it refused), snap
@@ -737,10 +746,10 @@ function stepTracers(): void {
  * ray-cast against walls and boxes), so when its copy arrives the swap is
  * invisible.
  */
-function firePredictedShot(): void {
+function firePredictedShot(aimX: number, aimZ: number): void {
   if (!localMesh) return;
-  let dx = aimPoint.x - localMesh.position.x;
-  let dz = aimPoint.z - localMesh.position.z;
+  let dx = aimX - localMesh.position.x;
+  let dz = aimZ - localMesh.position.z;
   const len = Math.hypot(dx, dz);
   if (len < 0.05) {
     dx = Math.sin(aimRotation);
@@ -832,8 +841,21 @@ function fireGun(clicked: boolean): void {
   const now = performance.now();
   if (now - lastFireAt < FIRE_COOLDOWN_MS) return;
   lastFireAt = now;
-  net.primary(aimPoint.x, aimPoint.z);
-  firePredictedShot();
+  // a hurt arm shakes the aim: the shot strays a little either side. The
+  // stray is decided here and sent as the aim, so the tracer drawn now is
+  // exactly the shot the server fires (co-op, so trusting it costs nothing)
+  let aimX = aimPoint.x;
+  let aimZ = aimPoint.z;
+  if (myWounds >= 3) {
+    const dx = aimX - localMesh.position.x;
+    const dz = aimZ - localMesh.position.z;
+    const a = Math.atan2(dx, dz) + (Math.random() * 2 - 1) * WOUNDED_AIM_SPREAD;
+    const d = Math.max(1, Math.hypot(dx, dz));
+    aimX = localMesh.position.x + Math.sin(a) * d;
+    aimZ = localMesh.position.z + Math.cos(a) * d;
+  }
+  net.primary(aimX, aimZ);
+  firePredictedShot(aimX, aimZ);
 }
 
 /** called every frame: keep firing while the trigger's held on a gun */
@@ -999,8 +1021,8 @@ function animate(): void {
         dx /= len;
         dz /= len;
         const next = clampToPlayBounds(
-          localMesh.position.x + dx * PLAYER_SPEED * dt,
-          localMesh.position.z + dz * PLAYER_SPEED * dt,
+          localMesh.position.x + dx * woundedSpeed(myWounds) * dt,
+          localMesh.position.z + dz * woundedSpeed(myWounds) * dt,
         );
         // predict the gate shutting the moment we're through, rather than a round-trip later
         if (!myEntered && hasPassedGate(localMesh.position.z)) myEntered = true;
@@ -1048,6 +1070,7 @@ function animate(): void {
   stepEnemies(time);
   renderDefenceHud();
   stepTrigger();
+  stepWounds(dt);
   stepTracers();
   stepMuzzleFlash();
   stepItemVisuals(time);
@@ -1057,6 +1080,50 @@ function animate(): void {
 
   post.render(scene, camera);
   requestAnimationFrame(animate);
+}
+
+// Wounds: a hit doesn't take a bar down, it leaves something you feel. A
+// red flash and a line saying what's wrong the moment it lands; after
+// that, the effect itself --- slower legs, a swimming view (the post
+// process's daze), a shaking aim --- and pips along the bottom-left so
+// you know how many more you can take. ?daze=0..1 forces the blur, for
+// checking it.
+const hurtFlashEl = document.createElement("div");
+hurtFlashEl.style.cssText =
+  "position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center, rgba(160,0,0,0) 40%, rgba(170,10,10,0.55) 100%);opacity:0;transition:opacity 0.5s";
+document.body.appendChild(hurtFlashEl);
+const woundsEl = document.createElement("div");
+woundsEl.style.cssText =
+  "position:fixed;left:12px;bottom:44px;padding:6px 10px;background:rgba(6,8,12,0.72);border-radius:4px;font:700 11px system-ui,sans-serif;letter-spacing:0.06em;color:#dfe8f2;text-transform:uppercase;pointer-events:none;display:none";
+document.body.appendChild(woundsEl);
+const forcedDaze = params.has("daze") ? Number(params.get("daze")) || 0 : undefined;
+let dazeLevel = 0;
+let lastWoundsShown = -1;
+
+function onWounded(wounds: number): void {
+  hurtFlashEl.style.transition = "none";
+  hurtFlashEl.style.opacity = "1";
+  requestAnimationFrame(() => {
+    hurtFlashEl.style.transition = "opacity 0.6s";
+    hurtFlashEl.style.opacity = "0";
+  });
+  const w = WOUNDS[wounds - 1];
+  if (w) showBanner(wounds >= MAX_WOUNDS ? `${w.label} — one more hit is fatal` : w.label);
+}
+
+function stepWounds(dt: number): void {
+  const wounds = isDead() ? 0 : myWounds;
+  // ease the blur in and out rather than snapping
+  const want = forcedDaze ?? (wounds >= 2 ? 1 : 0);
+  dazeLevel += (want - dazeLevel) * Math.min(1, dt * 3);
+  post.effects.daze = dazeLevel < 0.01 ? 0 : dazeLevel;
+  if (wounds === lastWoundsShown) return;
+  lastWoundsShown = wounds;
+  woundsEl.style.display = wounds > 0 ? "block" : "none";
+  const pips = Array.from({ length: MAX_WOUNDS + 1 }, (_, i) =>
+    `<span style="display:inline-block;width:10px;height:10px;margin-right:4px;border-radius:2px;background:${i < wounds ? "#ff3346" : "rgba(223,232,242,0.25)"}"></span>`,
+  ).join("");
+  woundsEl.innerHTML = `<div style="margin-bottom:4px">${pips}</div>` + WOUNDS.slice(0, wounds).map((w) => `<div style="opacity:0.8">${w.label}</div>`).join("");
 }
 
 // The defence HUD: while the reactor is live, its health and the wave
