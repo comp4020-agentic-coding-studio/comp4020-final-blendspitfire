@@ -688,8 +688,8 @@ export function segmentHitsCircle(
   if (t > to || along + Math.sqrt(radius * radius - perp2) < from) return undefined;
   return t;
 }
-/** minimum time between shots from one gun-holder */
-export const FIRE_COOLDOWN_MS = 250;
+/** minimum time between shots from one gun-holder: the automatic rifle's rate of fire (~400 rpm) */
+export const FIRE_COOLDOWN_MS = 150;
 
 export function clampToPlayBounds(x: number, z: number): { x: number; z: number } {
   return {

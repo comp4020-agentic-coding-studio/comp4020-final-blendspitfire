@@ -265,7 +265,10 @@ window.addEventListener("keydown", (e) => pressed.add(e.key.toLowerCase()));
 window.addEventListener("keyup", (e) => pressed.delete(e.key.toLowerCase()));
 // a key released while the window is in the background never sends keyup;
 // without this the player keeps walking after alt-tabbing back
-window.addEventListener("blur", () => pressed.clear());
+window.addEventListener("blur", () => {
+  pressed.clear();
+  triggerHeld = false;
+});
 
 // Aim is mouse-driven and independent of movement: the character always
 // faces the cursor's position on the ground, WASD only translates it.
@@ -584,7 +587,7 @@ function renderControls(): void {
     text = "WASD to move · click an item next to you to pick it up";
   } else {
     const info = ITEM_KINDS[held.state.kind];
-    const parts = [`click: ${info.primaryLabel}`];
+    const parts = [held.state.kind === "gun" ? "click / hold: fire" : `click: ${info.primaryLabel}`];
     if (info.secondaryLabel) {
       const state = held.state.kind === "box" ? ` (${gridSnap ? "on" : "off"})` : "";
       parts.push(`right-click / Space: ${info.secondaryLabel}${state}`);
@@ -800,15 +803,8 @@ function primary(): void {
     return;
   }
   if (held.state.kind === "gun") {
-    if (isInYard(localMesh.position.x, localMesh.position.z)) {
-      flash("no firing in the safe room");
-      return;
-    }
-    const now = performance.now();
-    if (now - lastFireAt < FIRE_COOLDOWN_MS) return;
-    lastFireAt = now;
-    net.primary(aimPoint.x, aimPoint.z);
-    firePredictedShot();
+    triggerHeld = true;
+    fireGun(true);
   } else if (held.state.kind === "box") {
     const target = boxTarget();
     const verdict = boxVerdict(target);
@@ -819,6 +815,35 @@ function primary(): void {
       flash(`can't place: ${verdict}`);
     }
   }
+}
+
+// The rifle is automatic: a click fires one shot, and holding the button
+// keeps firing at the gun's rate. Holding is only ever a bonus --- tapping
+// fires just as well --- so a trackpad loses nothing.
+let triggerHeld = false;
+
+/** one shot if the gun's ready; `clicked` is a fresh press, the only time a refusal is worth saying */
+function fireGun(clicked: boolean): void {
+  if (!localMesh) return;
+  if (isInYard(localMesh.position.x, localMesh.position.z)) {
+    if (clicked) flash("no firing in the safe room");
+    return;
+  }
+  const now = performance.now();
+  if (now - lastFireAt < FIRE_COOLDOWN_MS) return;
+  lastFireAt = now;
+  net.primary(aimPoint.x, aimPoint.z);
+  firePredictedShot();
+}
+
+/** called every frame: keep firing while the trigger's held on a gun */
+function stepTrigger(): void {
+  if (!triggerHeld) return;
+  if (isDead() || myHeldItem()?.state.kind !== "gun") {
+    triggerHeld = false;
+    return;
+  }
+  fireGun(false);
 }
 
 function secondary(): void {
@@ -845,6 +870,9 @@ window.addEventListener("pointerdown", (e) => {
   // has to be caught here or it would fire the primary action as well.
   if (e.button === 2 || (e.button === 0 && e.ctrlKey)) secondary();
   else if (e.button === 0) primary();
+});
+window.addEventListener("pointerup", (e) => {
+  if (e.button === 0) triggerHeld = false;
 });
 // the browser's own right-click menu would steal the secondary action
 window.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -1019,6 +1047,7 @@ function animate(): void {
   stepRemotes();
   stepEnemies(time);
   renderDefenceHud();
+  stepTrigger();
   stepTracers();
   stepMuzzleFlash();
   stepItemVisuals(time);

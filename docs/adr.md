@@ -14,7 +14,6 @@ Synced from the draft up to: 2026-10-14, Ceiling lamps visible in top-down view
 **Options.**
 - Game: multi-user and real-time come naturally. Edge cases (quitting mid-game, conflicting concurrent actions, repeated clicks) are harder to defend, and the marking criteria expect the app to withstand uses it was not designed for, so a pure game carries more risk there.
 - Tool: multi-user and real-time have to be designed deliberately, which leaves more room to argue why a given sync mechanism was chosen. It can easily turn into a demo with no real use case.
-
 **Decision.** Game (initial leaning).
 
 **Why.** The developer chose it because games are more fun and have a higher ceiling than tools.

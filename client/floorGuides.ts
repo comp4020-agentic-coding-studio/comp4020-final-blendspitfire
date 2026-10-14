@@ -155,7 +155,7 @@ export function buildYardGuides(): THREE.Group {
         decal(3.4, 1.5, x, 25.0, (ctx) => {
           mouse(ctx, 0.35, 0.05, "left");
           text(ctx, "fire", 1.0, 0.25);
-          text(ctx, "not in the safe room", 1.0, 0.55, 0.2);
+          text(ctx, "hold for auto · not in the safe room", 1.0, 0.55, 0.2);
           key(ctx, "Q", 0.32, 0.9);
           text(ctx, "drop", 1.0, 1.15);
         }),
