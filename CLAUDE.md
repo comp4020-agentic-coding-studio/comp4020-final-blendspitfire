@@ -31,8 +31,15 @@ When a design discussion reaches a decision point (an option chosen, and the
 reason I gave for it), log it to `.claude/notes/adr-draft.md` --- background,
 options considered, what was picked, and why, in my own words where possible.
 That file lives under `.claude/`, which is already gitignored, so it never
-gets pushed; it's scratch material for writing the real ADRs from later, not
-a deliverable itself.
+gets pushed; it's scratch material, not a deliverable itself.
+
+The real log is [`docs/adr.md`](docs/adr.md), in English and in git, because
+the process is part of what's reviewed. Periodically --- whenever the draft
+has new entries and a commit is being made anyway, and always before a
+crit or submission --- translate and condense the new draft entries into
+it as numbered ADRs, and update its "synced up to" line. Translate, don't
+invent: my reasons stay mine. It opens with a note that it's AI-recorded;
+keep that note.
 
 ## Art and interaction rules
 
@@ -81,16 +88,18 @@ deploys the live game, so never push unless I say so.
 
 ## Session handoff
 
-`.claude/notes/handoff.md` (gitignored, local only) is the agent's own
-handoff: current state, where things live, open decisions, verify recipes.
-It's written for an agent, not for me --- terse, facts over prose.
+[`docs/handoff.md`](docs/handoff.md) (in git: the process is reviewed) is
+the agent's own handoff: current state, where things live, open
+decisions, verify recipes. It's written for an agent, not for me ---
+terse, facts over prose. It opens with a note that it's AI-recorded; keep
+that note. Commit handoff updates along with the change they describe.
 
 - **Read it first** at the start of every session.
 - **Keep it current**: update it after every commit, every decision I make,
   and whenever a task finishes or changes direction --- not just at the end.
   Always before suggesting `/clear`, `/compact` or a new session.
 - Overwrite stale lines rather than appending history (decision history
-  belongs in the ADR draft); keep it short enough to read in one go.
+  belongs in the ADR draft and `docs/adr.md`); keep it short enough to read in one go.
 - **The test it must pass:** a brand-new session that reads only this file
   and the handoff can pick up development straight away, with no question
   to me about where things stand. So it always carries an ordered "next
