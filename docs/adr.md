@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-10-14, Autonomous round
+Synced from the draft up to: 2026-10-19, Win condition and crit 10 identity
 
 ---
 
@@ -452,3 +452,58 @@ Suggested minimal topology: safe room, one main corridor (bottleneck), a fork in
 - Chewed boxes show their wear: they shudder at each bite, slump as wear builds, and leave dust when they break.
 
 **Consequences.** All of these numbers need tuning through play. Known gap: a player who is out and reconnects comes back fresh.
+
+## ADR-036: Who's who, what each player may change, and the action log
+*2026-10-19 · Status: Accepted (codenames and shared boxes chosen by the developer; the rest built by the agent, to be playtested)*
+
+**Context.** The final project must tell two or more people apart, check on the server what each may see and change, and log who did what. Crit 10 rehearses this: two classmates play from the URL alone, in separate Chrome profiles, while the developer narrates from `flyctl logs`.
+
+**Options.**
+- Identity: typed names (needs moderation, an extra step before playing) vs an automatic codename.
+- Boxes: owned by whoever placed them vs shared by everyone.
+
+**Decision.**
+- **Identity.** Each browser gets a random id from a cookie the server sets on the first connection; nothing the client sends can change it. Each player is shown everywhere, on screen and in the log, as a codename: their colour plus the first four characters of the id (e.g. `Orange-3f2a`). This was the developer's pick over typed names. The same browser in a second tab is the same person: the newer tab takes over, and the older one is closed and doesn't reconnect, so one person never has two bodies.
+- **What each player may change**, all enforced by the server:
+  - Everyone sees everything. It's one shared facility, played co-operatively.
+  - Shared: loose items and placed boxes. Anyone may pick up a box anyone placed. This was the developer's call: co-op, with resources shared.
+  - Shared: the reactor switch.
+  - Personal: what you're holding. Nobody can take it from you.
+  - Personal: your own body (position, wounds, being out). Movement is checked for speed, walls and the one-way gate.
+  - Wounds and being out belong to the attempt, not the connection, so leaving and coming back doesn't heal you or bring you back in.
+- **The log.** Every line starts with who did it: `[Codename] picked up box 3f2a1c at (4.0, 16.8)`.
+  - Logged actions: joins and leaves, the gate, pickups, drops and placements, switching the reactor on, wounds and deaths (and by whom), and a summary of shots every 5 s.
+  - Refused actions are logged too, because they are the server holding the line. Examples: taking an item from someone else's hands, moving through a wall, firing in the safe room. These are capped at one line per kind every 3 s per player, so a hostile client can't bury the log.
+  - Attempts get their own lines: `[attempt 3] failed: the reactor is down, charge 41% (crew: …)`.
+
+**Why.** Codenames make the log readable next to the screen without any sign-in step: the crit's rule is "anything they need to get in has to be on the page". Boxes are shared because the game is co-op, and private boxes would make the defences belong to whoever happened to build them. Personal state is the part another player could grief, so that is where the server draws its lines.
+
+## ADR-037: The objective is a charge bar; a run takes a dozen attempts; an arcade board remembers it
+*2026-10-19 · Status: Accepted (direction and numbers 1-3 from the developer; scaling numbers chosen by the agent, untuned)*
+
+**Context.** ADR-025's loop was: a hard objective, attempts that mostly fail, defences that carry over between attempts, then a breakthrough. Until now there was no way to win: waves just kept coming.
+
+**Decision.**
+- The developer's direction:
+  - Once switched on, the reactor charges. **Full charge, after 6 minutes, completes the objective.**
+  - The attack grows as the charge climbs, so late in the charge there are more and more enemies.
+  - The reactor being destroyed (or everyone being out) only fails that attempt. The charge then starts again from zero, and the boxes stay.
+  - A full run should take about ten or more attempts.
+  - The box cap goes from 30 to 60, so defences keep growing over more attempts. This stands in until a resource loop exists.
+  - A persistent arcade scoreboard (the ADR-025 idea).
+- The agent's numbers, to be tuned by play:
+  - Each wave holds `4 + 22 × charge` enemies.
+  - Waves start every 15 s at the beginning, shrinking to every 4 s at full charge.
+  - Waves come on the clock rather than waiting for the last one to be cleared, so late waves overlap.
+  - The 40-enemy cap stays, since the 256 MB machine is the limit.
+- On a win:
+  - The run is recorded with its crew.
+  - Everyone who took part gets a win.
+  - The facility goes back to its starting kit and everyone returns to the intake.
+- The board, kept in SQLite:
+  - the run in progress (attempts so far, best charge)
+  - the top players (wins, then kills; boxes placed)
+  - recent won runs
+- ADR-010's per-session score stays as the room list above the board.
+
+**Why.** The developer described the objective as a long charge rather than a number of waves, and a reactor going down as a failed attempt, not a breakthrough. Resetting the charge to zero makes each attempt a real attempt, and the carried-over boxes are what make the next one go further.

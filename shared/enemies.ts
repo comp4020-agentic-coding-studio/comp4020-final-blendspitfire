@@ -29,12 +29,14 @@ export interface EnemyState {
   health: number;
 }
 
-/** what the reactor has left, and which wave is on; broadcast with the objective */
+/** what the reactor has left, how charged it is, and which wave is on; broadcast with the objective */
 export interface DefenceState {
   /** 0..1 */
   reactorHealth: number;
+  /** 0..1: the objective --- at 1 the reactor is stable and the run is won */
+  charge: number;
   wave: number;
-  /** server time the next wave starts, while waiting between waves */
+  /** server time the next wave starts */
   nextWaveAt?: number;
 }
 
@@ -67,12 +69,25 @@ export const REACTOR_COMMIT = 2.5;
 /** hits it takes an enemy to break a box blocking its way */
 export const BOX_HIT_POINTS = 6;
 
+/**
+ * The objective: holding the reactor while it charges. Full charge takes
+ * CHARGE_MS of the attack (the clock runs from the first wave's breather),
+ * and a failed attempt starts it again from zero. The attack is driven by
+ * how far it's got, not by a wave count: as the charge climbs the waves get
+ * bigger and closer together, and they stop waiting for the last one to be
+ * cleared, so the end is a flood. Tuned so a run takes a dozen or so
+ * attempts, the boxes piling up from one to the next.
+ */
+export const CHARGE_MS =
+  // DEV_CHARGE_S: local testing only (never set in fly.toml), to see a whole run end quickly
+  (typeof process !== "undefined" ? Number(process.env?.DEV_CHARGE_S) || 0 : 0) * 1000 || 6 * 60 * 1000;
 export const FIRST_WAVE_DELAY_MS = 10000;
-export const WAVE_GAP_MS = 15000;
 /** never more than this many alive at once: the 256 MB machine is the limit */
 export const MAX_ENEMIES = 40;
-/** how many come in wave n (1-based) */
-export const waveSize = (n: number): number => Math.min(3 + n * 2, 30);
+/** how many come in a wave that starts at this charge */
+export const waveSize = (charge: number): number => Math.round(4 + 22 * charge);
+/** time from one wave starting to the next, at this charge */
+export const waveGapMs = (charge: number): number => Math.round(15000 - 11000 * charge);
 /** gap between spawns within a wave */
 export const SPAWN_INTERVAL_MS = 700;
 

@@ -2,41 +2,41 @@
 
 > **AI-recorded.** Written and kept current automatically by the coding agent (Claude Code) as its session-to-session handoff, not written by hand. Terse on purpose: it's for the next agent session to pick up from. Decision history lives in [adr.md](adr.md).
 
-Updated: 2026-10-14 ~13:00 (after a ~1h autonomous dev round, user away)
+Updated: 2026-10-19 ~00:30 (dev round: crit 10 identity/logs + charge-bar win + arcade board)
 
 ## Where we are
-- Crit 9 shipped, tag crit-9 = 21b793a. Next: crit 10 (week 11), then final project. Same repo; tag crit-10 via /ship.
-- LOCAL ONLY, user decides push (push to main = deploy): 9f9b396 respawn loop fix, 88057ba+dbfca06 torch -> headlamp at brim edge (look.ts HEADLAMP), ebd6978 art-doc rule, 22dd2a7 + cd7a57f CLAUDE.md commits (Committing rule, handoff test), 9fc976a lamps off the ceiling, 2e194f4 handoff/ADR into docs/, 2b440c3 full-auto, b792b08 wounds + enemy targeting, 11ed891 permadeath/spectate/wipe, 4acc9fd box wear visuals, + this handoff/ADR commit.
+- Crit 10 "Fly by instruments" cutoff Wed 2026-10-21 08:30 (tag crit-10 via /ship). Spec: multi-user, server-checked permissions written down with why (ADR-036), server logs of who did what, pod plays from URL alone while user narrates from `mise exec -- flyctl logs -a <repo>`, reflections/crit-10.md + PROCESS.md (user writes). Final project due 2026-11-09 12:00.
+- Everything up to 508ca16 is pushed/deployed. LOCAL ONLY (user decides push; push to main = deploy): the 2026-10-19 commit(s) for identity/logging/charge/board + this handoff.
 - Commit finished+verified work without asking (CLAUDE.md). Never push unasked.
-- Budget 2026-10-14: $122/$200, resets Thu 2026-10-15 09:00.
 
-## Game (current, all built and deployed except the local commits above)
-- Persistent multiplayer PVE in an underground facility: intake room (safe, no fire) -> one-way gate -> facility (corridor, lab, server hall, core). Activate reactor (empty-handed, in range) -> 10s -> waves of crawlers from 3 breaches, flow-field pathing to reactor, boxes act as walls (chewed if fully sealed; wear sent as ItemState.wear -> shudder/slump/dust). Attempt lost (Defence.fail) when reactor HP 0 OR every player who passed the gate is out; reactor goes dark, built boxes kept, out players revived to intake.
-- Enemy targeting (server/defence.ts chooseTarget, numbers in shared/enemies.ts): player within AGGRO 6 with clear straight line (walls/fixtures/boxes block) -> chase; leash 10; lost sight -> search last seen 2s -> back to reactor; within REACTOR_COMMIT 2.5 of reactor = stays on reactor; players in intake never targeted.
-- Players: MAX_WOUNDS 3, 4th hit kills; WOUND_GRACE_MS 1000 between hits. Wound 1 = 0.75 speed (woundedSpeed, server move clamp too), 2 = daze post effect, 3 = aim spread ±0.12 rad (applied client-side, sent as aim; co-op so trusted). Wounds clear on death. Death while reactor live = out (deadUntil Infinity, wire `out: true`) -> spectate living entered teammates (CRT post effect, click = next); otherwise 3s respawn.
-- Items: gun (primary=fire, click = 1 shot, hold = full auto at FIRE_COOLDOWN_MS 150; straight fast shots 45u/s, no bounce), box (primary=place, secondary=grid snap, Q=place/drop). Stations restock.
-- Server-authoritative, 20 Hz broadcast with server time; snapshot interpolation client-side; deterministic shots (sent once); items sent only when changed. SQLite persists items, objective, defence (flush on interval + SIGTERM). Hardening: 4KB frames, 60 msg/s, move speed clamp.
-- Look: OKLCH greyed surface gamut, only emitters vivid; 8-light pool + torch (only shadow caster); no fixtures drawn on the ceiling: edge/narrow-room lamps are wall-mounted (lampSource() offsets their light off the wall), overhead lamps draw no fixture, halo = faint floor pool (look.ts lampHalos); LOS mask (unseen + wall tops black); pixel post 0.42; camera altitude 16. Rules in docs/art-and-interaction.md.
+## Game (current)
+- Persistent multiplayer PVE in an underground facility: intake room (safe, no fire) -> one-way gate -> facility (corridor, lab, server hall, core).
+- Run/attempt loop (ADR-037): activate reactor (empty-handed, in range) -> it charges, full at CHARGE_MS 6 min = run WON (recorded on board, facility reset to starting kit, everyone to intake). Waves on the clock: size 4+22c, gap 15s->4s with charge c, overlap allowed, MAX_ENEMIES 40. Attempt FAILS when reactor HP 0 or every crew player is out -> charge back to 0, boxes kept, out players revived. Box cap 60 (was 30).
+- Identity (ADR-036): server cookie UUID; codename = colour name + id[0:4] (palette.ts codename), on screen and in logs, stable across reconnects. Second tab with same cookie replaces the first (close code 4000, client shows "open in another tab", no reconnect). Wounds/out carried across reconnect within an attempt (server/index.ts `carried`).
+- Logs: `[Codename] verb ...` via act(); refusals via refuse() (1 per kind per 3 s per player); shots summed per 5 s; `[attempt N] failed/WON ... (crew: ...)`.
+- Board: SQLite tables stats (per player lifetime kills/boxes/attempts/wins) + runs (won runs) + world key "run" (attempts, best charge). Sent as BoardMessage on join and when dirty (<=1/s). Client panel #board under the room list.
+- Enemy targeting (server/defence.ts chooseTarget, numbers in shared/enemies.ts): player within AGGRO 6 with clear straight line -> chase; leash 10; search 2s; within REACTOR_COMMIT 2.5 stays on reactor; intake players never targeted.
+- Players: MAX_WOUNDS 3, 4th hit kills; grace 1s. Wound 1 = 0.75 speed, 2 = daze, 3 = aim spread. Death while reactor live = out -> spectate on CRT; otherwise 3s respawn.
+- Items: gun (click = 1 shot, hold = full auto 150ms), box (primary=place, secondary=grid snap, Q=place/drop). Stations restock.
+- Server-authoritative 20 Hz, snapshot interpolation; SQLite persists items/objective/defence/run/board. Hardening: 4KB frames, 60 msg/s, move speed clamp.
+- Look: OKLCH greyed gamut, emitters vivid; 8-light pool + headlamp (only shadow caster); LOS mask; pixel post. Rules in docs/art-and-interaction.md.
 
 ## Key files
 - shared/protocol.ts (contract, map, shot maths), shared/enemies.ts (balance numbers + FlowField), shared/palette.ts
 - server/index.ts (connections, tick, projectiles, respawn), server/defence.ts, server/db.ts
 - client/main.ts, client/netsync.ts, client/look.ts, client/visibility.ts, client/postprocess.ts, client/models/*, client/world/dressing.ts
-- Tests: spec/*.test.ts (102; spec/defence.test.ts = targeting + chewing, unit-level with a fake World). Report of auto-dev: .claude/reports/2026-10-14-auto-dev.md. Decisions: docs/adr.md (synced from local draft .claude/notes/adr-draft.md).
+- Tests: spec/*.test.ts (108; spec/multiuser.test.ts = identity/second tab/held item; spec/defence.test.ts = targeting + chewing, unit-level with a fake World). Report of auto-dev: .claude/reports/2026-10-14-auto-dev.md. Decisions: docs/adr.md (synced from local draft .claude/notes/adr-draft.md).
 
-## Next work (none urgent, none chosen yet — ask which before starting; user's ordering rule: finish existing mechanics before the intake rework)
-User's future directions (2026-10-14, dictated). Items 2-5 BUILT in the autonomous round (commits above) with agent-chosen numbers/effects; user hasn't played them yet -> first thing: ask user to playtest and react (wound effects, CRT strength, daze strength, aggro range, grace 1s, rate of fire).
-1. Lighting: try option C INSTEAD of A (C replaces A; B wall lamps stay): overhead lamps get their fixtures + air halos back, and fade out near/over the player, cutaway-style. Undoes the 'no fixture, floor-pool halo' part of 9fc976a (lampModel ceiling branch, lampHalos floor pool) and the matching art-doc rule. Fixtures are currently merged into the facility mesh -> need splitting out for per-lamp opacity. Also fewer lamps with larger range -> hazier, murkier scene.
-2. [built] Rifle full-auto.
-3. [built] Enemy AI chooses player vs reactor (straight-line chase only: no pathing around corners to a player; could use a per-player flow field later).
-4. [built] Wounds with escalating debuffs (slow / daze / aim shake). Debuff list was agent's pick from user's examples; open to change.
-5. [built] Permadeath per attempt + spectate + CRT. Agent choices to confirm: only while reactor live (free-roam deaths still respawn); 'all dead' counts only players who passed the gate. Known gap: out player reconnecting comes back fresh.
-6. Persistent map needs a resource loop: gather in-map -> craft -> place (currently boxes only from stations).
-7. LAST (after mechanics are complete): intake becomes a separate prep room that tutorialises every mechanic safely; exit gated on using one (e.g. repair a generator to open the door). Form waits on what mechanics exist.
-- User noted gameplay itself still needs lots more; not listed yet.
-Older candidates still open: difficulty tuning by play (shared/enemies.ts; debug overlay) — more needed now wounds/aggro exist; no sound at all; second enemy type; server-side visibility (enemies behind walls sent to clients).
-- Open user decisions: overall grade/brightness (client/assets/grade.ts); hall racks very claustrophobic; intake form -> see next-work 7; hide /gallery.html in prod?; slider grade UI (noted, not built).
-- Docs: README "good" section unfinished (user writes); PROCESS.md for crit 10 later. Authorship rule: skeleton only unless user dictated.
+## Next work (ordered)
+1. Crit 10 prep (before Wed 08:30): user playtests the charge bar/board/logs; user decides push + /ship (tag crit-10). Rehearse: two Chrome profiles + `flyctl logs` tail, check lines read clearly. User writes reflections/crit-10.md and PROCESS.md (skeleton only from agent).
+2. Tune difficulty for "~a dozen attempts": DEV_CHARGE_S env shortens the charge for local runs. Unknown: how far an empty map gets now; boxes chewed in 6 hits may make carry-over too weak or strong. Numbers in shared/enemies.ts (waveSize, waveGapMs, ENEMY_REACTOR_DAMAGE, BOX_HIT_POINTS).
+3. Still pending playtest from 2026-10-14 autonomous round: wound effects, CRT/daze strength, aggro 6, grace 1s, rate of fire.
+4. Lighting option C instead of A (overhead fixtures + air halos back, fading near the player; fixtures need splitting out of the merged facility mesh; fewer, wider lamps).
+5. Resource loop (gather -> craft -> place) to replace the raised box cap as the thing that grows between attempts.
+6. LAST: intake becomes a tutorial prep room gated on using a mechanic.
+- Older candidates: no sound; second enemy type; server-side visibility (enemies behind walls are sent to clients); charge bar has no in-world visual on the reactor (HUD only).
+- Open user decisions: overall grade/brightness (client/assets/grade.ts); hall racks claustrophobic; hide /gallery.html in prod?; slider grade UI.
+- Docs: README "good" section unfinished (user writes). Authorship rule: skeleton only unless user dictated.
 
 ## Verify recipes / gotchas
 - Dev: `DB_PATH=/tmp/blendspitfire-dev.db pnpm dev` (8080). DEV_SPAWN="x,z" / DEV_JOIN="x,z" env = local spawn override. `pnpm check` needs a running server.
@@ -45,6 +45,8 @@ Older candidates still open: difficulty tuning by play (shared/enemies.ts; debug
 - Screenshots: /tmp/look/shotlog.sh out.png url (headless Chrome, virtual time). For anything time-based (enemies, respawn) use real time via --remote-debugging-port, not --virtual-time-budget.
 - Gallery: /gallery.html (model sheet), ?facility, &x=&z= (game view with LOS), &live (crawlers), &pixel=0, &nomask.
 - Game URL flags: ?daze=0..1 and ?crt=0..1 force the wound blur / spectator CRT for screenshots.
+- Quick attempt lifecycle: DB_PATH=/tmp/x.db DEV_JOIN="0,-7.6" DEV_CHARGE_S=10 node server/index.ts (joins in reactor range; 10 s charge). Scripted ws clients that activate/idle/reconnect then read the server log; see git history of this note for the shape (pickup/activate/move messages in shared/protocol.ts).
+- Port 8080 may show a QQ process in lsof (unrelated); the server still binds.
 - Driving a real browser: /tmp/drive/cdp.mjs <port> <script.mjs> (Node CDP; script gets send/evalJs/shot/sleep) + /tmp/drive/chrome.sh <port> <profile> <url>; kill the Chrome after (pkill -f user-data-dir=/tmp/drive/<profile>) or it stays connected as a ghost player. Multi-client scenarios: plain Node WebSocket clients (see /tmp/drive/wipe.mjs). /tmp is not durable.
 - `pnpm check` against a server started WITH DEV_SPAWN fails the teleport test (spawns in the lab): restart without it first. Judge check by exit code, not a grep.
 

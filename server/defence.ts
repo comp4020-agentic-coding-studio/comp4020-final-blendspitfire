@@ -16,8 +16,9 @@ import {
   SEARCH_MS,
   SPAWNS,
   SPAWN_INTERVAL_MS,
+  CHARGE_MS,
   THINK_MS,
-  WAVE_GAP_MS,
+  waveGapMs,
   waveSize,
   type DefenceState,
   type EnemyState,
@@ -62,8 +63,10 @@ export interface World {
   changed(): void;
   /** tell everyone something happened */
   announce(text: string): void;
-  /** the attempt just ended in failure: bring everyone who's out back */
-  ended(): void;
+  /** the attempt just ended in failure, having got the charge this far: bring everyone who's out back */
+  ended(reason: string, charge: number): void;
+  /** the reactor reached full charge: the run is won */
+  won(): void;
 }
 
 export class Defence {
@@ -80,12 +83,12 @@ export class Defence {
 
   constructor(world: World, saved: DefenceState | undefined) {
     this.world = world;
-    this.state = saved ?? { reactorHealth: 1, wave: 0 };
+    this.state = { reactorHealth: 1, charge: 0, wave: 0, ...saved };
   }
 
   /** the reactor just went live: the first wave comes after a breather */
   start(now: number): void {
-    this.state = { reactorHealth: 1, wave: 0, nextWaveAt: now + FIRST_WAVE_DELAY_MS };
+    this.state = { reactorHealth: 1, charge: 0, wave: 0, nextWaveAt: now + FIRST_WAVE_DELAY_MS };
     this.world.changed();
   }
 
@@ -133,8 +136,25 @@ export class Defence {
       return;
     }
     this.rebuildFieldIfBoxesMoved();
+    if (this.charge(dt)) return;
     this.runWaves(now);
     this.moveAndAttack(now, dt);
+  }
+
+  /** the reactor charges for as long as it's held; true if that just finished the run */
+  private charge(dt: number): boolean {
+    const before = this.state.charge;
+    this.state.charge = Math.min(1, before + (dt * 1000) / CHARGE_MS);
+    // a tenth at a time is plenty for the save: a restart loses seconds, not minutes
+    if (Math.floor(this.state.charge * 10) !== Math.floor(before * 10)) this.world.changed();
+    if (this.state.charge < 1) return false;
+    this.world.objective.active = false;
+    this.enemies.clear();
+    this.toSpawn = 0;
+    this.state = { reactorHealth: 1, charge: 0, wave: 0 };
+    this.world.changed();
+    this.world.won();
+    return true;
   }
 
   private rebuildFieldIfBoxesMoved(): void {
@@ -147,18 +167,16 @@ export class Defence {
 
   private runWaves(now: number): void {
     const s = this.state;
-    if (this.toSpawn === 0 && this.enemies.size === 0) {
-      if (s.nextWaveAt === undefined) {
-        s.nextWaveAt = now + WAVE_GAP_MS;
-        this.world.changed();
-      } else if (now >= s.nextWaveAt) {
-        s.wave += 1;
-        s.nextWaveAt = undefined;
-        this.toSpawn = waveSize(s.wave);
-        this.nextSpawnAt = now;
-        this.world.announce(`wave ${s.wave} incoming`);
-        this.world.changed();
-      }
+    // waves come on the clock, not when the last one's cleared: late in the
+    // charge they overlap, and whatever's left of one adds to the next
+    if (s.nextWaveAt === undefined) s.nextWaveAt = now + waveGapMs(s.charge);
+    if (now >= s.nextWaveAt) {
+      s.wave += 1;
+      s.nextWaveAt = now + waveGapMs(s.charge);
+      this.toSpawn += waveSize(s.charge);
+      this.nextSpawnAt = Math.min(this.nextSpawnAt, now);
+      this.world.announce(`wave ${s.wave} incoming`);
+      this.world.changed();
     }
     while (this.toSpawn > 0 && now >= this.nextSpawnAt && this.enemies.size < MAX_ENEMIES) {
       const spawn = SPAWNS[this.spawnTurn++ % SPAWNS.length];
@@ -343,9 +361,10 @@ export class Defence {
     this.world.objective.active = false;
     this.enemies.clear();
     this.toSpawn = 0;
-    this.world.announce(`${reason} — survived ${Math.max(0, this.state.wave - 1)} wave(s)`);
-    this.state = { reactorHealth: 1, wave: 0 };
+    const charge = this.state.charge;
+    this.world.announce(`${reason} — charge reached ${Math.floor(charge * 100)}%`);
+    this.state = { reactorHealth: 1, charge: 0, wave: 0 };
     this.world.changed();
-    this.world.ended();
+    this.world.ended(reason, charge);
   }
 }

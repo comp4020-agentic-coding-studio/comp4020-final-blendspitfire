@@ -1,8 +1,11 @@
-import type { MoveMessage, PlayerState, ServerMessage, StateMessage } from "../shared/protocol.ts";
+import type { BoardMessage, MoveMessage, PlayerState, ServerMessage, StateMessage } from "../shared/protocol.ts";
 
 export interface NetHandlers {
   onWelcome: (you: PlayerState, players: PlayerState[], t: number) => void;
   onState: (state: StateMessage) => void;
+  onBoard: (board: BoardMessage) => void;
+  /** the server closed this tab because the same player opened another */
+  onReplaced: () => void;
   /** fires on every connect/disconnect transition, including the first connect */
   onConnectionChange: (connected: boolean) => void;
 }
@@ -43,13 +46,19 @@ export function connect(handlers: NetHandlers): Net {
       const msg: ServerMessage = JSON.parse(event.data);
       if (msg.type === "welcome") handlers.onWelcome(msg.you, msg.players, msg.t);
       else if (msg.type === "state") handlers.onState(msg);
+      else if (msg.type === "board") handlers.onBoard(msg);
     });
 
     // A Fly machine that scales to zero, a wifi blip, a laptop sleeping ---
     // any of these drop the socket. Without a reconnect loop that's
     // permanent until the tab is reloaded, so always retry unless the page
     // itself is going away.
-    ws.addEventListener("close", () => {
+    ws.addEventListener("close", (event) => {
+      // reconnecting would just take the session back from the newer tab
+      if (event.code === 4000) {
+        handlers.onReplaced();
+        return;
+      }
       handlers.onConnectionChange(false);
       if (closedByUs) return;
       const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** attempt);

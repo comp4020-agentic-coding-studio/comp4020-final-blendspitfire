@@ -16,6 +16,8 @@ export interface PlayerState {
   entered?: true;
   /** wire-only: wounds taken since their last (re)spawn, 0..MAX_WOUNDS-1 (absent = unhurt); see WOUNDS */
   wounds?: number;
+  /** wire-only: what they're called on screen and in the server log (palette.ts codename) */
+  name?: string;
 }
 
 /** the facility's objective: for now just whether someone has switched the reactor on */
@@ -49,6 +51,18 @@ export interface StateMessage {
   defence: DefenceState;
   /** one-off lines to show everyone (a wave starting, the reactor going down) */
   announcements?: string[];
+}
+
+/**
+ * The arcade board, sent on joining and whenever it changes: the run in
+ * progress, the best players of all time, and the runs that were won.
+ * Players are named by codename only (see palette.ts codename), never by id.
+ */
+export interface BoardMessage {
+  type: "board";
+  run: { attempts: number; best: number };
+  top: { name: string; kills: number; boxes: number; attempts: number; wins: number }[];
+  wins: { n: number; wonAt: number; attempts: number; crew: string[] }[];
 }
 
 export interface MoveMessage {
@@ -104,7 +118,7 @@ export interface ProjectileState {
   range: number;
 }
 
-export type ServerMessage = WelcomeMessage | StateMessage;
+export type ServerMessage = WelcomeMessage | StateMessage | BoardMessage;
 export type ClientMessage = MoveMessage | PickupMessage | PrimaryMessage | DropMessage | ActivateMessage;
 
 /**
@@ -529,7 +543,8 @@ export const STATIONS: { kind: ItemKind; x: number; z: number }[] = [
   { kind: "box", x: 4.5, z: 22 },
 ];
 export const STATION_RESTOCK_MS = 3000;
-export const ITEM_CAPS: Record<ItemKind, number> = { gun: 12, box: 30 };
+/** boxes are capped higher than a single attempt needs: they're what carries over between attempts */
+export const ITEM_CAPS: Record<ItemKind, number> = { gun: 12, box: 60 };
 
 export const PLAYER_RADIUS = 0.4;
 /** walking speed, units/second: the client moves at it and the server won't accept faster */

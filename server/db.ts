@@ -70,7 +70,7 @@ export function loadDefence(): DefenceState | undefined {
   if (!row) return undefined;
   const d = JSON.parse(row.value) as DefenceState;
   // a wave timer from before the restart means nothing now
-  return { reactorHealth: d.reactorHealth, wave: d.wave };
+  return { reactorHealth: d.reactorHealth, charge: d.charge ?? 0, wave: d.wave };
 }
 
 /**
@@ -99,6 +99,87 @@ export function saveWorld(
     db.exec("ROLLBACK");
     throw err;
   }
+}
+
+// The arcade board: what each player has done across every attempt and run
+// (never reset), and every run that was won. The run in progress --- how
+// many attempts, how far the best got --- lives in `world` as "run".
+db.exec(`
+  CREATE TABLE IF NOT EXISTS stats (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    kills INTEGER NOT NULL DEFAULT 0,
+    boxes INTEGER NOT NULL DEFAULT 0,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    wins INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE TABLE IF NOT EXISTS runs (
+    n INTEGER PRIMARY KEY,
+    won_at INTEGER NOT NULL,
+    attempts INTEGER NOT NULL,
+    crew TEXT NOT NULL
+  );
+`);
+
+export interface PlayerStats {
+  id: string;
+  name: string;
+  kills: number;
+  boxes: number;
+  attempts: number;
+  wins: number;
+}
+export interface RunRecord {
+  n: number;
+  wonAt: number;
+  attempts: number;
+  crew: string[];
+}
+export interface RunProgress {
+  /** attempts started in this run so far */
+  attempts: number;
+  /** the furthest any of them charged the reactor, 0..1 */
+  best: number;
+}
+
+const bumpStmt = db.prepare(`
+  INSERT INTO stats (id, name, kills, boxes, attempts, wins) VALUES (?, ?, ?, ?, ?, ?)
+  ON CONFLICT(id) DO UPDATE SET name = excluded.name, kills = kills + excluded.kills,
+    boxes = boxes + excluded.boxes, attempts = attempts + excluded.attempts, wins = wins + excluded.wins
+`);
+const topStatsStmt = db.prepare("SELECT id, name, kills, boxes, attempts, wins FROM stats ORDER BY wins DESC, kills DESC LIMIT ?");
+const listRunsStmt = db.prepare("SELECT n, won_at, attempts, crew FROM runs ORDER BY n DESC LIMIT ?");
+const insertRunStmt = db.prepare("INSERT INTO runs (won_at, attempts, crew) VALUES (?, ?, ?)");
+
+/** add to a player's lifetime totals (and record the name they're shown under now) */
+export function bumpStats(id: string, name: string, add: Partial<Omit<PlayerStats, "id" | "name">>): void {
+  bumpStmt.run(id, name, add.kills ?? 0, add.boxes ?? 0, add.attempts ?? 0, add.wins ?? 0);
+}
+export function topStats(limit: number): PlayerStats[] {
+  return topStatsStmt.all(limit) as unknown as PlayerStats[];
+}
+export function recentRuns(limit: number): RunRecord[] {
+  return (listRunsStmt.all(limit) as { n: number; won_at: number; attempts: number; crew: string }[]).map((r) => ({
+    n: r.n,
+    wonAt: r.won_at,
+    attempts: r.attempts,
+    crew: JSON.parse(r.crew) as string[],
+  }));
+}
+export function recordRun(attempts: number, crew: string[]): void {
+  insertRunStmt.run(Date.now(), attempts, JSON.stringify(crew));
+}
+export function loadRun(): RunProgress {
+  const row = getWorldStmt.get("run") as { value: string } | undefined;
+  return row ? (JSON.parse(row.value) as RunProgress) : { attempts: 0, best: 0 };
+}
+export function saveRun(run: RunProgress): void {
+  setWorldStmt.run("run", JSON.stringify(run));
+}
+
+/** a won run: the world goes back to how a fresh volume starts it */
+export function clearItems(): void {
+  clearItemsStmt.run();
 }
 
 const getStmt = db.prepare("SELECT id, color, x, z, rotation FROM players WHERE id = ?");

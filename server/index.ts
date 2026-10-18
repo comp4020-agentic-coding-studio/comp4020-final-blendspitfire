@@ -3,9 +3,23 @@ import { randomUUID } from "node:crypto";
 import { readFile, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
-import { loadDefence, loadItems, loadObjective, loadOrCreatePlayer, saveWorld, savePlayer } from "./db.ts";
+import {
+  bumpStats,
+  clearItems,
+  loadDefence,
+  loadItems,
+  loadObjective,
+  loadOrCreatePlayer,
+  loadRun,
+  recentRuns,
+  recordRun,
+  saveRun,
+  saveWorld,
+  savePlayer,
+  topStats,
+} from "./db.ts";
 import { Defence } from "./defence.ts";
-import { PLAYER_COLORS } from "../shared/palette.ts";
+import { PLAYER_COLORS, codename } from "../shared/palette.ts";
 import {
   BROADCAST_INTERVAL_MS,
   DEATH_DURATION_MS,
@@ -154,6 +168,11 @@ interface Connection {
   /** message rate limiting: the current one-second window and how many it's had */
   windowStart: number;
   windowCount: number;
+  /** when each kind of refusal may next be logged (see refuse) */
+  refusalLoggedAt: Map<string, number>;
+  /** shots fired and enemies killed since the last shot line in the log */
+  shots: number;
+  kills: number;
 }
 
 /** an honest client sends a move ~20 times a second plus the odd action */
@@ -164,6 +183,45 @@ const MOVE_BURST_S = 0.5;
 const MOVE_SLACK = 1.5;
 
 const connections = new Map<string, Connection>();
+
+/**
+ * The action log: one line per thing a player did or was refused, named by
+ * the codename they see on screen, so `flyctl logs` tells people apart.
+ */
+function act(player: { id: string; color: string }, what: string): void {
+  console.log(`[${codename(player)}] ${what}`);
+}
+const pos = (x: number, z: number): string => `(${x.toFixed(1)}, ${z.toFixed(1)})`;
+const shortId = (id: string): string => id.slice(0, 6);
+
+/**
+ * Wounds and being out belong to the attempt, not the connection: someone
+ * who leaves mid-attempt and comes back gets them back, rather than a fresh
+ * body. Cleared when the attempt ends.
+ */
+const carried = new Map<string, { wounds: number; out: boolean }>();
+
+/**
+ * A refused action is logged too --- it's the server holding a line --- but
+ * at most once per player per kind every few seconds, so a broken or
+ * hostile client can't bury everyone else's lines.
+ */
+const REFUSAL_LOG_GAP_MS = 3000;
+function refuse(conn: Connection, kind: string, what: string): void {
+  const now = Date.now();
+  if (now < (conn.refusalLoggedAt.get(kind) ?? 0)) return;
+  conn.refusalLoggedAt.set(kind, now + REFUSAL_LOG_GAP_MS);
+  act(conn.player, what);
+}
+
+/** shots are too many for a line each: each player's are summed and logged every few seconds */
+const SHOT_LOG_EVERY_MS = 5000;
+function flushShots(conn: Connection): void {
+  if (conn.shots === 0) return;
+  act(conn.player, `fired ${conn.shots} shot(s): ${conn.kills} kill(s)`);
+  conn.shots = 0;
+  conn.kills = 0;
+}
 
 // The world --- items and the reactor --- is saved to SQLite (server/db.ts)
 // and loaded back on boot, so what people built and moved survives the
@@ -230,14 +288,65 @@ const defence = new Defence(
     players: () => [...connections.values()].filter((c) => !isDead(c) && !isInYard(c.player.x, c.player.z)).map((c) => c.player),
     hurtPlayer: (id, now) => {
       const conn = connections.get(id);
-      if (conn && !isDead(conn)) wound(conn, now);
+      if (conn && !isDead(conn)) wound(conn, now, "a crawler");
     },
     changed: markWorldDirty,
     announce,
-    ended: reviveTheFallen,
+    ended: (reason, charge) => {
+      console.log(`[attempt ${attempt.number}] failed: ${reason}, charge ${Math.floor(charge * 100)}% (crew: ${crewNames().join(", ") || "nobody"})`);
+      run.best = Math.max(run.best, charge);
+      saveRun(run);
+      carried.clear();
+      reviveTheFallen();
+      boardDirty = true;
+    },
+    won: winRun,
   },
   loadDefence(),
 );
+
+// The run: attempts at charging the reactor, failed ones and all, until one
+// gets it to full. Every attempt is logged and counted; a win goes on the
+// board and the facility starts over.
+const run = loadRun();
+/** the attempt under way: its number in the run, and everyone who's been through the gate during it */
+const attempt = { number: run.attempts, players: new Set<string>() };
+const crewNames = (): string[] =>
+  [...attempt.players].map((id) => {
+    const c = connections.get(id);
+    return c ? codename(c.player) : shortId(id);
+  });
+
+function winRun(): void {
+  const crew = crewNames();
+  console.log(`[attempt ${attempt.number}] WON: the reactor is stable after ${attempt.number} attempt(s) (crew: ${crew.join(", ")})`);
+  recordRun(attempt.number, crew);
+  for (const id of attempt.players) {
+    const c = connections.get(id);
+    if (c) bumpStats(id, codename(c.player), { wins: 1 });
+  }
+  announce(`reactor stable — run won in ${attempt.number} attempt(s)`);
+  run.attempts = 0;
+  run.best = 0;
+  saveRun(run);
+  attempt.number = 0;
+  attempt.players.clear();
+  carried.clear();
+  // the facility starts over: what was built goes, the starting kit comes back,
+  // everyone's sent back to the intake
+  items.clear();
+  clearItems();
+  for (const it of [...INITIAL_ITEMS, ...STATIONS]) spawnItem(it.kind, it.x, it.z);
+  for (const conn of connections.values()) {
+    respawn(conn.player);
+    conn.entered = false;
+    conn.wounds = 0;
+    conn.deadUntil = 0;
+    conn.lastMoveAt = 0;
+    conn.dirty = true;
+  }
+  boardDirty = true;
+}
 
 function spawnItem(kind: ItemKind, x: number, z: number): void {
   const id = randomUUID();
@@ -297,9 +406,13 @@ function handlePrimary(conn: Connection, x: number, z: number, now: number): voi
   if (!item) return;
   if (item.kind === "gun") {
     // the yard is a no-fire zone; the client says so, the server enforces it
-    if (isInYard(conn.player.x, conn.player.z)) return;
+    if (isInYard(conn.player.x, conn.player.z)) {
+      refuse(conn, "fire", "refused: firing in the safe room");
+      return;
+    }
     if (now - conn.lastFireAt < FIRE_COOLDOWN_MS) return;
     conn.lastFireAt = now;
+    if (conn.shots++ === 0) setTimeout(() => flushShots(conn), SHOT_LOG_EVERY_MS);
     // aim at the point the shooter clicked, not their last-reported facing,
     // which can lag a move packet behind
     let dx = x - conn.player.x;
@@ -312,10 +425,16 @@ function handlePrimary(conn: Connection, x: number, z: number, now: number): voi
   } else if (item.kind === "box") {
     if (!Number.isFinite(x) || !Number.isFinite(z)) return;
     const verdict = placementVerdict(x, z, conn.player, worldObstacles(items.values()), livingPlayers(now));
-    if (verdict !== "ok") return;
+    if (verdict !== "ok") {
+      refuse(conn, "place", `refused: box at ${pos(x, z)} (${verdict})`);
+      return;
+    }
     item.heldBy = undefined;
     item.x = x;
     item.z = z;
+    act(conn.player, `placed box ${shortId(item.id)} at ${pos(x, z)}`);
+    bumpStats(conn.player.id, codename(conn.player), { boxes: 1 });
+    boardDirty = true;
     markWorldDirty();
   }
 }
@@ -338,8 +457,28 @@ function netPlayer(conn: Connection, now: number): PlayerState {
     score: conn.score,
     entered: conn.entered ? true : undefined,
     wounds: conn.wounds || undefined,
+    name: codename(conn.player),
   };
 }
+
+// The arcade board goes out when something on it changed, at most once a
+// second, rather than with every tick.
+let boardDirty = true;
+const BOARD_SIZE = 8;
+function boardMessage(): string {
+  return JSON.stringify({
+    type: "board",
+    run: { attempts: run.attempts, best: run.best },
+    top: topStats(BOARD_SIZE).map(({ name, kills, boxes, attempts, wins }) => ({ name, kills, boxes, attempts, wins })),
+    wins: recentRuns(5),
+  } satisfies ServerMessage);
+}
+setInterval(() => {
+  if (!boardDirty || connections.size === 0) return;
+  boardDirty = false;
+  const msg = boardMessage();
+  for (const conn of connections.values()) if (conn.socket.readyState === conn.socket.OPEN) conn.socket.send(msg);
+}, 1000);
 const pendingIds = new WeakMap<object, string>();
 
 wss.on("headers", (headers, req) => {
@@ -358,7 +497,8 @@ wss.on("connection", (socket, req) => {
   // Everyone starts in the yard: the saved position only matters while
   // connected (it's what a reconnect mid-session would otherwise restore).
   respawn(player, true);
-  const taken = [...connections.values()].map((c) => c.player.color);
+  // (not counting this same player's older tab, which is about to be replaced)
+  const taken = [...connections.values()].filter((c) => c.player.id !== playerId).map((c) => c.player.color);
   if (!PLAYER_COLORS.includes(player.color as (typeof PLAYER_COLORS)[number]) || taken.includes(player.color)) {
     player.color = leastUsedColor(taken);
   }
@@ -376,8 +516,29 @@ wss.on("connection", (socket, req) => {
     windowStart: 0,
     windowCount: 0,
     hasItems: false,
+    refusalLoggedAt: new Map(),
+    shots: 0,
+    kills: 0,
   };
+  // the same browser in a second tab (one cookie, one person): the newer
+  // tab takes over and the older is closed, never two bodies for one id
+  const previous = connections.get(playerId);
+  if (previous) {
+    act(player, "opened a second tab: closing the first");
+    dropHeld(previous.player);
+    previous.socket.close(4000, "opened in another tab");
+  }
+  const back = carried.get(playerId);
+  if (back) {
+    carried.delete(playerId);
+    conn.wounds = back.wounds;
+    if (back.out) conn.deadUntil = Infinity;
+  }
   connections.set(playerId, conn);
+  act(
+    player,
+    `joined (id ${shortId(playerId)}, ${connections.size} online)${back?.out ? " — still out this attempt" : back?.wounds ? ` — ${back.wounds} wound(s) carried over` : ""}`,
+  );
 
   const now = Date.now();
   const welcome: ServerMessage & { type: "welcome" } = {
@@ -387,6 +548,7 @@ wss.on("connection", (socket, req) => {
     players: [...connections.values()].map((c) => netPlayer(c, now)),
   };
   socket.send(JSON.stringify(welcome));
+  socket.send(boardMessage());
 
   // a protocol error on one socket (an oversized frame, a bad handshake
   // byte) is emitted as an 'error' event; with no listener Node treats it as
@@ -403,7 +565,10 @@ wss.on("connection", (socket, req) => {
       conn.windowStart = now;
       conn.windowCount = 0;
     }
-    if (++conn.windowCount > MAX_MESSAGES_PER_SECOND) return;
+    if (++conn.windowCount > MAX_MESSAGES_PER_SECOND) {
+      refuse(conn, "flood", `refused: over ${MAX_MESSAGES_PER_SECOND} messages/s, dropping the excess`);
+      return;
+    }
     if (isDead(conn)) return; // frozen while waiting to respawn
 
     let msg: ClientMessage;
@@ -429,6 +594,9 @@ wss.on("connection", (socket, req) => {
       let tz = move.z;
       const dist = Math.hypot(tx - conn.player.x, tz - conn.player.z);
       if (dist > budget) {
+        // a little over budget is ordinary network jitter; only a claim
+        // well past it is worth a line
+        if (dist > budget * 3 + 0.5) refuse(conn, "teleport", `refused: move of ${dist.toFixed(1)}u (allowed ${budget.toFixed(1)}u), cut short`);
         tx = conn.player.x + ((tx - conn.player.x) / dist) * budget;
         tz = conn.player.z + ((tz - conn.player.z) / dist) * budget;
       }
@@ -436,12 +604,26 @@ wss.on("connection", (socket, req) => {
       const resolved = resolveObstacles(clamped.x, clamped.z, obstaclesFor(conn.entered, worldObstacles(items.values())));
       // walls stop a walking player, but a client could still claim a
       // jump straight to the far side of one --- or back through the gate
-      if (!isWalkable(resolved.x, resolved.z)) return;
-      if (conn.entered && isInYard(resolved.x, resolved.z)) return;
+      if (!isWalkable(resolved.x, resolved.z)) {
+        refuse(conn, "wall", `refused: move into a wall at ${pos(resolved.x, resolved.z)}`);
+        return;
+      }
+      if (conn.entered && isInYard(resolved.x, resolved.z)) {
+        refuse(conn, "gate", "refused: back through the one-way gate");
+        return;
+      }
       conn.player.x = resolved.x;
       conn.player.z = resolved.z;
       conn.player.rotation = move.rotation;
-      if (!conn.entered && hasPassedGate(resolved.z)) conn.entered = true;
+      if (!conn.entered && hasPassedGate(resolved.z)) {
+        conn.entered = true;
+        act(conn.player, "went through the gate into the facility");
+        if (objective.active && !attempt.players.has(playerId)) {
+          attempt.players.add(playerId);
+          bumpStats(playerId, codename(conn.player), { attempts: 1 });
+          boardDirty = true;
+        }
+      }
       conn.dirty = true;
       return;
     }
@@ -451,8 +633,17 @@ wss.on("connection", (socket, req) => {
       if (verdict === "ok") {
         objective.active = true;
         defence.start(Date.now());
+        attempt.number += 1;
+        attempt.players = new Set([playerId, ...[...connections.values()].filter((c) => c.entered).map((c) => c.player.id)]);
+        run.attempts = attempt.number;
+        saveRun(run);
+        for (const id of attempt.players) bumpStats(id, codename(connections.get(id)!.player), { attempts: 1 });
+        boardDirty = true;
+        act(conn.player, `switched the reactor on: attempt ${attempt.number} begins`);
         announce("the reactor is live — hold it");
         markWorldDirty();
+      } else {
+        refuse(conn, "activate", `refused: reactor switch (${verdict})`);
       }
       return;
     }
@@ -460,10 +651,20 @@ wss.on("connection", (socket, req) => {
     if (msg.type === "pickup") {
       if (typeof msg.itemId !== "string") return;
       const item = items.get(msg.itemId);
-      if (!item || item.heldBy !== undefined || heldItem(playerId)) return;
+      if (!item) return;
+      if (item.heldBy !== undefined && item.heldBy !== playerId) {
+        const holder = connections.get(item.heldBy);
+        refuse(conn, "pickup", `refused: ${item.kind} ${shortId(item.id)} is in ${holder ? codename(holder.player) : "someone else"}'s hands`);
+        return;
+      }
+      if (item.heldBy !== undefined || heldItem(playerId)) return;
       const reach = Math.hypot(item.x - conn.player.x, item.z - conn.player.z);
-      if (reach > PICKUP_RANGE) return;
+      if (reach > PICKUP_RANGE) {
+        refuse(conn, "pickup", `refused: ${item.kind} ${shortId(item.id)} out of reach (${reach.toFixed(1)}u)`);
+        return;
+      }
       item.heldBy = playerId;
+      act(conn.player, `picked up ${item.kind} ${shortId(item.id)} at ${pos(item.x, item.z)}`);
       markWorldDirty();
       return;
     }
@@ -477,14 +678,25 @@ wss.on("connection", (socket, req) => {
       // A box goes down through its primary action (it needs a valid spot);
       // only items that don't block anything can just be let go of.
       const item = heldItem(playerId);
-      if (item && item.kind !== "box") dropHeld(conn.player);
+      if (item && item.kind !== "box") {
+        act(conn.player, `dropped ${item.kind} ${shortId(item.id)} at ${pos(conn.player.x, conn.player.z)}`);
+        dropHeld(conn.player);
+      }
       return;
     }
   });
 
   socket.on("close", () => {
     dropHeld(conn.player);
-    connections.delete(playerId);
+    flushShots(conn);
+    // a tab replaced by a newer one mustn't take the newer one down with it
+    if (connections.get(playerId) === conn) {
+      connections.delete(playerId);
+      if (objective.active && (conn.wounds > 0 || conn.deadUntil === Infinity)) {
+        carried.set(playerId, { wounds: conn.wounds, out: conn.deadUntil === Infinity });
+      }
+      act(conn.player, `left (${connections.size} online)`);
+    }
     savePlayer(conn.player);
   });
 });
@@ -595,13 +807,19 @@ function stepProjectiles(now: number): void {
       p.range = enemyHit.at;
       if (defence.damage(enemyHit.id)) {
         const ownerConn = connections.get(p.ownerId);
-        if (ownerConn) ownerConn.score += 1;
+        if (ownerConn) {
+          ownerConn.score += 1;
+          ownerConn.kills += 1;
+          bumpStats(ownerConn.player.id, codename(ownerConn.player), { kills: 1 });
+          boardDirty = true;
+        }
       }
     } else if (victim) {
       p.range = at;
+      const ownerConn = connections.get(p.ownerId);
+      const by = ownerConn ? (victim === ownerConn ? "their own shot" : codename(ownerConn.player)) : "a stray shot";
       // friendly fire only counts against the score when it kills
-      if (wound(victim, now)) {
-        const ownerConn = connections.get(p.ownerId);
+      if (wound(victim, now, by)) {
         if (ownerConn) ownerConn.score += victim.player.id === p.ownerId ? -1 : 1;
       }
     }
@@ -609,15 +827,17 @@ function stepProjectiles(now: number): void {
 }
 
 /** a hit on a player: one more wound, or death if they've taken all they can; true if it killed */
-function wound(conn: Connection, now: number): boolean {
+function wound(conn: Connection, now: number, by: string): boolean {
   if (now < conn.woundGraceUntil) return false;
   if (conn.wounds >= MAX_WOUNDS) {
     kill(conn, now);
+    act(conn.player, `killed by ${by} at ${pos(conn.player.x, conn.player.z)}${conn.deadUntil === Infinity ? ": out for this attempt" : ""}`);
     return true;
   }
   conn.wounds += 1;
   conn.woundGraceUntil = now + WOUND_GRACE_MS;
   conn.dirty = true;
+  act(conn.player, `wounded by ${by} (${conn.wounds}/${MAX_WOUNDS})`);
   return false;
 }
 

@@ -20,7 +20,7 @@ import { mesh } from "./models/kit.ts";
 import { LAMPS, LAMP_SPECS, lampSource } from "./world/dressing.ts";
 import { ACCENT, STENCIL, DANGER, OK, EMIT_GREEN, EMIT_RED, EMIT_TRACER } from "../shared/palette.ts";
 import { INTERP_DELAY_MS, ServerClock, SnapshotBuffer, Tracer } from "./netsync.ts";
-import { ENEMY_RADIUS, type DefenceState, type EnemyState } from "../shared/enemies.ts";
+import { CHARGE_MS, ENEMY_RADIUS, type DefenceState, type EnemyState } from "../shared/enemies.ts";
 import {
   BOX_HALF_EXTENT,
   BREACHES,
@@ -60,6 +60,7 @@ import {
   type ObjectiveState,
   type Obstacle,
   type PlacementVerdict,
+  type BoardMessage,
   type PlayerState,
   type ProjectileState,
 } from "../shared/protocol.ts";
@@ -251,10 +252,12 @@ function makeCharacter(color: string, mine: boolean): THREE.Object3D {
   return mesh;
 }
 
-// The leaderboard only ever shows who the server currently has connected:
+const escapeText = (t: string): string => t.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+
+// The room list only ever shows who the server currently has connected:
 // it's built straight from each state broadcast's player list, so someone
-// who disconnects just stops appearing, and a rejoin starts them at 0 again
-// (score is in-memory server-side, never persisted).
+// who disconnects just stops appearing. Its score is this session's only;
+// what lasts is on the arcade board below it.
 function renderLeaderboard(players: PlayerState[]): void {
   const sorted = [...players].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
   leaderboardEl.innerHTML = sorted
@@ -262,11 +265,18 @@ function renderLeaderboard(players: PlayerState[]): void {
       const mine = p.id === myId;
       return `<div class="row${mine ? " me" : ""}">
         <span class="swatch" style="background:${p.color}"></span>
-        <span>${mine ? "you" : "player"}</span>
+        <span>${escapeText(p.name ?? "player")}${mine ? " (you)" : ""}</span>
         <span class="score">${p.score ?? 0}</span>
       </div>`;
     })
     .join("");
+  placeBoard();
+}
+
+/** the arcade board sits just under the room list, whose height changes with who's on */
+function placeBoard(): void {
+  const el = document.getElementById("board");
+  if (el) el.style.top = `${leaderboardEl.getBoundingClientRect().bottom + 8}px`;
 }
 
 // --- Aim -------------------------------------------------------------------
@@ -709,6 +719,11 @@ const net = connect({
     }
     renderLeaderboard(players);
   },
+  onBoard: renderBoard,
+  onReplaced() {
+    connectionLostEl.textContent = "open in another tab — this one is paused";
+    connectionLostEl.style.display = "block";
+  },
   onState(state) {
     const { t, players } = state;
     serverClock.observe(t);
@@ -988,7 +1003,7 @@ interface ClientEnemy {
   hitUntil: number;
 }
 const enemies = new Map<string, ClientEnemy>();
-let defenceState: DefenceState = { reactorHealth: 1, wave: 0 };
+let defenceState: DefenceState = { reactorHealth: 1, charge: 0, wave: 0 };
 const enemyBarGeometry = new THREE.PlaneGeometry(0.7, 0.07).rotateX(-Math.PI / 2);
 
 function updateEnemies(incoming: EnemyState[], t: number): void {
@@ -1238,6 +1253,8 @@ const hudEl = document.createElement("div");
 hudEl.style.cssText =
   "position:fixed;top:12px;left:50%;transform:translateX(-50%);width:min(360px,70vw);padding:8px 12px;background:rgba(6,8,12,0.72);border-radius:4px;font:700 12px system-ui,sans-serif;letter-spacing:0.06em;color:#dfe8f2;text-transform:uppercase;pointer-events:none;display:none;text-align:center";
 hudEl.innerHTML =
+  '<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>charge</span><span id="hud-charge-pct"></span></div>' +
+  '<div style="height:12px;background:rgba(10,14,20,0.8);border:1px solid rgba(143,224,138,0.55);border-radius:2px;overflow:hidden;margin-bottom:8px"><div id="hud-charge" style="height:100%;width:0;background:#8fe08a;transition:width 0.3s"></div></div>' +
   '<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>reactor</span><span id="hud-wave"></span></div>' +
   '<div style="height:8px;background:rgba(10,14,20,0.8);border:1px solid rgba(90,168,255,0.5);border-radius:2px;overflow:hidden"><div id="hud-hp" style="height:100%;width:100%;background:#5aa8ff;transition:width 0.2s"></div></div>' +
   '<div id="hud-next" style="margin-top:4px;opacity:0.75"></div>';
@@ -1245,16 +1262,47 @@ document.body.appendChild(hudEl);
 const hudHp = hudEl.querySelector<HTMLDivElement>("#hud-hp")!;
 const hudWave = hudEl.querySelector<HTMLSpanElement>("#hud-wave")!;
 const hudNext = hudEl.querySelector<HTMLDivElement>("#hud-next")!;
+const hudCharge = hudEl.querySelector<HTMLDivElement>("#hud-charge")!;
+const hudChargePct = hudEl.querySelector<HTMLSpanElement>("#hud-charge-pct")!;
 function renderDefenceHud(): void {
   hudEl.style.display = objective.active ? "block" : "none";
   if (!objective.active) return;
+  const charge = defenceState.charge ?? 0;
+  hudCharge.style.width = `${(charge * 100).toFixed(1)}%`;
+  const left = Math.ceil(((1 - charge) * CHARGE_MS) / 1000);
+  hudChargePct.textContent = `${Math.floor(charge * 100)}% · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} to stable`;
   const hp = defenceState.reactorHealth;
   hudHp.style.width = `${Math.round(hp * 100)}%`;
   // the bar turns from the reactor's blue to alarm red as it's worn down
   hudHp.style.background = hp > 0.5 ? "#5aa8ff" : hp > 0.25 ? "#ffa02e" : "#ff3346";
   hudWave.textContent = defenceState.wave > 0 ? `wave ${defenceState.wave}` : "";
   const next = defenceState.nextWaveAt;
-  hudNext.textContent = next ? `next wave in ${Math.max(0, Math.ceil((next - serverClock.now()) / 1000))}s` : enemies.size ? `${enemies.size} hostile` : "";
+  const nextIn = next ? Math.max(0, Math.ceil((next - serverClock.now()) / 1000)) : 0;
+  hudNext.textContent = [enemies.size ? `${enemies.size} hostile` : "", next ? `next wave ${nextIn}s` : ""].filter(Boolean).join(" · ");
+}
+
+// The arcade board, under the room list: how this run is going (attempts so
+// far, the best charge any got to), the all-time top players, and the runs
+// that were won. Kept by the server across restarts; sent when it changes.
+const boardEl = document.createElement("div");
+boardEl.id = "board";
+leaderboardEl.after(boardEl);
+function renderBoard(b: BoardMessage): void {
+  const runLine = b.run.attempts
+    ? `run: attempt ${b.run.attempts}${b.run.best ? ` · best ${Math.floor(b.run.best * 100)}%` : ""}`
+    : "run: no attempts yet";
+  const rows = b.top
+    .map((p, i) => `<div class="row"><span class="rank">${i + 1}</span><span>${escapeText(p.name)}</span><span class="score">${p.wins ? `★${p.wins} ` : ""}${p.kills}k ${p.boxes}b</span></div>`)
+    .join("");
+  const wins = b.wins
+    .map((w) => `<div class="row won"><span>#${w.n}</span><span>${w.attempts} attempt(s)</span><span class="score">${escapeText(w.crew.slice(0, 3).join(", "))}${w.crew.length > 3 ? "…" : ""}</span></div>`)
+    .join("");
+  boardEl.innerHTML =
+    `<div class="title">high scores</div><div class="run">${runLine}</div>` +
+    (rows || '<div class="row dim">nobody yet</div>') +
+    (wins ? `<div class="title">reactor stabilised</div>${wins}` : "") +
+    '<div class="legend">★ runs won · k kills · b boxes placed</div>';
+  placeBoard();
 }
 
 // The objective banner: a line across the top of the screen when the reactor goes live.
