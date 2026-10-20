@@ -881,7 +881,7 @@ export const woundedSpeed = (wounds: number): number => PLAYER_SPEED * (wounds >
 export const WOUNDED_AIM_SPREAD = 0.12;
 
 /** a rifle round, fast enough to read as a tracer rather than a ball you could dodge */
-export const PROJECTILE_SPEED = 45;
+export const PROJECTILE_SPEED = 90;
 export const PROJECTILE_RADIUS = 0.05;
 /** the furthest a shot flies if nothing stops it */
 export const PROJECTILE_MAX_RANGE = 40;
@@ -962,8 +962,10 @@ export function segmentHitsCircle(
   if (t > to || along + Math.sqrt(radius * radius - perp2) < from) return undefined;
   return t;
 }
-/** minimum time between shots from one gun-holder: the automatic rifle's rate of fire (~400 rpm) */
-export const FIRE_COOLDOWN_MS = 150;
+/** minimum time between shots from one gun-holder: the automatic rifle's rate of fire (600 rpm) */
+export const FIRE_COOLDOWN_MS = 100;
+/** every shot strays up to this far (radians) either side of the aim: a rifle on full auto isn't a laser */
+export const AIM_SPREAD = 0.05;
 
 export function clampToPlayBounds(x: number, z: number): { x: number; z: number } {
   return {

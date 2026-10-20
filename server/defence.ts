@@ -7,7 +7,7 @@ import {
   ENEMY_RADIUS,
   ENEMY_REACH,
   ENEMY_REACTOR_DAMAGE,
-  ENEMY_SPEED,
+  enemySpeed,
   FIRST_WAVE_DELAY_MS,
   FlowField,
   LEASH_RANGE,
@@ -15,7 +15,7 @@ import {
   REACTOR_COMMIT,
   SEARCH_MS,
   SPAWNS,
-  SPAWN_INTERVAL_MS,
+  spawnInterval,
   THINK_MS,
   TURRET_FIRE_INTERVAL_MS,
   TURRET_HIT_POINTS,
@@ -229,7 +229,7 @@ export class Defence {
         nextThinkAt: 0,
       });
       this.toSpawn -= 1;
-      this.nextSpawnAt = now + SPAWN_INTERVAL_MS;
+      this.nextSpawnAt = now + spawnInterval(this.state.wave);
     }
   }
 
@@ -299,7 +299,7 @@ export class Defence {
   /** one step along (dx, dz); stuck (or sealed in), chew whatever box is in the way */
   private walk(e: Enemy, dx: number, dz: number, dt: number, solid: typeof OBSTACLES, boxes: ItemState[], now: number, sealed: boolean): void {
     const len = Math.hypot(dx, dz) || 1;
-    const step = ENEMY_SPEED * dt;
+    const step = enemySpeed(this.state.wave) * dt;
     e.rotation = Math.atan2(dx, dz);
     const moved = this.collide(e, e.x + (dx / len) * step, e.z + (dz / len) * step, solid);
     if (sealed || Math.hypot(moved.x - e.x, moved.z - e.z) < step * 0.25) this.chewNearestBox(e, boxes, now);

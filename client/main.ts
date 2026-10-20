@@ -68,6 +68,7 @@ import {
   PICKUP_RANGE,
   MAX_WOUNDS,
   WOUNDED_AIM_SPREAD,
+  AIM_SPREAD,
   WOUNDS,
   woundedSpeed,
   PLACE_RANGE,
@@ -1127,19 +1128,16 @@ function fireGun(clicked: boolean): void {
   const now = performance.now();
   if (now - lastFireAt < FIRE_COOLDOWN_MS) return;
   lastFireAt = now;
-  // a hurt arm shakes the aim: the shot strays a little either side. The
+  // every shot strays a little either side, and a hurt arm far more. The
   // stray is decided here and sent as the aim, so the tracer drawn now is
   // exactly the shot the server fires (co-op, so trusting it costs nothing)
-  let aimX = aimPoint.x;
-  let aimZ = aimPoint.z;
-  if (myWounds >= 3) {
-    const dx = aimX - localMesh.position.x;
-    const dz = aimZ - localMesh.position.z;
-    const a = Math.atan2(dx, dz) + (Math.random() * 2 - 1) * WOUNDED_AIM_SPREAD;
-    const d = Math.max(1, Math.hypot(dx, dz));
-    aimX = localMesh.position.x + Math.sin(a) * d;
-    aimZ = localMesh.position.z + Math.cos(a) * d;
-  }
+  const spread = AIM_SPREAD + (myWounds >= 3 ? WOUNDED_AIM_SPREAD : 0);
+  const dx = aimPoint.x - localMesh.position.x;
+  const dz = aimPoint.z - localMesh.position.z;
+  const a = Math.atan2(dx, dz) + (Math.random() * 2 - 1) * spread;
+  const d = Math.max(1, Math.hypot(dx, dz));
+  const aimX = localMesh.position.x + Math.sin(a) * d;
+  const aimZ = localMesh.position.z + Math.cos(a) * d;
   net.primary(aimX, aimZ);
   firePredictedShot(aimX, aimZ);
 }

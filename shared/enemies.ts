@@ -43,7 +43,11 @@ export interface DefenceState {
 
 export const ENEMY_RADIUS = 0.38;
 export const ENEMY_SPEED = 2.2;
-export const ENEMY_HIT_POINTS = 3;
+/** each wave after the first, enemies move this much faster */
+export const ENEMY_SPEED_PER_WAVE = 0.08;
+export const enemySpeed = (wave: number): number => ENEMY_SPEED + ENEMY_SPEED_PER_WAVE * Math.max(0, Math.min(wave, WAVES_TO_WIN) - 1);
+/** rifle rounds to drop one: the rifle fires fast and each round does little */
+export const ENEMY_HIT_POINTS = 5;
 /** how close (centre to the reactor's footprint edge, or to a player) an enemy attacks from */
 export const ENEMY_REACH = 0.7;
 export const ENEMY_ATTACK_INTERVAL_MS = 900;
@@ -77,7 +81,7 @@ export const TURRET_HIT_POINTS = 10;
  * lane rather than winning the wave on its own.
  */
 export const TURRET_RANGE = 7;
-export const TURRET_FIRE_INTERVAL_MS = 600;
+export const TURRET_FIRE_INTERVAL_MS = 450;
 
 /**
  * The objective: clear WAVES_TO_WIN waves. Each wave ends when every enemy
@@ -95,11 +99,18 @@ export const FIRST_WAVE_DELAY_MS = 10000;
 /** the breather between a cleared wave and the next */
 export const WAVE_BREAK_MS = 30000;
 /** never more than this many alive at once: the 256 MB machine is the limit */
-export const MAX_ENEMIES = 40;
-/** how many come in the wave numbered `wave` (1-based), scaled by how close that is to the win */
-export const waveSize = (wave: number): number => Math.round(4 + 22 * Math.min(1, wave / WAVES_TO_WIN));
-/** gap between spawns within a wave */
-export const SPAWN_INTERVAL_MS = 700;
+export const MAX_ENEMIES = 50;
+/**
+ * How many come in the wave numbered `wave` (1-based): quadratic, so the
+ * late waves are a different fight from the early ones (9, 32, 81 at waves
+ * 1, 5, 10). Past the last wave it stays at the last wave's size.
+ */
+export const waveSize = (wave: number): number => {
+  const w = Math.min(wave, WAVES_TO_WIN);
+  return Math.round(6 + 3 * w + 0.45 * w * w);
+};
+/** gap between spawns within a wave: tighter as the waves climb */
+export const spawnInterval = (wave: number): number => Math.max(250, 700 - 50 * (Math.min(wave, WAVES_TO_WIN) - 1));
 
 /** where enemies come in: just inside each breach */
 export function breachSpawn(b: Breach): { x: number; z: number } {

@@ -4,7 +4,7 @@ import {
   AGGRO_RANGE,
   ENEMY_REACTOR_DAMAGE,
   FIRST_WAVE_DELAY_MS,
-  SPAWN_INTERVAL_MS,
+  spawnInterval,
   TURRET_RANGE,
   WAVE_BREAK_MS,
   WAVES_TO_WIN,
@@ -142,7 +142,7 @@ describe("waves", () => {
     expect(d.state.phase).toBe("spawning");
     expect(d.state.wave).toBe(1);
     // let the whole wave come in, then shoot it all
-    now = run(d, (waveSize(1) * SPAWN_INTERVAL_MS) / 1000 + 0.5, now);
+    now = run(d, (waveSize(1) * spawnInterval(1)) / 1000 + 0.5, now);
     expect(d.snapshot().length).toBe(waveSize(1));
     killAll(d);
     now = run(d, 0.1, now);
@@ -182,8 +182,11 @@ describe("waves", () => {
     expect(d.state.wave).toBe(0);
   });
 
-  it("waves grow toward the last one", () => {
-    expect(waveSize(WAVES_TO_WIN)).toBeGreaterThan(waveSize(1) * 3);
+  it("waves grow faster than linearly toward the last one", () => {
+    expect(waveSize(WAVES_TO_WIN)).toBeGreaterThan(waveSize(1) * 6);
+    const half = Math.round(WAVES_TO_WIN / 2);
+    // the second half adds more than the first: the curve bends upward
+    expect(waveSize(WAVES_TO_WIN) - waveSize(half)).toBeGreaterThan(waveSize(half) - waveSize(1));
     expect(waveSize(WAVES_TO_WIN + 5)).toBe(waveSize(WAVES_TO_WIN));
   });
 });
@@ -216,7 +219,7 @@ describe("turrets", () => {
     d.start(0);
     d.skipBreak(0);
     let now = run(d, 0.1);
-    now = run(d, (waveSize(1) * SPAWN_INTERVAL_MS) / 1000 + 0.5, now);
+    now = run(d, (waveSize(1) * spawnInterval(1)) / 1000 + 0.5, now);
     killAll(d);
     run(d, 0.1, now);
     expect(paid.length).toBe(1);
