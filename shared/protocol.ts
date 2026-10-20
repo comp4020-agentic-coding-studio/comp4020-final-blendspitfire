@@ -586,7 +586,7 @@ export const FENCES: Obstacle[] = [
   fence(C + WALL_HALF, S.maxZ + WALL_HALF, S.maxX + 2 * WALL_HALF, S.maxZ + WALL_HALF),
 ];
 /** how far past the fence sight reaches on the surface: the ruins outside are part of the picture */
-export const SURFACE_VIEW_MARGIN = 6;
+export const SURFACE_VIEW_MARGIN = 16;
 
 /** every wall, as the room it faces: so a wall's two faces can be painted for the rooms either side */
 export type Zone = keyof typeof ROOMS | "lift" | "liftTop";
