@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-10-20, Surface garden, floating UI and the lift
+Synced from the draft up to: 2026-10-20, Direction: charge bar to become waves (not built)
 
 ---
 
@@ -537,4 +537,21 @@ Suggested minimal topology: safe room, one main corridor (bottleneck), a fork in
   - The scoreboard is a screen on the garden's north hedge. Using it opens a centred panel; walking away, E or Esc closes it. The always-on board in the corner is gone; the room list stays.
 
 **Why.** The developer wanted the arrival area to be the facility's opposite, and decided its look shouldn't be held to the underground's rules. Making the lift the ready-up gives one clear moment of joining an attempt. Letting people ride back up until the reactor is on means a player who goes down too early isn't punished for it. Prompts pinned to the object put the instruction where the eye already is.
+
+---
+
+## ADR-039: Direction only — the charge bar becomes waves, scored as in-fiction currency
+*2026-10-20 · Status: Proposed (direction from the developer; not built; several parts still open)*
+
+**Context.** The 6-minute charge bar (ADR-037) is a single long timer with no natural break in it. The developer wants attempts to be chopped into waves instead, with a pause between them for spending.
+
+**Decision.**
+- The six-minute charge bar is replaced by a wave count. A wave ends once it's cleared, not on a clock.
+- Between waves there's a 30-second break, meant for buying items and buildings from a shop that doesn't exist yet but will.
+- Each wave scores on its own: clearing faster scores higher. Other scoring parts (no damage taken, no teammate down, and so on) are still open — the agent offered options drawn from similar games, and the developer hasn't picked any yet.
+- The score doubles as the shop's currency. It's framed in the game's fiction as a quota: a supply credit a large, exploitative corporation issues to the contractors it sends down to die.
+- The break should offer a way to start the next wave early, though whether that needs everyone's agreement or just one player is undecided.
+- Still open: whether the score also decides who's winning, what ends a full run under the new scheme, and what the persistent board ends up recording.
+
+**Why.** The developer wants a rhythm of pressure and relief rather than one continuous climb, and a reason, in the game's own terms, for the currency a shop would need.
 

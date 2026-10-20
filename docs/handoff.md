@@ -2,12 +2,12 @@
 
 > **AI-recorded.** Written and kept current automatically by the coding agent (Claude Code) as its session-to-session handoff, not written by hand. Terse on purpose: it's for the next agent session to pick up from. Decision history lives in [adr.md](adr.md).
 
-Updated: 2026-10-21 (shipped: main pushed + deployed, live spec 117/117; crit-10 tag not yet made)
+Updated: 2026-10-21 (crit-10 shipped: tag pushed to origin, points at de1932b = main; course plugin at 0.14.30)
 
 ## Where we are
-- Crit 10 "Fly by instruments" cutoff Wed 2026-10-21 08:30 (tag crit-10 via /ship). Spec: multi-user, server-checked permissions written down with why (ADR-036), server logs of who did what, pod plays from URL alone while user narrates from `mise exec -- flyctl logs -a <repo>`, reflections/crit-10.md + PROCESS.md (both done 2026-10-20). Final project due 2026-11-09 12:00.
-- Everything up to 93f097f is pushed and deployed (CI check + deploy green; spec passes against the live fly.dev app). Second-tab takeover now sends a "replaced" message before closing (Fly's proxy swallowed the 4000 close frame). Not done: crit-10 tag (`/comp4020:ship`); course plugin update 0.14.26 -> 0.14.30.
-- Branch `surface` is merged (fast-forward) into main; can be deleted.
+- Crit 10 "Fly by instruments" cutoff was Wed 2026-10-21 08:30 — DONE: `crit-10` tag exists on origin at de1932b (= main HEAD). Spec: multi-user, server-checked permissions written down with why (ADR-036), server logs of who did what, pod plays from URL alone while user narrates from `mise exec -- flyctl logs -a <repo>`, reflections/crit-10.md + PROCESS.md (both done 2026-10-20). Final project due 2026-11-09 12:00.
+- Everything up to de1932b is pushed and deployed (CI check + deploy green; spec passes against the live fly.dev app). Second-tab takeover now sends a "replaced" message before closing (Fly's proxy swallowed the 4000 close frame).
+- Branch `surface` is merged (fast-forward) into main; still present locally, not yet deleted (ask before deleting).
 - Commit finished+verified work without asking (CLAUDE.md). Never push unasked.
 
 ## Game (current)
@@ -34,7 +34,7 @@ Updated: 2026-10-21 (shipped: main pushed + deployed, live spec 117/117; crit-10
 - Tests: spec/*.test.ts (117; spec/lift.test.ts = lift state machine + verdicts + door lockout; spec/multiuser.test.ts = identity/second tab/held item; spec/defence.test.ts = targeting + chewing, unit-level with a fake World). Report of auto-dev: .claude/reports/2026-10-14-auto-dev.md. Decisions: docs/adr.md (synced from local draft .claude/notes/adr-draft.md).
 
 ## Next work (ordered)
-0. Ship for crit 10 (user runs it). Then user playtests garden look, prompts, lift (single + two tabs), scoreboard. Rough edges: garden layout placed by eye; scoreboard roof preview tiny; DEV_JOIN/DEV_SPAWN skip the lift (spawning below counts as in the attempt).
+0. Crit 10 shipped (tag pushed). User still to playtest garden look, prompts, lift (single + two tabs), scoreboard. Rough edges: garden layout placed by eye; scoreboard roof preview tiny; DEV_JOIN/DEV_SPAWN skip the lift (spawning below counts as in the attempt).
 - User's improvement notes for the surface/lift (2026-10-20; queued, NOT now; do when user says):
   - a. Lift doors: open/close animation that sight follows: view narrows/widens with the door gap (now: leaves slide, but the LOS door obstacle is all-or-nothing, see main.ts updateSightDoors).
   - b. Garden out-of-sight = black like underground, not cream canvas (postprocess.ts mask mix with `paint`).
@@ -42,12 +42,11 @@ Updated: 2026-10-21 (shipped: main pushed + deployed, live spec 117/117; crit-10
   - d. Garden colour/tone stays; dressing should tell the story: an ancient ruined facility being explored by a military-type organisation, so ruins/rust AND recently deployed kit (supply crates etc.).
   - e. (DECIDED direction, not built yet) Replace the 6-min charge bar with a wave count. 30 s break between waves to buy items/buildings (shop/currency doesn't exist yet; it will). A wave ends when it's cleared; per-wave score, faster clear = more. Agent-suggested score parts for the user to pick from (none chosen yet): clear-time bonus vs par time; no-damage bonus (whole team unhurt); no-death bonus (no teammate out); reactor-untouched bonus; streak multiplier for consecutive clean waves; per-kill base points; accuracy. Refs: Halo Firefight (round/set bonuses, no-death), CoD Zombies (per-kill points that double as currency), Killing Floor (trader break between waves), DMC/Hi-Fi Rush style letter rank per wave. Score DOES double as currency (user, 2026-10-20), framed in-fiction: a shady megacorp's supply quota/credit issued to expendable contractors/employees (score = quota earned, spent at a corp supply terminal/drop). Break has a "start next wave now" option (all-ready vote or anyone? undecided). Open: what ends a run/attempt now; win condition (N waves?) and what the board records.
   - f. Reactor E shouldn't require empty hands (user: feels anti-human). The "hands full" verdict dates from click-to-activate, when a click with a gun meant firing; with E there's no conflict. Fix: drop the holding check from activateVerdict (shared/protocol.ts) + ACTIVATE_TIPS, server + client together.
-1. Crit 10 prep (before Wed 08:30): user playtests the charge bar/board/logs; user decides push + /ship (tag crit-10). Rehearse: two Chrome profiles + `flyctl logs` tail, check lines read clearly.
-2. Tune difficulty for "~a dozen attempts": DEV_CHARGE_S env shortens the charge for local runs. Unknown: how far an empty map gets now; boxes chewed in 6 hits may make carry-over too weak or strong. Numbers in shared/enemies.ts (waveSize, waveGapMs, ENEMY_REACTOR_DAMAGE, BOX_HIT_POINTS).
-3. Still pending playtest from 2026-10-14 autonomous round: wound effects, CRT/daze strength, aggro 6, grace 1s, rate of fire.
-4. Lighting option C instead of A (overhead fixtures + air halos back, fading near the player; fixtures need splitting out of the merged facility mesh; fewer, wider lamps).
-5. Resource loop (gather -> craft -> place) to replace the raised box cap as the thing that grows between attempts.
-6. Garden tutorial could gate on using a mechanic (was "intake prep room").
+1. Tune difficulty for "~a dozen attempts": DEV_CHARGE_S env shortens the charge for local runs. Unknown: how far an empty map gets now; boxes chewed in 6 hits may make carry-over too weak or strong. Numbers in shared/enemies.ts (waveSize, waveGapMs, ENEMY_REACTOR_DAMAGE, BOX_HIT_POINTS).
+2. Still pending playtest from 2026-10-14 autonomous round: wound effects, CRT/daze strength, aggro 6, grace 1s, rate of fire.
+3. Lighting option C instead of A (overhead fixtures + air halos back, fading near the player; fixtures need splitting out of the merged facility mesh; fewer, wider lamps).
+4. Resource loop (gather -> craft -> place) to replace the raised box cap as the thing that grows between attempts.
+5. Garden tutorial could gate on using a mechanic (was "intake prep room").
 - Older candidates: no sound; second enemy type; server-side visibility (enemies behind walls are sent to clients); charge bar has no in-world visual on the reactor (HUD only).
 - Open user decisions: lift-return rule (now: returns any time; alt: only after the attempt ends); overall grade/brightness (client/assets/grade.ts); hall racks claustrophobic; hide /gallery.html in prod?; slider grade UI.
 - Docs: README "good" section unfinished (user writes). Authorship rule: skeleton only unless user dictated.
