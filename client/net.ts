@@ -16,6 +16,7 @@ export interface Net {
   primary: (x: number, z: number) => void;
   drop: () => void;
   activate: () => void;
+  buy: () => void;
   lift: () => void;
 }
 
@@ -95,6 +96,9 @@ export function connect(handlers: NetHandlers): Net {
     },
     drop() {
       send({ type: "drop" });
+    },
+    buy() {
+      send({ type: "buy" });
     },
     activate() {
       send({ type: "activate" });

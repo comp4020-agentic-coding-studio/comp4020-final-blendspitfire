@@ -11,6 +11,8 @@ import {
   loadObjective,
   loadOrCreatePlayer,
   loadRun,
+  loadFunds,
+  saveFunds,
   recentRuns,
   recordRun,
   saveRun,
@@ -60,6 +62,11 @@ import {
   placementVerdict,
   resolveObstacles,
   worldObstacles,
+  BLOCKING_KINDS,
+  BOX_HALF_EXTENT,
+  TURRET_COST,
+  buyVerdict,
+  waveReward,
   type ClientMessage,
   type ObjectiveState,
   type ItemKind,
@@ -261,7 +268,7 @@ const INITIAL_ITEMS: { kind: ItemKind; x: number; z: number }[] = [
  */
 function stillPlaceable(item: ItemState, placed: ItemState[]): boolean {
   if (!isWalkable(item.x, item.z)) return false;
-  if (item.kind !== "box") return !overlapsAnyObstacle(item.x, item.z, 0.1, OBSTACLES);
+  if (!BLOCKING_KINDS.has(item.kind)) return !overlapsAnyObstacle(item.x, item.z, 0.1, OBSTACLES);
   return placementVerdict(item.x, item.z, item, worldObstacles(placed), []) !== "blocked";
 }
 
@@ -309,9 +316,20 @@ const defence = new Defence(
       boardDirty = true;
     },
     won: winRun,
+    cleared: (wave, size, clearMs) => {
+      const pay = waveReward(size, clearMs);
+      funds += pay;
+      saveFunds(funds);
+      announce(`quota +${pay} for wave ${wave} (${Math.round(clearMs / 1000)}s)`);
+      console.log(`[attempt ${attempt.number}] wave ${wave} cleared in ${Math.round(clearMs / 1000)}s: quota +${pay} -> ${funds}`);
+    },
+    turretFire: (id, x, z, tx, tz, now) => spawnProjectile({ id, x, z }, tx - x, tz - z, now, TURRET_MUZZLE),
   },
   loadDefence(),
 );
+
+/** the crew's shared quota (see SUPPLY_TERMINAL in shared/protocol.ts) */
+let funds = loadFunds();
 
 // The run: attempts at charging the reactor, failed ones and all, until one
 // gets it to full. Every attempt is logged and counted; a win goes on the
@@ -337,6 +355,8 @@ function winRun(): void {
   run.attempts = 0;
   run.best = 0;
   saveRun(run);
+  funds = 0;
+  saveFunds(funds);
   attempt.number = 0;
   attempt.players.clear();
   carried.clear();
@@ -494,18 +514,19 @@ function handlePrimary(conn: Connection, x: number, z: number, now: number): voi
       dz = Math.cos(conn.player.rotation);
     }
     spawnProjectile(conn.player, dx, dz, now);
-  } else if (item.kind === "box") {
+  } else if (BLOCKING_KINDS.has(item.kind)) {
     if (!Number.isFinite(x) || !Number.isFinite(z)) return;
     const verdict = placementVerdict(x, z, conn.player, worldObstacles(items.values()), livingPlayers(now));
     if (verdict !== "ok") {
-      refuse(conn, "place", `refused: box at ${pos(x, z)} (${verdict})`);
+      refuse(conn, "place", `refused: ${item.kind} at ${pos(x, z)} (${verdict})`);
       return;
     }
     item.heldBy = undefined;
     item.x = x;
     item.z = z;
-    act(conn.player, `placed box ${shortId(item.id)} at ${pos(x, z)}`);
-    bumpStats(conn.player.id, codename(conn.player), { boxes: 1 });
+    item.wear = undefined;
+    act(conn.player, `placed ${item.kind} ${shortId(item.id)} at ${pos(x, z)}`);
+    if (item.kind === "box") bumpStats(conn.player.id, codename(conn.player), { boxes: 1 });
     boardDirty = true;
     markWorldDirty();
   }
@@ -736,6 +757,22 @@ wss.on("connection", (socket, req) => {
       return;
     }
 
+    if (msg.type === "buy") {
+      const turrets = [...items.values()].filter((i) => i.kind === "turret").length;
+      const verdict = buyVerdict(conn.player, heldItem(playerId) !== undefined, funds, turrets);
+      if (verdict !== "ok") {
+        refuse(conn, "buy", `refused: turret (${verdict})`);
+        return;
+      }
+      funds -= TURRET_COST;
+      saveFunds(funds);
+      const id = randomUUID();
+      items.set(id, { id, kind: "turret", x: conn.player.x, z: conn.player.z, heldBy: playerId });
+      act(conn.player, `bought turret ${shortId(id)} for ${TURRET_COST} quota (${funds} left)`);
+      markWorldDirty();
+      return;
+    }
+
     if (msg.type === "pickup") {
       if (typeof msg.itemId !== "string") return;
       const item = items.get(msg.itemId);
@@ -766,7 +803,7 @@ wss.on("connection", (socket, req) => {
       // A box goes down through its primary action (it needs a valid spot);
       // only items that don't block anything can just be let go of.
       const item = heldItem(playerId);
-      if (item && item.kind !== "box") {
+      if (item && !BLOCKING_KINDS.has(item.kind)) {
         act(conn.player, `dropped ${item.kind} ${shortId(item.id)} at ${pos(conn.player.x, conn.player.z)}`);
         dropHeld(conn.player);
       }
@@ -820,16 +857,20 @@ interface ServerProjectile extends ProjectileState {
 
 const projectiles = new Map<string, ServerProjectile>();
 
-function spawnProjectile(owner: PlayerState, aimX: number, aimZ: number, now: number): void {
+function spawnProjectile(owner: { id: string; x: number; z: number }, aimX: number, aimZ: number, now: number, muzzle = MUZZLE_OFFSET): void {
   const len = Math.hypot(aimX, aimZ);
   const dirX = aimX / len;
   const dirZ = aimZ / len;
-  const x = owner.x + dirX * MUZZLE_OFFSET;
-  const z = owner.z + dirZ * MUZZLE_OFFSET;
-  const range = shotRange(x, z, dirX, dirZ, worldObstacles(items.values()));
+  const x = owner.x + dirX * muzzle;
+  const z = owner.z + dirZ * muzzle;
+  // the shooter's own tile (a turret) doesn't stop its shot
+  const range = shotRange(x, z, dirX, dirZ, worldObstacles([...items.values()].filter((i) => i.id !== owner.id)));
   const id = randomUUID();
   projectiles.set(id, { id, ownerId: owner.id, x, z, dirX, dirZ, firedAt: now, range, travelled: 0 });
 }
+
+/** a turret's muzzle sits just past its own tile */
+const TURRET_MUZZLE = BOX_HALF_EXTENT + 0.15;
 
 /**
  * For local testing only, never set in production (fly.toml doesn't):
@@ -872,8 +913,10 @@ function stepProjectiles(now: number): void {
     // neutral); the first one it meets stops it
     let victim: Connection | undefined;
     let at = reach;
+    // a turret's shots pass through the crew: it's their defence, not a hazard to them
+    const fromTurret = items.get(p.ownerId)?.kind === "turret";
     for (const conn of connections.values()) {
-      if (isDead(conn)) continue;
+      if (isDead(conn) || fromTurret) continue;
       const t = segmentHitsCircle(p.x, p.z, p.dirX, p.dirZ, p.travelled, at, conn.player.x, conn.player.z, HIT_RADIUS);
       if (t !== undefined && t <= at) {
         victim = conn;
@@ -988,7 +1031,7 @@ setInterval(() => {
   // items go out only when they've changed since the last tick, or to a
   // client that hasn't had them yet (see StateMessage.items)
   const itemList = [...items.values()];
-  const itemsKey = itemList.map((i) => `${i.id}:${i.x.toFixed(2)},${i.z.toFixed(2)},${i.heldBy ?? ""},${i.wear ?? 0}`).join("|");
+  const itemsKey = itemList.map((i) => `${i.id}:${i.x.toFixed(2)},${i.z.toFixed(2)},${i.heldBy ?? ""},${i.wear ?? 0},${i.aim ?? ""}`).join("|");
   const itemsChanged = itemsKey !== lastItemsKey;
   lastItemsKey = itemsKey;
   const base = {
@@ -999,6 +1042,7 @@ setInterval(() => {
     objective,
     enemies: defence.snapshot(),
     defence: defence.state,
+    funds,
     announcements: pendingAnnouncements.length ? pendingAnnouncements : undefined,
     lift: lift.state,
   };

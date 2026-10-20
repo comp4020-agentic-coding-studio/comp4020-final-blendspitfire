@@ -69,6 +69,15 @@ export const THINK_MS = 400;
 export const REACTOR_COMMIT = 2.5;
 /** hits it takes an enemy to break a box blocking its way */
 export const BOX_HIT_POINTS = 6;
+/** ...and a turret: tougher, since it cost quota */
+export const TURRET_HIT_POINTS = 10;
+/**
+ * A placed turret fires at the nearest enemy it can see within range, a
+ * shot every interval --- slower than a player on full auto, so it holds a
+ * lane rather than winning the wave on its own.
+ */
+export const TURRET_RANGE = 7;
+export const TURRET_FIRE_INTERVAL_MS = 600;
 
 /**
  * The objective: clear WAVES_TO_WIN waves. Each wave ends when every enemy

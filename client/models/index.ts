@@ -2,6 +2,7 @@ import * as THREE from "three";
 import {
   ALUMINIUM,
   CLOTH,
+  EMIT_AMBER,
   EMIT_RED,
   FLOOR,
   HAIR,
@@ -214,6 +215,48 @@ export function equipmentCaseGeometry(): THREE.BufferGeometry {
 
 export function equipmentCase(): THREE.Mesh {
   return outlined(mesh(equipmentCaseGeometry()));
+}
+
+/**
+ * The sentry turret the corp sells: a squat steel tripod on a hazard-yellow
+ * footplate (the tile it holds, so it lines up with boxes), a rubber-booted
+ * swivel, and a stubby boxy gun with a magazine drum. The head is its own
+ * child (`turretHead`) so it can swing to face what it's shooting; the amber
+ * sensor at its front is its one emitter, so it reads as live in the dark.
+ */
+export function sentryTurret(): THREE.Group {
+  const base = merge(
+    [
+      part(box(0.86, 0.08, 0.86), HAZARD.shade, 0, 0.04, 0),
+      part(box(0.7, 0.04, 0.7), STEEL.shade, 0, 0.1, 0),
+      ...[0, 1, 2].map((i) => {
+        const a = (i / 3) * PI * 2;
+        return part(box(0.08, 0.42, 0.08), STEEL.base, Math.sin(a) * 0.22, 0.3, Math.cos(a) * 0.22, Math.cos(a) * 0.35, 0, -Math.sin(a) * 0.35);
+      }),
+      part(new THREE.CylinderGeometry(0.16, 0.2, 0.18, 8), RUBBER.base, 0, 0.55, 0),
+    ],
+    "ground",
+    0.15,
+  );
+  const head = merge(
+    [
+      part(box(0.34, 0.24, 0.48), STEEL.light, 0, 0, 0),
+      part(box(0.36, 0.06, 0.5), STEEL.shade, 0, 0.13, 0),
+      part(new THREE.CylinderGeometry(0.05, 0.05, 0.42, 6), RUBBER.light, 0, 0, 0.42, PI / 2, 0, 0),
+      part(new THREE.CylinderGeometry(0.13, 0.13, 0.12, 8), STEEL.shade, 0.24, -0.02, -0.04, 0, 0, PI / 2),
+    ],
+    "self",
+    0.08,
+  );
+  const g = new THREE.Group();
+  const baseMesh = outlined(mesh(base));
+  g.add(baseMesh);
+  const headGroup = multiMesh({ matte: [head], emissive: [glowPart(box(0.12, 0.06, 0.03), EMIT_AMBER, 0, 0.06, 0.25)] });
+  outlined(headGroup.children[0] as THREE.Mesh, 0.02);
+  headGroup.name = "turretHead";
+  headGroup.position.y = 0.76;
+  g.add(headGroup);
+  return g;
 }
 
 /**

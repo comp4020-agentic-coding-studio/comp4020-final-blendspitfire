@@ -363,6 +363,31 @@ const vending: Builder = (len, depth, h) => {
   return [matte(merge(parts, "ground", 0.3)), emissive([glowPart(box(0.12, 0.08, 0.02), EMIT_GREEN, len * 0.35, h * 0.62, depth / 2 + 0.02)])];
 };
 
+/**
+ * The corp's supply terminal: a hard-shell drop crate stood on end, freshly
+ * deployed (clean steel and hazard bumpers against the old facility), with
+ * a lit screen and a delivery hatch on its working face.
+ */
+const supplyTerminal: Builder = (len, depth, h) => {
+  const parts = [
+    part(box(len, h, depth), STEEL.base, 0, h / 2, 0),
+    part(box(len + 0.04, 0.08, depth + 0.04), STEEL.shade, 0, h - 0.04, 0),
+    // delivery hatch low on the front, screen bezel above it
+    part(box(len * 0.7, h * 0.28, 0.04), RUBBER.base, 0, h * 0.22, depth / 2 + 0.01),
+    part(box(len * 0.7, h * 0.3, 0.04), RUBBER.light, 0, h * 0.68, depth / 2 + 0.01),
+    // a stencilled band on the lid, readable from overhead
+    part(box(len * 0.8, 0.02, depth * 0.3), PAPER.base, 0, h + 0.01, 0),
+  ];
+  for (const cx of [-1, 1]) for (const cz of [-1, 1]) parts.push(part(box(0.12, h, 0.12), HAZARD.base, cx * (len / 2 - 0.04), h / 2, cz * (depth / 2 - 0.04)));
+  return [
+    matte(merge(parts, "ground", 0.3)),
+    emissive([
+      glowPart(box(len * 0.6, h * 0.22, 0.02), EMIT_AMBER, 0, h * 0.68, depth / 2 + 0.035),
+      glowPart(box(0.1, 0.06, 0.1), EMIT_AMBER, 0, h + 0.04, depth * 0.3),
+    ]),
+  ];
+};
+
 /** A waiting-room bench: steel frame, slatted seat. */
 const seating: Builder = (len, depth, h) => {
   const parts = [
@@ -401,6 +426,7 @@ const BUILDERS: Record<FixtureKind, Builder> = {
   gasRack,
   cooler,
   vending,
+  supplyTerminal,
   seating,
   table,
 };

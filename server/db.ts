@@ -178,6 +178,15 @@ export function saveRun(run: RunProgress): void {
   setWorldStmt.run("run", JSON.stringify(run));
 }
 
+/** the crew's shared quota; kept across attempts and restarts, cleared when a run's won */
+export function loadFunds(): number {
+  const row = getWorldStmt.get("funds") as { value: string } | undefined;
+  return row ? Number(JSON.parse(row.value)) || 0 : 0;
+}
+export function saveFunds(funds: number): void {
+  setWorldStmt.run("funds", JSON.stringify(funds));
+}
+
 /** a won run: the world goes back to how a fresh volume starts it */
 export function clearItems(): void {
   clearItemsStmt.run();

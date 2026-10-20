@@ -17,6 +17,7 @@ import {
   equipmentCase,
   gun,
   heldGun,
+  sentryTurret,
 } from "./models/index.ts";
 import { REACTOR_LIVE, REACTOR_STANDBY, buildFacility, reactorCore } from "./models/facility.ts";
 import { mesh } from "./models/kit.ts";
@@ -56,6 +57,12 @@ import {
   BROADCAST_INTERVAL_MS,
   FIRE_COOLDOWN_MS,
   ITEM_KINDS,
+  BLOCKING_KINDS,
+  SUPPLY_TERMINAL,
+  TURRET_COST,
+  buyVerdict,
+  type BuyVerdict,
+  type ItemKind,
   OBSTACLES,
   PICKUP_RANGE,
   MAX_WOUNDS,
@@ -348,8 +355,8 @@ function updateAim(): void {
 
 interface ClientItem {
   state: ItemState;
-  lying: THREE.Mesh;
-  held: THREE.Mesh;
+  lying: THREE.Object3D;
+  held: THREE.Object3D;
   outline: THREE.Mesh;
   /** a box: shudders until this (performance.now()) after a bite */
   bittenUntil: number;
@@ -377,24 +384,32 @@ function restingAngle(id: string): number {
 }
 
 function makeItem(state: ItemState): ClientItem {
-  let lying: THREE.Mesh;
-  let held: THREE.Mesh;
+  let lying: THREE.Object3D;
+  let held: THREE.Object3D;
+  /** the mesh whose shape the hover outline copies */
+  let shape: THREE.Mesh;
   if (state.kind === "gun") {
-    lying = gun();
+    lying = shape = gun();
     lying.position.y = GUN_REST_HEIGHT;
     lying.rotation.y = restingAngle(state.id);
     held = heldGun();
     held.position.set(HELD_GUN_OFFSET.x, HELD_GUN_OFFSET.y, HELD_GUN_OFFSET.z);
   } else {
-    lying = equipmentCase();
-    held = equipmentCase();
+    if (state.kind === "turret") {
+      lying = sentryTurret();
+      shape = lying.children[0] as THREE.Mesh;
+      held = sentryTurret();
+    } else {
+      lying = shape = equipmentCase();
+      held = equipmentCase();
+    }
     // carried in front, in both arms, at a smaller size so it doesn't hide the carrier
     held.scale.setScalar(0.55);
     held.position.set(0, 0.62, 0.5);
   }
-  const outline = new THREE.Mesh(lying.geometry, outlineInReach);
+  const outline = new THREE.Mesh(shape.geometry, outlineInReach);
   outline.scale.setScalar(state.kind === "gun" ? 1.18 : 1.1);
-  if (state.kind === "box") outline.position.y = -0.05;
+  if (state.kind !== "gun") outline.position.y = -0.05;
   outline.visible = false;
   lying.add(outline);
   scene.add(lying);
@@ -444,7 +459,7 @@ function updateItems(incoming: ItemState[]): void {
   for (const [id, item] of items) {
     if (!seen.has(id)) {
       // a chewed box that's gone from the ground broke (rather than being picked up, which keeps it in the list)
-      if (item.state.kind === "box" && item.state.heldBy === undefined && item.state.wear) boxBroke(item.state.x, item.state.z);
+      if (BLOCKING_KINDS.has(item.state.kind) && item.state.heldBy === undefined && item.state.wear) boxBroke(item.state.x, item.state.z);
       removeItem(item);
       items.delete(id);
     }
@@ -572,13 +587,20 @@ function stepItemVisuals(time: number): void {
       lying.visible = true;
       lying.position.x = state.x;
       lying.position.z = state.z;
-      if (state.kind === "box") {
+      if (BLOCKING_KINDS.has(state.kind)) {
         const wear = state.wear ?? 0;
         const shudder = performance.now() < item.bittenUntil ? Math.sin(time * 90) * 0.08 : 0;
         lying.position.x += shudder;
         lying.rotation.z = wear * 0.12 + shudder;
         lying.rotation.x = wear * -0.07;
         lying.scale.y = 1 - wear * 0.15;
+      }
+      if (state.kind === "turret" && state.aim !== undefined) {
+        // the head swings toward what it last shot at, quickly but not in one snap
+        const head = lying.getObjectByName("turretHead")!;
+        let d = state.aim - head.rotation.y;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        head.rotation.y += d * Math.min(1, frameDt * 14);
       }
       continue;
     }
@@ -595,7 +617,7 @@ function stepItemVisuals(time: number): void {
   }
 
   const held = myHeldItem();
-  const showPreview = !dead && !!localMesh && held?.state.kind === "box";
+  const showPreview = !dead && !!localMesh && (held !== undefined && BLOCKING_KINDS.has(held.state.kind));
   placementPreview.visible = showPreview;
   snapGrid.visible = showPreview && gridSnap;
   if (showPreview) {
@@ -645,6 +667,7 @@ type Target =
   | { kind: "item"; item: ClientItem }
   | { kind: "reactor" }
   | { kind: "lift" }
+  | { kind: "terminal" }
   | { kind: "board" };
 
 const prompts = new Prompts();
@@ -694,10 +717,24 @@ function eTarget(): Target | undefined {
     const item = nearestItem();
     if (item) return { kind: "item", item };
   }
+  if (buyVerdict(p, false, Infinity, 0) !== "too far") return { kind: "terminal" };
   if (Math.hypot(p.x - REACTOR.x, p.z - REACTOR.z) <= REACTOR.halfX + PICKUP_RANGE) return { kind: "reactor" };
   if (Math.hypot(p.x - SCOREBOARD.x, p.z - SCOREBOARD.z) <= SCOREBOARD_RANGE) return { kind: "board" };
   return undefined;
 }
+
+function terminalVerdict(): BuyVerdict {
+  const turrets = [...items.values()].filter((i) => i.state.kind === "turret").length;
+  return buyVerdict(localMesh!.position, !!myHeldItem(), funds, turrets);
+}
+
+const BUY_TIPS: Record<BuyVerdict, string> = {
+  ok: `buy a turret · ${TURRET_COST} quota`,
+  "too far": "move closer",
+  "hands full": "hands full — put it down first (Q)",
+  "can't afford": `turret · ${TURRET_COST} quota — not enough`,
+  "sold out": "turrets: the corp's limit is reached",
+};
 
 function useTarget(target: Target | undefined): void {
   if (!target || !localMesh) return;
@@ -710,6 +747,9 @@ function useTarget(target: Target | undefined): void {
     const verdict = liftVerdict(localMesh.position, lift, objective);
     if (verdict === "send" || verdict === "call") net.lift();
     else prompts.nope("lift");
+  } else if (target.kind === "terminal") {
+    if (terminalVerdict() === "ok") net.buy();
+    else prompts.nope("terminal");
   } else if (target.kind === "board") toggleBoard();
 }
 
@@ -724,10 +764,14 @@ function currentPrompts(): Prompt[] {
   const now = serverClock.now();
   if (target?.kind === "item") {
     const s = target.item.state;
-    out.push({ id: `item:${s.id}`, at: v3(s.x, 0.4, s.z), key: "E", label: `pick up ${s.kind === "gun" ? "rifle" : "box"}` });
+    out.push({ id: `item:${s.id}`, at: v3(s.x, 0.4, s.z), key: "E", label: `pick up ${ITEM_NAMES[s.kind]}` });
   } else if (target?.kind === "reactor") {
     const verdict = activateVerdict(p, objective, defenceState.phase === "break");
     if (verdict !== "already active") out.push({ id: "reactor", at: v3(REACTOR.x - 1.4, 2, REACTOR.z - 1.4), key: "E", label: ACTIVATE_TIPS[verdict], enabled: verdict === "ok" || verdict === "skip break" });
+  } else if (target?.kind === "terminal") {
+    const verdict = terminalVerdict();
+    const t = SUPPLY_TERMINAL;
+    out.push({ id: "terminal", at: v3(t.x - 0.6, 1.9, t.z - 0.6), key: "E", label: BUY_TIPS[verdict], enabled: verdict === "ok", detail: `crew quota: ${funds}` });
   } else if (target?.kind === "board") {
     out.push({ id: "board", at: v3(SCOREBOARD.x - 1.2, 2.6, SCOREBOARD.z), key: "E", label: boardOpen ? "close scores" : "read scores" });
   } else if (target?.kind === "lift") {
@@ -746,7 +790,7 @@ function currentPrompts(): Prompt[] {
   }
   // the held box: where it'll go, or why it can't
   const held = myHeldItem();
-  if (held?.state.kind === "box") {
+  if ((held !== undefined && BLOCKING_KINDS.has(held.state.kind))) {
     const t = boxTarget();
     const verdict = boxVerdict(t);
     if (verdict !== "ok") out.push({ id: "place", at: v3(t.x, 0.9, t.z), key: "", label: verdict, enabled: false });
@@ -789,10 +833,10 @@ function renderControls(): void {
     const info = ITEM_KINDS[held.state.kind];
     const parts = [held.state.kind === "gun" ? "click / hold: fire" : `click: ${info.primaryLabel}`];
     if (info.secondaryLabel) {
-      const state = held.state.kind === "box" ? ` (${gridSnap ? "on" : "off"})` : "";
+      const state = BLOCKING_KINDS.has(held.state.kind) ? ` (${gridSnap ? "on" : "off"})` : "";
       parts.push(`right-click / Space: ${info.secondaryLabel}${state}`);
     }
-    parts.push(held.state.kind === "box" ? "Q: place" : "Q: drop");
+    parts.push(BLOCKING_KINDS.has(held.state.kind) ? "Q: place" : "Q: drop");
     text = `WASD move · ${parts.join(" · ")}`;
   }
   if (text !== lastControlsText) {
@@ -868,6 +912,7 @@ const net = connect({
     const seenPlayers = new Set<string>();
     objective = state.objective;
     defenceState = state.defence;
+    funds = state.funds;
     if (state.lift) lift = state.lift;
     for (const line of state.announcements ?? []) showBanner(line);
     for (const p of players) {
@@ -1029,7 +1074,7 @@ function primary(): void {
   if (held.state.kind === "gun") {
     triggerHeld = true;
     fireGun(true);
-  } else if (held.state.kind === "box") {
+  } else if (BLOCKING_KINDS.has(held.state.kind)) {
     const target = boxTarget();
     const verdict = boxVerdict(target);
     if (verdict === "ok") {
@@ -1086,7 +1131,7 @@ function stepTrigger(): void {
 function secondary(): void {
   if (isDead()) return;
   const held = myHeldItem();
-  if (held?.state.kind === "box") gridSnap = !gridSnap;
+  if ((held !== undefined && BLOCKING_KINDS.has(held.state.kind))) gridSnap = !gridSnap;
 }
 
 function drop(): void {
@@ -1095,7 +1140,7 @@ function drop(): void {
   if (!held) return;
   // a box can't just be let go of where you stand --- it'd land on you ---
   // so dropping one means putting it down at the preview spot
-  if (held.state.kind === "box") primary();
+  if (BLOCKING_KINDS.has(held.state.kind)) primary();
   else net.drop();
 }
 
@@ -1153,6 +1198,9 @@ interface ClientEnemy {
 }
 const enemies = new Map<string, ClientEnemy>();
 let defenceState: DefenceState = { reactorHealth: 1, wave: 0, phase: "spawning" };
+/** the crew's shared quota, as the server last said */
+let funds = 0;
+const ITEM_NAMES: Record<ItemKind, string> = { gun: "rifle", box: "box", turret: "turret" };
 const enemyBarGeometry = new THREE.PlaneGeometry(0.7, 0.07).rotateX(-Math.PI / 2);
 
 function updateEnemies(incoming: EnemyState[], t: number): void {
@@ -1219,9 +1267,12 @@ function stepRemotes(): void {
 const MOVE_SEND_INTERVAL_MS = BROADCAST_INTERVAL_MS;
 const clock = new THREE.Clock();
 let sinceLastSend = Infinity;
+/** this frame's seconds, for easing that isn't worth threading through every call */
+let frameDt = 0;
 
 function animate(): void {
   const dt = Math.min(clock.getDelta(), 0.1);
+  frameDt = dt;
   sinceLastSend += dt * 1000;
 
   if (localMesh) {
@@ -1476,7 +1527,7 @@ function renderDefenceHud(): void {
   // waves fully cleared: the one being fought doesn't count until it's down
   const cleared = onBreak ? defenceState.wave : Math.max(0, defenceState.wave - 1);
   hudCharge.style.width = `calc(${((cleared / WAVES_TO_WIN) * 100).toFixed(1)}% - 2px)`;
-  hudChargePct.textContent = `${cleared} / ${WAVES_TO_WIN} cleared`;
+  hudChargePct.textContent = `${cleared} / ${WAVES_TO_WIN} cleared · quota ${funds}`;
   const hp = defenceState.reactorHealth;
   hudHp.style.width = `calc(${Math.round(hp * 100)}% - 2px)`;
   // white until it's in danger, then alarm red

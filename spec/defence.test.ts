@@ -5,6 +5,7 @@ import {
   ENEMY_REACTOR_DAMAGE,
   FIRST_WAVE_DELAY_MS,
   SPAWN_INTERVAL_MS,
+  TURRET_RANGE,
   WAVE_BREAK_MS,
   WAVES_TO_WIN,
   waveSize,
@@ -18,6 +19,8 @@ import { REACTOR, type ItemState } from "../shared/protocol.ts";
 function world(players: { id: string; x: number; z: number }[]) {
   const hurt: string[] = [];
   const outcome: { ended?: number; won?: boolean } = {};
+  const paid: { wave: number; size: number; clearMs: number }[] = [];
+  const shots: { from: string; tx: number; tz: number }[] = [];
   const w: World = {
     objective: { active: true },
     items: new Map<string, ItemState>(),
@@ -25,10 +28,12 @@ function world(players: { id: string; x: number; z: number }[]) {
     hurtPlayer: (id) => hurt.push(id),
     changed: () => {},
     announce: () => {},
-    ended: (_reason, charge) => (outcome.ended = charge),
+    ended: (_reason, wave) => (outcome.ended = wave),
     won: () => (outcome.won = true),
+    cleared: (wave, size, clearMs) => paid.push({ wave, size, clearMs }),
+    turretFire: (from, _x, _z, tx, tz) => shots.push({ from, tx, tz }),
   };
-  return { w, hurt, outcome };
+  return { w, hurt, outcome, paid, shots };
 }
 
 /** run the defence for `seconds` of 50 ms ticks, starting the clock well past the first wave's delay */
@@ -180,5 +185,43 @@ describe("waves", () => {
   it("waves grow toward the last one", () => {
     expect(waveSize(WAVES_TO_WIN)).toBeGreaterThan(waveSize(1) * 3);
     expect(waveSize(WAVES_TO_WIN + 5)).toBe(waveSize(WAVES_TO_WIN));
+  });
+});
+
+describe("turrets", () => {
+  it("a placed turret fires at an enemy it can see in range", () => {
+    const { w, shots } = world([]);
+    w.items.set("t", { id: "t", kind: "turret", x: -6, z: -14 });
+    const d = new Defence(w, { reactorHealth: 1, wave: 1, phase: "spawning", nextWaveAt: 1e12 });
+    const id = d.spawnAt(-6 + TURRET_RANGE - 2, -14);
+    run(d, 0.2);
+    expect(shots.length).toBeGreaterThan(0);
+    expect(shots[0].from).toBe("t");
+    expect(w.items.get("t")!.aim).toBeDefined();
+    void id;
+  });
+
+  it("a turret in someone's hands doesn't fire", () => {
+    const { w, shots } = world([]);
+    w.items.set("t", { id: "t", kind: "turret", x: -6, z: -14, heldBy: "p" });
+    const d = new Defence(w, { reactorHealth: 1, wave: 1, phase: "spawning", nextWaveAt: 1e12 });
+    d.spawnAt(-4, -14);
+    run(d, 0.5);
+    expect(shots).toEqual([]);
+  });
+
+  it("clearing a wave pays out, with how long it took", () => {
+    const { w, paid } = world([]);
+    const d = new Defence(w, undefined);
+    d.start(0);
+    d.skipBreak(0);
+    let now = run(d, 0.1);
+    now = run(d, (waveSize(1) * SPAWN_INTERVAL_MS) / 1000 + 0.5, now);
+    killAll(d);
+    run(d, 0.1, now);
+    expect(paid.length).toBe(1);
+    expect(paid[0].wave).toBe(1);
+    expect(paid[0].size).toBe(waveSize(1));
+    expect(paid[0].clearMs).toBeGreaterThan(0);
   });
 });

@@ -17,6 +17,9 @@ import {
   SPAWNS,
   SPAWN_INTERVAL_MS,
   THINK_MS,
+  TURRET_FIRE_INTERVAL_MS,
+  TURRET_HIT_POINTS,
+  TURRET_RANGE,
   WAVE_BREAK_MS,
   WAVES_TO_WIN,
   waveSize,
@@ -29,6 +32,7 @@ import {
   REACTOR,
   REACTOR_BODY,
   boxObstacle,
+  isBlocking,
   rayToObstacles,
   resolveObstacles,
   segmentHitsCircle,
@@ -67,6 +71,10 @@ export interface World {
   ended(reason: string, wave: number): void;
   /** WAVES_TO_WIN cleared: the run is won */
   won(): void;
+  /** a wave was cleared, `size` enemies in `clearMs` from its start: pay the crew */
+  cleared(wave: number, size: number, clearMs: number): void;
+  /** a placed turret fires from (x, z) toward (tx, tz) */
+  turretFire(turretId: string, x: number, z: number, tx: number, tz: number, now: number): void;
 }
 
 export class Defence {
@@ -78,6 +86,10 @@ export class Defence {
   private toSpawn = 0;
   private nextSpawnAt = 0;
   private spawnTurn = 0;
+  /** when the current wave started, and how big it was: for the clear-time reward */
+  private waveStartedAt = 0;
+  private waveSizeNow = 0;
+  private readonly turretReadyAt = new Map<string, number>();
 
   private readonly world: World;
 
@@ -139,6 +151,30 @@ export class Defence {
     this.rebuildFieldIfBoxesMoved();
     this.runWaves(now);
     this.moveAndAttack(now, dt);
+    if (this.world.objective.active) this.fireTurrets(now);
+  }
+
+  private fireTurrets(now: number): void {
+    if (this.enemies.size === 0) return;
+    const blockers = [...this.world.items.values()].filter(isBlocking);
+    for (const t of blockers) {
+      if (t.kind !== "turret" || now < (this.turretReadyAt.get(t.id) ?? 0)) continue;
+      // other blockers stop its line of fire, but not the turret's own tile
+      const solid = [...OBSTACLES, ...blockers.filter((b) => b !== t).map(boxObstacle)];
+      let target: Enemy | undefined;
+      let bestD = TURRET_RANGE;
+      for (const e of this.enemies.values()) {
+        const d = Math.hypot(e.x - t.x, e.z - t.z);
+        if (d < bestD && this.clearLine(t.x, t.z, e.x, e.z, solid)) {
+          target = e;
+          bestD = d;
+        }
+      }
+      if (!target) continue;
+      this.turretReadyAt.set(t.id, now + TURRET_FIRE_INTERVAL_MS);
+      t.aim = Math.round(Math.atan2(target.x - t.x, target.z - t.z) * 100) / 100;
+      this.world.turretFire(t.id, t.x, t.z, target.x, target.z, now);
+    }
   }
 
   /** anyone can send the break early --- the one in it, or anyone else: ok while on a break */
@@ -149,7 +185,7 @@ export class Defence {
   }
 
   private rebuildFieldIfBoxesMoved(): void {
-    const boxes = [...this.world.items.values()].filter((i) => i.kind === "box" && i.heldBy === undefined);
+    const boxes = [...this.world.items.values()].filter(isBlocking);
     const key = boxes.map((b) => `${b.id}:${b.x.toFixed(2)},${b.z.toFixed(2)}`).join("|");
     if (key === this.fieldKey) return;
     this.fieldKey = key;
@@ -165,6 +201,7 @@ export class Defence {
     }
     // spawning: once the wave's fully out and nothing's left alive, it's cleared
     if (this.toSpawn === 0 && this.enemies.size === 0) {
+      this.world.cleared(s.wave, this.waveSizeNow, now - this.waveStartedAt);
       if (s.wave >= WAVES_TO_WIN) {
         this.world.objective.active = false;
         this.state = { reactorHealth: 1, wave: 0, phase: "spawning" };
@@ -202,13 +239,15 @@ export class Defence {
     s.phase = "spawning";
     s.nextWaveAt = undefined;
     this.toSpawn = waveSize(s.wave);
+    this.waveSizeNow = this.toSpawn;
+    this.waveStartedAt = now;
     this.nextSpawnAt = now;
     this.world.announce(`wave ${s.wave} incoming`);
     this.world.changed();
   }
 
   private moveAndAttack(now: number, dt: number): void {
-    const boxes = [...this.world.items.values()].filter((i) => i.kind === "box" && i.heldBy === undefined);
+    const boxes = [...this.world.items.values()].filter(isBlocking);
     const solid = [...OBSTACLES, ...boxes.map(boxObstacle)];
     const players = this.world.players();
     for (const e of this.enemies.values()) {
@@ -344,14 +383,17 @@ export class Defence {
     const near = boxes.find((b) => Math.abs(b.x - e.x) < 0.5 + ENEMY_RADIUS + 0.3 && Math.abs(b.z - e.z) < 0.5 + ENEMY_RADIUS + 0.3);
     if (!near) return;
     e.nextAttackAt = now + ENEMY_ATTACK_INTERVAL_MS;
+    const hp = near.kind === "turret" ? TURRET_HIT_POINTS : BOX_HIT_POINTS;
     const dmg = (this.boxDamage.get(near.id) ?? 0) + 1;
-    if (dmg >= BOX_HIT_POINTS) {
+    if (dmg >= hp) {
       this.world.items.delete(near.id);
       this.boxDamage.delete(near.id);
+      this.turretReadyAt.delete(near.id);
+      if (near.kind === "turret") this.world.announce("a turret's been torn down");
       this.world.changed();
     } else {
       this.boxDamage.set(near.id, dmg);
-      near.wear = Math.round((dmg / BOX_HIT_POINTS) * 100) / 100;
+      near.wear = Math.round((dmg / hp) * 100) / 100;
     }
   }
 

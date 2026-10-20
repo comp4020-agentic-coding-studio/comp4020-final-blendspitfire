@@ -55,6 +55,8 @@ export interface StateMessage {
   objective: ObjectiveState;
   enemies: EnemyState[];
   defence: DefenceState;
+  /** the crew's shared quota, to spend at the supply terminal */
+  funds: number;
   /** one-off lines to show everyone (a wave starting, the reactor going down) */
   announcements?: string[];
   lift: LiftState;
@@ -111,6 +113,11 @@ export interface LiftMessage {
   type: "lift";
 }
 
+/** at the supply terminal: spend the crew's quota on a turret, handed straight to the buyer */
+export interface BuyMessage {
+  type: "buy";
+}
+
 /**
  * A shot, sent once rather than every tick: where it started, which way it
  * flies and when, and how far it gets before it stops (a wall, a box, or
@@ -142,7 +149,7 @@ export interface ReplacedMessage {
 }
 
 export type ServerMessage = WelcomeMessage | StateMessage | BoardMessage | ReplacedMessage;
-export type ClientMessage = MoveMessage | PickupMessage | PrimaryMessage | DropMessage | ActivateMessage | LiftMessage;
+export type ClientMessage = MoveMessage | PickupMessage | PrimaryMessage | DropMessage | ActivateMessage | LiftMessage | BuyMessage;
 
 /**
  * Every pickup-able thing in the world is one of these: same shape, same
@@ -150,7 +157,11 @@ export type ClientMessage = MoveMessage | PickupMessage | PrimaryMessage | DropM
  * secondary) action does. The "equipment slot" is just `heldBy` --- a
  * player holds at most one item, and nothing on screen shows a slot.
  */
-export type ItemKind = "gun" | "box";
+export type ItemKind = "gun" | "box" | "turret";
+
+/** kinds that stand on a 1×1 tile once put down: placed like a box, block like a box, get chewed like a box */
+export const BLOCKING_KINDS: ReadonlySet<ItemKind> = new Set<ItemKind>(["box", "turret"]);
+export const isBlocking = (item: { kind: ItemKind; heldBy?: string }): boolean => BLOCKING_KINDS.has(item.kind) && item.heldBy === undefined;
 
 export interface ItemState {
   id: string;
@@ -161,6 +172,8 @@ export interface ItemState {
   heldBy?: string;
   /** wire-only: a box being chewed, 0..1 of the way to breaking (absent = intact) */
   wear?: number;
+  /** wire-only: a placed turret's barrel heading (radians, atan2(dx, dz)), set when it fires */
+  aim?: number;
 }
 
 export interface ItemKindInfo {
@@ -173,6 +186,7 @@ export interface ItemKindInfo {
 export const ITEM_KINDS: Record<ItemKind, ItemKindInfo> = {
   gun: { primaryLabel: "fire" },
   box: { primaryLabel: "place", secondaryLabel: "grid snap" },
+  turret: { primaryLabel: "place", secondaryLabel: "grid snap" },
 };
 
 /** how far (center to center) a player can reach to pick something up */
@@ -536,6 +550,7 @@ export type FixtureKind =
   | "gasRack"
   | "cooler"
   | "vending"
+  | "supplyTerminal"
   | "seating"
   | "table";
 
@@ -563,7 +578,8 @@ export const FIXTURES: Fixture[] = [
   // narrowing the way in to one lane, a dead vending machine and a bench
   fixture("blastDoor", 0, 2, 2, WALL_HALF, FACILITY_WALL_HALF_HEIGHT),
   fixture("barrier", -1, 15.5, 1, 0.34, 0.4),
-  fixture("vending", 1.55, 6.5, 0.45, 0.6, 1, "west"),
+  // the corp's supply terminal, where the old vending machine stood: spend quota here between waves
+  fixture("supplyTerminal", 1.55, 6.5, 0.45, 0.6, 0.75, "west"),
   fixture("seating", -1.65, 5, 0.35, 1, 0.25, "east"),
   // the lab: two bench islands to duck behind, lockers, a terminal, a fume
   // hood and gas cylinders against the walls, stores by the door
@@ -718,7 +734,33 @@ export const STATIONS: { kind: ItemKind; x: number; z: number }[] = [
 ];
 export const STATION_RESTOCK_MS = 3000;
 /** boxes are capped higher than a single attempt needs: they're what carries over between attempts */
-export const ITEM_CAPS: Record<ItemKind, number> = { gun: 12, box: 60 };
+export const ITEM_CAPS: Record<ItemKind, number> = { gun: 12, box: 60, turret: 8 };
+
+// The quota: a shared supply credit the corp issues the crew for every wave
+// they clear (faster = more), spent at the supply terminal on kit. Shared,
+// not per player --- the defences are everyone's, so is what pays for them.
+export const SUPPLY_TERMINAL = FIXTURES.find((f) => f.kind === "supplyTerminal")!;
+export const BUY_RANGE = 2;
+export const TURRET_COST = 40;
+/** what clearing a wave pays, before the speed bonus */
+export const WAVE_BASE_REWARD = 15;
+/** par time per enemy in a wave; every second under par is one more quota */
+export const PAR_MS_PER_ENEMY = 2500;
+export const waveReward = (size: number, clearMs: number): number =>
+  WAVE_BASE_REWARD + Math.max(0, Math.round((size * PAR_MS_PER_ENEMY - clearMs) / 1000));
+
+export type BuyVerdict = "ok" | "too far" | "hands full" | "can't afford" | "sold out";
+
+/** shared, so the terminal's prompt says exactly what the server would decide */
+export function buyVerdict(player: { x: number; z: number }, holding: boolean, funds: number, turretsInWorld: number): BuyVerdict {
+  const dx = Math.max(0, Math.abs(player.x - SUPPLY_TERMINAL.x) - SUPPLY_TERMINAL.halfX);
+  const dz = Math.max(0, Math.abs(player.z - SUPPLY_TERMINAL.z) - SUPPLY_TERMINAL.halfZ);
+  if (Math.hypot(dx, dz) > BUY_RANGE) return "too far";
+  if (holding) return "hands full";
+  if (turretsInWorld >= ITEM_CAPS.turret) return "sold out";
+  if (funds < TURRET_COST) return "can't afford";
+  return "ok";
+}
 
 export const PLAYER_RADIUS = 0.4;
 /** walking speed, units/second: the client moves at it and the server won't accept faster */
@@ -756,7 +798,7 @@ export function shotRange(x: number, z: number, dirX: number, dirZ: number, obst
 export function worldObstacles(items: Iterable<ItemState>): Obstacle[] {
   const result = [...OBSTACLES];
   for (const item of items) {
-    if (item.kind === "box" && item.heldBy === undefined) result.push(boxObstacle(item));
+    if (isBlocking(item)) result.push(boxObstacle(item));
   }
   return result;
 }
