@@ -63,7 +63,7 @@ export const ASSETS: AssetEntry[] = [
   },
   { id: "equipment case (box item)", category: "item", build: equipmentCase, frame: 1.8 },
   { id: "sentry turret (turret item)", category: "item", build: sentryTurret, frame: 1.8 },
-  fixture("supplyTerminal", 0.9, 1.2, 1.5, 3),
+  fixture("supplyTerminal", 2.2, 0.9, 1.2, 3.5),
   { id: "crawler (enemy)", category: "enemy", build: crawler, frame: 2 },
   fixture("blastDoor", 4, 0.6, 2.5, 6),
   fixture("barrier", 2, 0.68, 0.8, 3),

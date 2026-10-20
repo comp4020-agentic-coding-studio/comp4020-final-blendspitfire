@@ -1,4 +1,4 @@
-import type { BoardMessage, MoveMessage, PlayerState, ServerMessage, StateMessage } from "../shared/protocol.ts";
+import type { BoardMessage, MoveMessage, PlayerState, ServerMessage, ShopItem, StateMessage } from "../shared/protocol.ts";
 
 export interface NetHandlers {
   onWelcome: (you: PlayerState, players: PlayerState[], t: number) => void;
@@ -16,7 +16,7 @@ export interface Net {
   primary: (x: number, z: number) => void;
   drop: () => void;
   activate: () => void;
-  buy: () => void;
+  buy: (item: ShopItem) => void;
   lift: () => void;
 }
 
@@ -97,8 +97,8 @@ export function connect(handlers: NetHandlers): Net {
     drop() {
       send({ type: "drop" });
     },
-    buy() {
-      send({ type: "buy" });
+    buy(item) {
+      send({ type: "buy", item });
     },
     activate() {
       send({ type: "activate" });

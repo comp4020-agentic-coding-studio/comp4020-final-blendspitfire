@@ -12,7 +12,7 @@
         --ui-font: 600 11px/1.35 ui-monospace, "SF Mono", Menlo, monospace; }
       html, body { margin: 0; height: 100%; background: #111; overflow: hidden; }
       canvas { display: block; }
-      .ui-frame, #leaderboard, #board .board-panel, .ui-hud, .ui-wounds, .ui-spectate, .ui-banner, #connection-lost {
+      .ui-frame, #leaderboard, #board .board-panel, #shop .board-panel, .ui-hud, .ui-wounds, .ui-spectate, .ui-banner, #connection-lost {
         position: fixed; color: var(--ui); font: var(--ui-font); letter-spacing: 0.1em; text-transform: uppercase;
         background: var(--ui-wash); padding: 8px 12px; pointer-events: none; text-shadow: 0 0 4px rgba(0,0,0,0.5);
         border: 0; border-radius: 0;
@@ -47,18 +47,23 @@
       #leaderboard .me { color: var(--ui); }
       #leaderboard .row:not(.me) { color: #d8d8d8; }
       /* the scoreboard: closed, it's only the screen in the garden; open, a tall panel mid-screen */
-      #board { position: fixed; inset: 0; pointer-events: none; display: grid; place-items: center; }
-      #board .board-panel { position: relative; min-width: 300px; max-width: min(420px, 86vw); padding: 18px 22px;
+      #board, #shop { position: fixed; inset: 0; pointer-events: none; display: grid; place-items: center; }
+      #shop { place-items: center end; padding-right: 4vw; }
+      #shop.open .board-panel { pointer-events: auto; }
+      #shop .row { cursor: pointer; flex-wrap: wrap; }
+      #shop .key { width: 2.4em; }
+      #shop .why { flex-basis: 100%; padding-left: 2.4em; font-size: 9px; }
+      #board .board-panel, #shop .board-panel { position: relative; min-width: 300px; max-width: min(420px, 86vw); padding: 18px 22px;
         background-color: rgba(8, 10, 12, 0.84); background-size: 14px 1px, 1px 14px, 14px 1px, 1px 14px;
         opacity: 0; transform: translateY(8px) scaleY(0.96); transition: opacity 0.22s, transform 0.22s; }
-      #board.open .board-panel { opacity: 1; transform: none; }
-      #board .title { margin: 6px 0 4px; padding-bottom: 3px; border-bottom: 1px solid rgba(255,255,255,0.35); }
-      #board .run { color: var(--ui-dim); margin-bottom: 6px; }
-      #board .row { display: flex; gap: 8px; padding: 2px 0; }
+      #board.open .board-panel, #shop.open .board-panel { opacity: 1; transform: none; }
+      #board .title, #shop .title { margin: 6px 0 4px; padding-bottom: 3px; border-bottom: 1px solid rgba(255,255,255,0.35); }
+      #board .run, #shop .run { color: var(--ui-dim); margin-bottom: 6px; }
+      #board .row, #shop .row { display: flex; gap: 8px; padding: 2px 0; }
       #board .rank { width: 1.4em; color: var(--ui-dim); }
-      #board .score { margin-left: auto; font-variant-numeric: tabular-nums; }
-      #board .dim, #board .legend { color: var(--ui-dim); }
-      #board .legend { margin-top: 8px; font-size: 9px; }
+      #board .score, #shop .score { margin-left: auto; font-variant-numeric: tabular-nums; }
+      #board .dim, #board .legend, #shop .dim, #shop .legend { color: var(--ui-dim); }
+      #board .legend, #shop .legend { margin-top: 8px; font-size: 9px; }
       .ui-hud { top: 14px; left: 50%; transform: translateX(-50%); width: min(360px, 70vw); display: none; }
       .ui-hud .line { display: flex; justify-content: space-between; margin-bottom: 4px; }
       .ui-hud .bar { height: 6px; border: 1px solid var(--ui); margin-bottom: 8px; position: relative; }
@@ -68,6 +73,7 @@
       .ui-wounds { left: 14px; bottom: 40px; display: none; }
       .ui-wounds .pip { display: inline-block; width: 8px; height: 8px; margin-right: 4px; border: 1px solid var(--ui-dim); }
       .ui-wounds .pip.hit { background: #ff5a5a; border-color: #ff5a5a; }
+      .ui-wounds .pip.dressed { border-style: dashed; border-color: #ff5a5a; }
       .ui-wounds .w { color: #d8d8d8; }
       .ui-spectate { left: 50%; bottom: 64px; transform: translateX(-50%); display: none; text-align: center; }
       .ui-banner { top: 18%; left: 50%; transform: translateX(-50%); font-size: 15px; letter-spacing: 0.18em;

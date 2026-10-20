@@ -24,6 +24,8 @@ export interface PlayerState {
   wounds?: number;
   /** wire-only: what they're called on screen and in the server log (palette.ts codename) */
   name?: string;
+  /** wire-only: patched up at the terminal; the wounds they had then, which the next hit brings straight back */
+  bandaged?: number;
 }
 
 /** the facility's objective: for now just whether someone has switched the reactor on */
@@ -113,9 +115,10 @@ export interface LiftMessage {
   type: "lift";
 }
 
-/** at the supply terminal: spend the crew's quota on a turret, handed straight to the buyer */
+/** at the supply terminal: spend the crew's quota on something from the shop */
 export interface BuyMessage {
   type: "buy";
+  item: ShopItem;
 }
 
 /**
@@ -582,8 +585,7 @@ export const FIXTURES: Fixture[] = [
   // narrowing the way in to one lane, a dead vending machine and a bench
   fixture("blastDoor", 0, 2, 2, WALL_HALF, FACILITY_WALL_HALF_HEIGHT),
   fixture("barrier", -1, 15.5, 1, 0.34, 0.4),
-  // the corp's supply terminal, where the old vending machine stood: spend quota here between waves
-  fixture("supplyTerminal", 1.55, 6.5, 0.45, 0.6, 0.75, "west"),
+  fixture("vending", 1.55, 6.5, 0.45, 0.6, 1, "west"),
   fixture("seating", -1.65, 5, 0.35, 1, 0.25, "east"),
   // the lab: two bench islands to duck behind, lockers, a terminal, a fume
   // hood and gas cylinders against the walls, stores by the door
@@ -610,6 +612,8 @@ export const FIXTURES: Fixture[] = [
   fixture("reactor", 0, -11.5, 2.2, 2.2, 0.9),
   fixture("console", -4.2, -11.5, 0.45, 1.2, 0.5, "east"),
   fixture("console", 4.2, -11.5, 0.45, 1.2, 0.5, "west"),
+  // the corp's comms set, patched in north of the reactor: where the crew orders supply against its quota
+  fixture("supplyTerminal", 0, -16.8, 1.1, 0.45, 0.6, "south"),
   ...[
     [-8, -8],
     [8, -8],
@@ -759,6 +763,13 @@ export const ITEM_CAPS: Record<ItemKind, number> = { gun: 12, box: 60, turret: 8
 export const SUPPLY_TERMINAL = FIXTURES.find((f) => f.kind === "supplyTerminal")!;
 export const BUY_RANGE = 2;
 export const TURRET_COST = 40;
+/** patching someone up: see bandaged on PlayerState */
+export const HEAL_COST = 20;
+export type ShopItem = "turret" | "heal";
+export const SHOP: Record<ShopItem, { cost: number; label: string; key: string }> = {
+  turret: { cost: TURRET_COST, label: "sentry turret", key: "1" },
+  heal: { cost: HEAL_COST, label: "field dressing", key: "2" },
+};
 /** what clearing a wave pays, before the speed bonus */
 export const WAVE_BASE_REWARD = 15;
 /** par time per enemy in a wave; every second under par is one more quota */
@@ -766,16 +777,28 @@ export const PAR_MS_PER_ENEMY = 2500;
 export const waveReward = (size: number, clearMs: number): number =>
   WAVE_BASE_REWARD + Math.max(0, Math.round((size * PAR_MS_PER_ENEMY - clearMs) / 1000));
 
-export type BuyVerdict = "ok" | "too far" | "hands full" | "can't afford" | "sold out";
+export type BuyVerdict = "ok" | "too far" | "hands full" | "can't afford" | "sold out" | "unhurt";
 
-/** shared, so the terminal's prompt says exactly what the server would decide */
-export function buyVerdict(player: { x: number; z: number }, holding: boolean, funds: number, turretsInWorld: number): BuyVerdict {
+export function atTerminal(player: { x: number; z: number }): boolean {
   const dx = Math.max(0, Math.abs(player.x - SUPPLY_TERMINAL.x) - SUPPLY_TERMINAL.halfX);
   const dz = Math.max(0, Math.abs(player.z - SUPPLY_TERMINAL.z) - SUPPLY_TERMINAL.halfZ);
-  if (Math.hypot(dx, dz) > BUY_RANGE) return "too far";
-  if (holding) return "hands full";
-  if (turretsInWorld >= ITEM_CAPS.turret) return "sold out";
-  if (funds < TURRET_COST) return "can't afford";
+  return Math.hypot(dx, dz) <= BUY_RANGE;
+}
+
+/** shared, so the terminal's panel says exactly what the server would decide */
+export function buyVerdict(
+  item: ShopItem,
+  player: { x: number; z: number },
+  buyer: { holding: boolean; wounds: number },
+  funds: number,
+  turretsInWorld: number,
+): BuyVerdict {
+  if (!atTerminal(player)) return "too far";
+  if (item === "turret") {
+    if (buyer.holding) return "hands full";
+    if (turretsInWorld >= ITEM_CAPS.turret) return "sold out";
+  } else if (buyer.wounds === 0) return "unhurt";
+  if (funds < SHOP[item].cost) return "can't afford";
   return "ok";
 }
 

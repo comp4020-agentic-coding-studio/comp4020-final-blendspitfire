@@ -60,9 +60,11 @@ import {
   ITEM_KINDS,
   BLOCKING_KINDS,
   SUPPLY_TERMINAL,
-  TURRET_COST,
+  SHOP,
+  atTerminal,
   buyVerdict,
   type BuyVerdict,
+  type ShopItem,
   type ItemKind,
   OBSTACLES,
   PICKUP_RANGE,
@@ -271,6 +273,8 @@ let myOut = false;
 let watchingId: string | undefined;
 /** wounds taken since we last (re)spawned, as the server sees it */
 let myWounds = 0;
+/** patched up with this many wounds: the next hit brings them all back */
+let myBandaged = 0;
 /** the warp count we've caught up with: moves are stamped with it (see PlayerState.warp) */
 let myWarp = 0;
 const remotes = new Map<string, RemotePlayer>();
@@ -744,24 +748,70 @@ function eTarget(): Target | undefined {
     const item = nearestItem();
     if (item) return { kind: "item", item };
   }
-  if (buyVerdict(p, false, Infinity, 0) !== "too far") return { kind: "terminal" };
+  if (atTerminal(p)) return { kind: "terminal" };
   if (Math.hypot(p.x - REACTOR.x, p.z - REACTOR.z) <= REACTOR.halfX + PICKUP_RANGE) return { kind: "reactor" };
   if (Math.hypot(p.x - SCOREBOARD.x, p.z - SCOREBOARD.z) <= SCOREBOARD_RANGE) return { kind: "board" };
   return undefined;
 }
 
-function terminalVerdict(): BuyVerdict {
+function shopVerdict(item: ShopItem): BuyVerdict {
   const turrets = [...items.values()].filter((i) => i.state.kind === "turret").length;
-  return buyVerdict(localMesh!.position, !!myHeldItem(), funds, turrets);
+  return buyVerdict(item, localMesh!.position, { holding: !!myHeldItem(), wounds: myWounds }, funds, turrets);
 }
 
-const BUY_TIPS: Record<BuyVerdict, string> = {
-  ok: `buy a turret · ${TURRET_COST} quota`,
+const BUY_REASONS: Record<BuyVerdict, string> = {
+  ok: "",
   "too far": "move closer",
-  "hands full": "hands full — put it down first (Q)",
-  "can't afford": `turret · ${TURRET_COST} quota — not enough`,
-  "sold out": "turrets: the corp's limit is reached",
+  "hands full": "hands full: put it down (Q)",
+  "can't afford": "not enough quota",
+  "sold out": "corp limit reached",
+  unhurt: "not hurt",
 };
+
+// The shop: E at the comms set opens its panel, a key per line (or click
+// the line). Walking away closes it.
+let shopOpen = false;
+const shopEl = document.createElement("div");
+shopEl.id = "shop";
+document.body.appendChild(shopEl);
+const SHOP_ITEMS = Object.keys(SHOP) as ShopItem[];
+function toggleShop(open = !shopOpen): void {
+  shopOpen = open;
+  shopEl.classList.toggle("open", shopOpen);
+  renderShop();
+}
+let lastShopHtml = "";
+function renderShop(): void {
+  if (!shopOpen || !localMesh) return;
+  const rows = SHOP_ITEMS.map((item) => {
+    const v = shopVerdict(item);
+    const s = SHOP[item];
+    return `<div class="row${v === "ok" ? "" : " dim"}" data-item="${item}"><span class="key">[${s.key}]</span><span>${s.label}</span><span class="score">${s.cost}</span>${v === "ok" ? "" : `<div class="why">${BUY_REASONS[v]}</div>`}</div>`;
+  }).join("");
+  const html =
+    '<div class="board-panel">' +
+    '<div class="title">corp supply uplink</div>' +
+    `<div class="run">crew quota: ${funds}</div>` +
+    rows +
+    '<div class="legend">field dressing: patches every wound now; the next hit tears it open</div>' +
+    '<div class="legend">1 / 2 to order · E / Esc to close</div></div>';
+  if (html === lastShopHtml) return;
+  lastShopHtml = html;
+  shopEl.innerHTML = html;
+}
+function order(item: ShopItem): void {
+  if (!shopOpen) return;
+  if (shopVerdict(item) === "ok") net.buy(item);
+  else flash(BUY_REASONS[shopVerdict(item)]);
+}
+shopEl.addEventListener("pointerdown", (e) => {
+  const row = (e.target as HTMLElement).closest<HTMLElement>("[data-item]");
+  if (row) order(row.dataset.item as ShopItem);
+});
+setInterval(() => {
+  if (shopOpen && eTarget()?.kind !== "terminal") toggleShop(false);
+  renderShop();
+}, 150);
 
 function useTarget(target: Target | undefined): void {
   if (!target || !localMesh) return;
@@ -774,10 +824,8 @@ function useTarget(target: Target | undefined): void {
     const verdict = liftVerdict(localMesh.position, lift, objective);
     if (verdict === "send" || verdict === "call") net.lift();
     else prompts.nope("lift");
-  } else if (target.kind === "terminal") {
-    if (terminalVerdict() === "ok") net.buy();
-    else prompts.nope("terminal");
-  } else if (target.kind === "board") toggleBoard();
+  } else if (target.kind === "terminal") toggleShop();
+  else if (target.kind === "board") toggleBoard();
 }
 
 const v3 = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
@@ -796,9 +844,8 @@ function currentPrompts(): Prompt[] {
     const verdict = activateVerdict(p, objective, defenceState.phase === "break");
     if (verdict !== "already active") out.push({ id: "reactor", at: v3(REACTOR.x - 1.4, 2, REACTOR.z - 1.4), key: "E", label: ACTIVATE_TIPS[verdict], enabled: verdict === "ok" || verdict === "skip break" });
   } else if (target?.kind === "terminal") {
-    const verdict = terminalVerdict();
     const t = SUPPLY_TERMINAL;
-    out.push({ id: "terminal", at: v3(t.x - 0.6, 1.9, t.z - 0.6), key: "E", label: BUY_TIPS[verdict], enabled: verdict === "ok", detail: `crew quota: ${funds}` });
+    out.push({ id: "terminal", at: v3(t.x - 0.8, 1.9, t.z + 0.3), key: "E", label: shopOpen ? "close supply uplink" : "order supply", detail: `crew quota: ${funds}` });
   } else if (target?.kind === "board") {
     out.push({ id: "board", at: v3(SCOREBOARD.x - 1.2, 2.6, SCOREBOARD.z), key: "E", label: boardOpen ? "close scores" : "read scores" });
   } else if (target?.kind === "lift") {
@@ -920,6 +967,7 @@ const net = connect({
     myRespawnAt = you.respawnAt ?? 0;
     myOut = !!you.out;
     myWounds = you.wounds ?? 0;
+    myBandaged = you.bandaged ?? 0;
     myWarp = you.warp ?? 0;
     localMesh = makeCharacter(you.color, true);
     localMesh.position.set(you.x, 0, you.z);
@@ -947,8 +995,10 @@ const net = connect({
         myRespawnAt = p.respawnAt ?? 0;
         myOut = !!p.out;
         const wounds = p.wounds ?? 0;
-        if (wounds > myWounds) onWounded(wounds);
+        if (wounds > myWounds) onWounded(wounds, myBandaged > 0);
+        else if (wounds < myWounds) showBanner("patched up — the next hit tears it open");
         myWounds = wounds;
+        myBandaged = p.bandaged ?? 0;
         // the server moved us (a respawn, a lift ride): jump there now, and
         // stamp moves from here on with the new count
         if (localMesh && (p.warp ?? 0) !== myWarp) {
@@ -1191,6 +1241,11 @@ window.addEventListener("keydown", (e) => {
   else if (key === "q") drop();
   else if (key === "e") useTarget(eTarget());
   else if (key === "escape" && boardOpen) toggleBoard();
+  else if (key === "escape" && shopOpen) toggleShop(false);
+  else if (shopOpen) {
+    const item = SHOP_ITEMS.find((i) => SHOP[i].key === key);
+    if (item) order(item);
+  }
 });
 
 function addOrUpdateRemote(p: PlayerState, t: number): void {
@@ -1460,7 +1515,7 @@ const forcedDaze = params.has("daze") ? Number(params.get("daze")) || 0 : undefi
 let dazeLevel = 0;
 let lastWoundsShown = -1;
 
-function onWounded(wounds: number): void {
+function onWounded(wounds: number, torn = false): void {
   hurtFlashEl.style.transition = "none";
   hurtFlashEl.style.opacity = "1";
   requestAnimationFrame(() => {
@@ -1468,7 +1523,8 @@ function onWounded(wounds: number): void {
     hurtFlashEl.style.opacity = "0";
   });
   const w = WOUNDS[wounds - 1];
-  if (w) showBanner(wounds >= MAX_WOUNDS ? `${w.label} — one more hit is fatal` : w.label);
+  if (torn) showBanner(`dressing torn open — ${wounds >= MAX_WOUNDS ? "one more hit is fatal" : `${wounds} wound(s) back`}`);
+  else if (w) showBanner(wounds >= MAX_WOUNDS ? `${w.label} — one more hit is fatal` : w.label);
 }
 
 function stepWounds(dt: number): void {
@@ -1477,11 +1533,17 @@ function stepWounds(dt: number): void {
   const want = forcedDaze ?? (wounds >= 2 ? 1 : 0);
   dazeLevel += (want - dazeLevel) * Math.min(1, dt * 3);
   post.effects.daze = dazeLevel < 0.01 ? 0 : dazeLevel;
-  if (wounds === lastWoundsShown) return;
-  lastWoundsShown = wounds;
-  woundsEl.style.display = wounds > 0 ? "block" : "none";
-  const pips = Array.from({ length: MAX_WOUNDS + 1 }, (_, i) => `<span class="pip${i < wounds ? " hit" : ""}"></span>`).join("");
-  woundsEl.innerHTML = `<div style="margin-bottom:4px">${pips}</div>` + WOUNDS.slice(0, wounds).map((w) => `<div class="w">${w.label}</div>`).join("");
+  const bandaged = isDead() ? 0 : myBandaged;
+  const key = wounds * 10 + bandaged;
+  if (key === lastWoundsShown) return;
+  lastWoundsShown = key;
+  woundsEl.style.display = wounds > 0 || bandaged > 0 ? "block" : "none";
+  // a dressed wound is a dashed pip: gone for now, back with the next hit
+  const pips = Array.from({ length: MAX_WOUNDS + 1 }, (_, i) => `<span class="pip${i < wounds ? " hit" : i < bandaged ? " dressed" : ""}"></span>`).join("");
+  woundsEl.innerHTML =
+    `<div style="margin-bottom:4px">${pips}</div>` +
+    WOUNDS.slice(0, wounds).map((w) => `<div class="w">${w.label}</div>`).join("") +
+    (bandaged > 0 ? `<div class="w">dressed: ${bandaged} wound(s) under it</div>` : "");
 }
 
 // Spectating. Out for the rest of an attempt, you watch a teammate who's

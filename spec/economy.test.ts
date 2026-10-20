@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BUY_RANGE,
+  HEAL_COST,
   ITEM_CAPS,
   PAR_MS_PER_ENEMY,
   SUPPLY_TERMINAL,
@@ -13,7 +14,8 @@ import {
 // The quota: what clearing a wave pays, and what the supply terminal will
 // sell. Pure rules, shared by the client's prompt and the server's check.
 
-const atTerminal = { x: SUPPLY_TERMINAL.x - SUPPLY_TERMINAL.halfX - 0.5, z: SUPPLY_TERMINAL.z };
+const atTerminal = { x: SUPPLY_TERMINAL.x, z: SUPPLY_TERMINAL.z + SUPPLY_TERMINAL.halfZ + 0.5 };
+const empty = { holding: false, wounds: 0 };
 
 describe("wave rewards", () => {
   it("pays the base for a slow clear and more for every second under par", () => {
@@ -24,13 +26,19 @@ describe("wave rewards", () => {
 
 describe("buying at the supply terminal", () => {
   it("sells a turret to someone close, empty-handed, with the quota for it", () => {
-    expect(buyVerdict(atTerminal, false, TURRET_COST, 0)).toBe("ok");
+    expect(buyVerdict("turret", atTerminal, empty, TURRET_COST, 0)).toBe("ok");
   });
 
   it("says why it won't", () => {
-    expect(buyVerdict({ x: atTerminal.x - BUY_RANGE - 1, z: atTerminal.z }, false, 999, 0)).toBe("too far");
-    expect(buyVerdict(atTerminal, true, 999, 0)).toBe("hands full");
-    expect(buyVerdict(atTerminal, false, TURRET_COST - 1, 0)).toBe("can't afford");
-    expect(buyVerdict(atTerminal, false, 999, ITEM_CAPS.turret)).toBe("sold out");
+    expect(buyVerdict("turret", { x: atTerminal.x, z: atTerminal.z + BUY_RANGE + 1 }, empty, 999, 0)).toBe("too far");
+    expect(buyVerdict("turret", atTerminal, { holding: true, wounds: 0 }, 999, 0)).toBe("hands full");
+    expect(buyVerdict("turret", atTerminal, empty, TURRET_COST - 1, 0)).toBe("can't afford");
+    expect(buyVerdict("turret", atTerminal, empty, 999, ITEM_CAPS.turret)).toBe("sold out");
+  });
+
+  it("patches up only someone who's hurt, hands full or not", () => {
+    expect(buyVerdict("heal", atTerminal, { holding: true, wounds: 2 }, HEAL_COST, 0)).toBe("ok");
+    expect(buyVerdict("heal", atTerminal, empty, 999, 0)).toBe("unhurt");
+    expect(buyVerdict("heal", atTerminal, { holding: false, wounds: 1 }, HEAL_COST - 1, 0)).toBe("can't afford");
   });
 });

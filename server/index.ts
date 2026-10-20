@@ -64,7 +64,7 @@ import {
   worldObstacles,
   BLOCKING_KINDS,
   BOX_HALF_EXTENT,
-  TURRET_COST,
+  SHOP,
   buyVerdict,
   waveReward,
   type ClientMessage,
@@ -174,6 +174,8 @@ interface Connection {
   warp: number;
   /** wounds taken since the last (re)spawn; in memory only */
   wounds: number;
+  /** patched up at the terminal with this many wounds: the next hit puts them straight back (0 = not bandaged) */
+  bandaged: number;
   /** no further wound lands before this (Date.now()-scale) */
   woundGraceUntil: number;
   /** when their last move was accepted, for the speed check */
@@ -214,7 +216,7 @@ const shortId = (id: string): string => id.slice(0, 6);
  * who leaves mid-attempt and comes back gets them back, rather than a fresh
  * body. Cleared when the attempt ends.
  */
-const carried = new Map<string, { wounds: number; out: boolean }>();
+const carried = new Map<string, { wounds: number; bandaged: number; out: boolean }>();
 
 /**
  * A refused action is logged too --- it's the server holding a line --- but
@@ -387,6 +389,7 @@ function everyoneUp(): void {
 function reviveAt(conn: Connection): void {
   respawn(conn.player);
   conn.wounds = 0;
+  conn.bandaged = 0;
   conn.woundGraceUntil = 0;
   conn.deadUntil = 0;
   warped(conn);
@@ -551,6 +554,7 @@ function netPlayer(conn: Connection, now: number): PlayerState {
     entered: levelOf(conn.player.z) === "bottom" ? true : undefined,
     warp: conn.warp,
     wounds: conn.wounds || undefined,
+    bandaged: conn.bandaged || undefined,
     name: codename(conn.player),
   };
 }
@@ -609,6 +613,7 @@ wss.on("connection", (socket, req) => {
     lastFireAt: 0,
     warp: 0,
     wounds: 0,
+    bandaged: 0,
     woundGraceUntil: 0,
     lastMoveAt: 0,
     windowStart: 0,
@@ -634,6 +639,7 @@ wss.on("connection", (socket, req) => {
   if (back) {
     carried.delete(playerId);
     conn.wounds = back.wounds;
+    conn.bandaged = back.bandaged;
     if (back.out) conn.deadUntil = Infinity;
   }
   connections.set(playerId, conn);
@@ -758,18 +764,29 @@ wss.on("connection", (socket, req) => {
     }
 
     if (msg.type === "buy") {
+      const what = msg.item;
+      if (what !== "turret" && what !== "heal") return;
       const turrets = [...items.values()].filter((i) => i.kind === "turret").length;
-      const verdict = buyVerdict(conn.player, heldItem(playerId) !== undefined, funds, turrets);
+      const verdict = buyVerdict(what, conn.player, { holding: heldItem(playerId) !== undefined, wounds: conn.wounds }, funds, turrets);
       if (verdict !== "ok") {
-        refuse(conn, "buy", `refused: turret (${verdict})`);
+        refuse(conn, "buy", `refused: ${what} (${verdict})`);
         return;
       }
-      funds -= TURRET_COST;
+      const cost = SHOP[what].cost;
+      funds -= cost;
       saveFunds(funds);
-      const id = randomUUID();
-      items.set(id, { id, kind: "turret", x: conn.player.x, z: conn.player.z, heldBy: playerId });
-      act(conn.player, `bought turret ${shortId(id)} for ${TURRET_COST} quota (${funds} left)`);
-      markWorldDirty();
+      if (what === "turret") {
+        const id = randomUUID();
+        items.set(id, { id, kind: "turret", x: conn.player.x, z: conn.player.z, heldBy: playerId });
+        act(conn.player, `bought turret ${shortId(id)} for ${cost} quota (${funds} left)`);
+        markWorldDirty();
+      } else {
+        // a dressing, not a cure: whatever they had comes back with the next hit
+        conn.bandaged = Math.max(conn.bandaged, conn.wounds);
+        conn.wounds = 0;
+        conn.dirty = true;
+        act(conn.player, `patched up (${conn.bandaged} wound(s) dressed) for ${cost} quota (${funds} left)`);
+      }
       return;
     }
 
@@ -817,8 +834,8 @@ wss.on("connection", (socket, req) => {
     // a tab replaced by a newer one mustn't take the newer one down with it
     if (connections.get(playerId) === conn) {
       connections.delete(playerId);
-      if (conn.deadUntil === Infinity || (objective.active && conn.wounds > 0)) {
-        carried.set(playerId, { wounds: conn.wounds, out: conn.deadUntil === Infinity });
+      if (conn.deadUntil === Infinity || (objective.active && (conn.wounds > 0 || conn.bandaged > 0))) {
+        carried.set(playerId, { wounds: conn.wounds, bandaged: conn.bandaged, out: conn.deadUntil === Infinity });
       }
       act(conn.player, `left (${connections.size} online)`);
     }
@@ -964,6 +981,15 @@ function wound(conn: Connection, now: number, by: string): boolean {
     kill(conn, now);
     act(conn.player, `killed by ${by} at ${pos(conn.player.x, conn.player.z)}${conn.deadUntil === Infinity ? ": out for this attempt" : ""}`);
     return true;
+  }
+  if (conn.bandaged > 0) {
+    // the dressing gives way: every wound under it is back at once
+    conn.wounds = conn.bandaged;
+    conn.bandaged = 0;
+    conn.woundGraceUntil = now + WOUND_GRACE_MS;
+    conn.dirty = true;
+    act(conn.player, `wounded by ${by}: dressing torn, back to ${conn.wounds}/${MAX_WOUNDS}`);
+    return false;
   }
   conn.wounds += 1;
   conn.woundGraceUntil = now + WOUND_GRACE_MS;

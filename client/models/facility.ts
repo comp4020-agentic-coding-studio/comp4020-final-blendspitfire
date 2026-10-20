@@ -14,6 +14,7 @@ import {
   LINOLEUM,
   PAINT_OCHRE,
   PAINT_OXIDE,
+  PAINT_SAGE,
   PAINT_STEEL_BLUE,
   PAPER,
   PLASTIC,
@@ -364,26 +365,39 @@ const vending: Builder = (len, depth, h) => {
 };
 
 /**
- * The corp's supply terminal: a hard-shell drop crate stood on end, freshly
- * deployed (clean steel and hazard bumpers against the old facility), with
- * a lit screen and a delivery hatch on its working face.
+ * The corp's comms set, patched in beside the reactor: a field desk with a
+ * stacked radio and a ruggedised screen, a whip antenna clamped to one end
+ * and a cable run back to the reactor's consoles. Clean olive-and-steel
+ * kit against the old facility; the screen and the radio's dials are lit.
  */
 const supplyTerminal: Builder = (len, depth, h) => {
+  const deck = h * 0.62;
   const parts = [
-    part(box(len, h, depth), STEEL.base, 0, h / 2, 0),
-    part(box(len + 0.04, 0.08, depth + 0.04), STEEL.shade, 0, h - 0.04, 0),
-    // delivery hatch low on the front, screen bezel above it
-    part(box(len * 0.7, h * 0.28, 0.04), RUBBER.base, 0, h * 0.22, depth / 2 + 0.01),
-    part(box(len * 0.7, h * 0.3, 0.04), RUBBER.light, 0, h * 0.68, depth / 2 + 0.01),
-    // a stencilled band on the lid, readable from overhead
-    part(box(len * 0.8, 0.02, depth * 0.3), PAPER.base, 0, h + 0.01, 0),
+    // the desk: a steel frame, a rubber-topped deck
+    part(box(len, 0.06, depth), RUBBER.base, 0, deck, 0),
+    part(box(len - 0.1, deck - 0.06, depth - 0.15), STEEL.shade, 0, (deck - 0.06) / 2, -0.05),
+    // the radio stack at the west end: two olive cases, one on the other
+    part(box(len * 0.32, 0.26, depth * 0.7), PAINT_SAGE.shade, -len * 0.3, deck + 0.16, -depth * 0.08),
+    part(box(len * 0.3, 0.22, depth * 0.62), PAINT_SAGE.base, -len * 0.3, deck + 0.4, -depth * 0.1),
+    // the screen, tipped back toward whoever stands at the front
+    part(box(len * 0.42, 0.42, 0.08), RUBBER.light, len * 0.12, deck + 0.3, -depth * 0.18),
+    // keyboard on the deck, a handset beside it
+    part(box(len * 0.34, 0.03, 0.2), STEEL.light, len * 0.12, deck + 0.045, depth * 0.22),
+    part(box(0.12, 0.06, 0.32), RUBBER.base, len * 0.38, deck + 0.06, depth * 0.15),
+    // the antenna mast clamped to the east end, and its base
+    part(cyl(0.06, 0.08, 0.14, 6), STEEL.base, len / 2 - 0.12, deck + 0.1, -depth / 2 + 0.12),
+    part(cyl(0.02, 0.02, 1.3, 5), ALUMINIUM.base, len / 2 - 0.12, deck + 0.8, -depth / 2 + 0.12),
+    // a stencilled band on the top case, readable from overhead
+    part(box(len * 0.24, 0.02, depth * 0.18), PAPER.base, -len * 0.3, deck + 0.52, -depth * 0.1),
   ];
-  for (const cx of [-1, 1]) for (const cz of [-1, 1]) parts.push(part(box(0.12, h, 0.12), HAZARD.base, cx * (len / 2 - 0.04), h / 2, cz * (depth / 2 - 0.04)));
+  for (const cx of [-1, 1]) parts.push(part(box(0.1, deck, 0.1), HAZARD.base, cx * (len / 2 - 0.05), deck / 2, depth / 2 - 0.05));
   return [
     matte(merge(parts, "ground", 0.3)),
     emissive([
-      glowPart(box(len * 0.6, h * 0.22, 0.02), EMIT_AMBER, 0, h * 0.68, depth / 2 + 0.035),
-      glowPart(box(0.1, 0.06, 0.1), EMIT_AMBER, 0, h + 0.04, depth * 0.3),
+      glowPart(box(len * 0.36, 0.34, 0.02), EMIT_AMBER, len * 0.12, deck + 0.3, -depth * 0.18 + 0.05),
+      glowPart(box(0.06, 0.04, 0.02), EMIT_GREEN, -len * 0.36, deck + 0.42, depth * 0.22),
+      glowPart(box(0.06, 0.04, 0.02), EMIT_RED, -len * 0.26, deck + 0.42, depth * 0.22),
+      glowPart(box(0.05, 0.05, 0.05), EMIT_RED, len / 2 - 0.12, deck + 1.47, -depth / 2 + 0.12),
     ]),
   ];
 };
