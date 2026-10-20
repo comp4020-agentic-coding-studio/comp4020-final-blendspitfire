@@ -58,6 +58,10 @@ const fragment = /* glsl */ `
   uniform float crt;
   uniform float paint;
   uniform float time;
+  uniform float levels;
+  uniform float scanlines;
+  uniform float grain;
+  uniform vec2 lowRes;
   varying vec2 vUv;
 
   // three.js's Neutral tone mapper (Khronos PBR Neutral), ported
@@ -237,6 +241,19 @@ const fragment = /* glsl */ `
       c *= 1.0 - crt * 0.6 * smoothstep(0.3, 0.75, length(v));
       if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) c = vec3(0.0);
     }
+    // the retro screen, underground: on the low-res grid, so every effect sits on the big pixels
+    float retro = 1.0 - paint;
+    vec2 px = floor(vUv * lowRes);
+    if (levels > 0.0 && retro > 0.0) {
+      // crush to a few levels per channel, the step hidden by a dither fixed to each big pixel
+      vec3 q = floor(c * levels + 0.5 + bayer(px) * 0.9) / levels;
+      c = mix(c, q, retro);
+      // a dark line along the bottom of every pixel row
+      float row = fract(vUv.y * lowRes.y);
+      c *= 1.0 - scanlines * retro * smoothstep(0.55, 1.0, row);
+      // grain that crawls a few times a second, not every frame
+      c += (hash(px + floor(time * 12.0)) - 0.5) * grain * retro;
+    }
     c += bayer(gl_FragCoord.xy) * ditherAmount;
     gl_FragColor = vec4(c, 1.0);
   }
@@ -304,6 +321,10 @@ export function createPostProcess(renderer: THREE.WebGLRenderer, scale: number, 
     crt: { value: 0 },
     paint: { value: 0 },
     time: { value: 0 },
+    levels: { value: 0 },
+    scanlines: { value: 0 },
+    grain: { value: 0 },
+    lowRes: { value: new THREE.Vector2(1, 1) },
   };
   const effects = { daze: 0, crt: 0, paint: 0 };
   const started = performance.now();
@@ -327,6 +348,7 @@ export function createPostProcess(renderer: THREE.WebGLRenderer, scale: number, 
       const h = Math.max(1, Math.round(height * scale));
       target.setSize(w, h);
       uniforms.texel.value.set(1 / w, 1 / h);
+      uniforms.lowRes.value.set(w, h);
       const a = width / height;
       uniforms.aspect.value.set(a > 1 ? a : 1, a > 1 ? 1 : 1 / a);
     },
@@ -352,6 +374,10 @@ export function createPostProcess(renderer: THREE.WebGLRenderer, scale: number, 
       uniforms.blackLift.value = grade.blackLift;
       uniforms.vignette.value = grade.vignette;
       uniforms.ditherAmount.value = grade.dither;
+      // the retro screen only when there are big pixels to put it on
+      uniforms.levels.value = scale < 1 ? grade.levels : 0;
+      uniforms.scanlines.value = grade.scanlines;
+      uniforms.grain.value = grade.grain;
       uniforms.daze.value = effects.daze;
       uniforms.crt.value = effects.crt;
       uniforms.paint.value = effects.paint;

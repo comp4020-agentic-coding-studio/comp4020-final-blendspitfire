@@ -23,6 +23,15 @@ export interface Grade {
   vignette: number;
   /** ordered-dither strength in 0..1 colour units; hides banding in dark gradients */
   dither: number;
+  /**
+   * The retro screen (underground only): colours crushed to this many
+   * levels per channel, ordered-dithered on the low-res pixel grid so the
+   * pattern sits on the big pixels, with a scanline per pixel row and a
+   * little film grain. 0 levels = off.
+   */
+  levels: number;
+  scanlines: number;
+  grain: number;
 }
 
 export const GRADE: Grade = {
@@ -33,6 +42,9 @@ export const GRADE: Grade = {
   highlightTint: [1.0, 0.97, 0.92],
   tintStrength: 0.35,
   blackLift: 0.012,
-  vignette: 0.35,
+  vignette: 0.42,
   dither: 0.018,
+  levels: 12,
+  scanlines: 0.22,
+  grain: 0.04,
 };

@@ -135,9 +135,10 @@ camera.up.set(0, 0, -1);
 
 const params = new URLSearchParams(location.search);
 // The internal render size as a fraction of the window: a retro pixel grid
-// (see client/postprocess.ts), tuned by eye --- 0.42 keeps a player and a
-// dropped item clearly distinct at a glance. ?pixel=0 turns it off.
-const PIXEL_SCALE = params.get("pixel") === "0" ? 1 : 0.42;
+// (see client/postprocess.ts). At 0.25 the pixels are plainly pixels, and a
+// player and a dropped item are still distinct at a glance. ?pixel=0 turns
+// it off; ?pixel=0.2 (any fraction) tries another size.
+const PIXEL_SCALE = params.get("pixel") === "0" ? 1 : Number(params.get("pixel")) || 0.25;
 
 let renderer: THREE.WebGLRenderer;
 try {
