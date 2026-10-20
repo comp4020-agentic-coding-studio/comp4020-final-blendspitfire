@@ -265,7 +265,7 @@ export class Defence {
       }
       s.phase = "break";
       s.nextWaveAt = now + WAVE_BREAK_MS;
-      this.world.announce(`wave ${s.wave} cleared --- ${WAVE_BREAK_MS / 1000}s to the next`);
+      this.world.announce(`wave ${s.wave} cleared — next: ${waveSize(s.wave + 1)} hostiles in ${WAVE_BREAK_MS / 1000}s`);
       this.world.changed();
       return;
     }
@@ -285,7 +285,7 @@ export class Defence {
     this.waveSizeNow = this.toSpawn;
     this.waveStartedAt = now;
     this.nextSpawnAt = now;
-    this.world.announce(`wave ${s.wave} incoming`);
+    this.world.announce(`wave ${s.wave}/${WAVES_TO_WIN} incoming — ${this.toSpawn} hostiles`);
     this.world.changed();
   }
 

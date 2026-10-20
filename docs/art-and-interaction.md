@@ -146,7 +146,9 @@ one press per action, so they work mid-stride.
 **Prompts float on the thing.** Whatever E would act on gets a prompt
 pinned to it (`client/ui/prompts.ts`): white when it'll work, grey with the
 reason when it won't, growing out of the object and folding back into it.
-All UI is the same thin white/grey line-work (`public/index.html`).
+All UI is one old company terminal (`public/index.html`): a pixel face
+(VT323) in warm phosphor white with a faint glow, chunky two-pixel frames
+with stepped corners, segmented bars, and leaders drawn as pixel steps.
 
 **Trackpads are first-class.** Many players are on a laptop trackpad, so:
 no hold-to-act, no drag-to-act, and nothing that needs a right button.

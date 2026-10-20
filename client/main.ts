@@ -25,7 +25,7 @@ import { mesh } from "./models/kit.ts";
 import { LAMPS, LAMP_SPECS, lampSource } from "./world/dressing.ts";
 import { STENCIL, DANGER, OK, EMIT_RED, EMIT_TRACER, AMBIENT_SKY } from "../shared/palette.ts";
 import { INTERP_DELAY_MS, ServerClock, SnapshotBuffer, Tracer } from "./netsync.ts";
-import { ENEMY_RADIUS, WAVES_TO_WIN, type DefenceState, type EnemyState } from "../shared/enemies.ts";
+import { ENEMY_RADIUS, WAVES_TO_WIN, waveSize, type DefenceState, type EnemyState } from "../shared/enemies.ts";
 import {
   BOX_HALF_EXTENT,
   BREACHES,
@@ -854,7 +854,7 @@ function currentPrompts(): Prompt[] {
     out.push({ id: `item:${s.id}`, at: v3(s.x, 0.4, s.z), key: "E", label: `pick up ${ITEM_NAMES[s.kind]}` });
   } else if (target?.kind === "reactor") {
     const verdict = activateVerdict(p, objective, defenceState.phase);
-    if (verdict !== "already active") out.push({ id: "reactor", at: v3(REACTOR.x - 1.4, 2, REACTOR.z - 1.4), key: verdict === "stable" || verdict === "dead" ? "" : "E", label: ACTIVATE_TIPS[verdict], enabled: verdict === "ok" || verdict === "skip break" });
+    if (verdict !== "already active") out.push({ id: "reactor", at: v3(REACTOR.x - 0.6, 1.9, REACTOR.z + 0.4), key: verdict === "stable" || verdict === "dead" ? "" : "E", label: ACTIVATE_TIPS[verdict], enabled: verdict === "ok" || verdict === "skip break" });
   } else if (target?.kind === "terminal") {
     const t = SUPPLY_TERMINAL;
     out.push({ id: "terminal", at: v3(t.x - 0.8, 1.9, t.z + 0.3), key: "E", label: shopOpen ? "close supply uplink" : "order supply", detail: `crew quota: ${funds}` });
@@ -1680,10 +1680,11 @@ function renderDefenceHud(): void {
   const nextIn = next ? Math.max(0, Math.ceil((next - serverClock.now()) / 1000)) : 0;
   hudNext.textContent = [
     enemies.size ? `${enemies.size} hostile` : "",
-    onBreak && next ? `wave ${defenceState.wave + 1} in ${nextIn}s · E at the reactor: send it now` : "",
+    onBreak && next ? `wave ${defenceState.wave + 1} (${waveSize(defenceState.wave + 1)} hostiles) in ${nextIn}s` : "",
+    onBreak ? "E at reactor: send now · comms set: order supply" : "",
   ]
     .filter(Boolean)
-    .join(" · ");
+    .join("\n");
 }
 
 // The scoreboard: a screen in the garden (client/world/surface.ts) that

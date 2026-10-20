@@ -24,26 +24,33 @@ export interface Prompt {
   detail?: string;
 }
 
+// The leader is a staircase of square pixel-steps rather than a smooth
+// line, the dot a square, and the tag a terminal readout: the same look as
+// the rest of the UI (public/index.html), drawn in steps like a sprite.
 const STYLE = `
 .pr-layer { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 5; }
 .pr { position: absolute; left: 0; top: 0; will-change: transform; }
-.pr-dot { position: absolute; left: -3px; top: -3px; width: 6px; height: 6px; border: 1px solid var(--ui); border-radius: 50%;
-  transform: scale(0); transition: transform 0.18s ease-out; }
-.pr-line { position: absolute; right: 0; bottom: 0; width: 34px; height: 1px; background: var(--ui);
-  transform-origin: 100% 50%; transform: rotate(45deg) scaleX(0); transition: transform 0.16s ease-out 0.06s; }
-.pr-tag { position: absolute; right: 24px; bottom: 24px; display: flex; align-items: center; gap: 8px; white-space: nowrap;
-  padding: 5px 10px 5px 6px; color: var(--ui); font: 600 11px/1.2 ui-monospace, "SF Mono", Menlo, monospace;
-  letter-spacing: 0.1em; text-transform: uppercase; text-shadow: 0 0 4px rgba(0,0,0,0.55);
-  background: linear-gradient(90deg, rgba(8,10,12,0.42), rgba(8,10,12,0.18));
-  clip-path: inset(0 0 0 100%); transition: clip-path 0.2s ease-out 0.14s; animation: pr-float 3.2s ease-in-out infinite; }
-.pr-tag::before, .pr-tag::after { content: ""; position: absolute; width: 7px; height: 7px; border: 1px solid var(--ui); }
-.pr-tag::before { left: 0; top: 0; border-right: 0; border-bottom: 0; }
-.pr-tag::after { right: 0; bottom: 0; border-left: 0; border-top: 0; }
-.pr-key { min-width: 16px; height: 16px; display: grid; place-items: center; border: 1px solid var(--ui); font-size: 10px; letter-spacing: 0; }
-.pr-text { display: flex; flex-direction: column; gap: 2px; }
-.pr-detail { font-size: 9px; opacity: 0.75; letter-spacing: 0.08em; }
+.pr-dot { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; background: var(--ui);
+  box-shadow: 0 0 6px var(--ui-glow); transform: scale(0); transition: transform 0.18s steps(3); }
+.pr-line { position: absolute; right: 0; bottom: 0; width: 28px; height: 28px;
+  background:
+    linear-gradient(var(--ui), var(--ui)) 0 0 / 4px 4px,
+    linear-gradient(var(--ui), var(--ui)) 6px 6px / 4px 4px,
+    linear-gradient(var(--ui), var(--ui)) 12px 12px / 4px 4px,
+    linear-gradient(var(--ui), var(--ui)) 18px 18px / 4px 4px,
+    linear-gradient(var(--ui), var(--ui)) 24px 24px / 4px 4px;
+  background-repeat: no-repeat; clip-path: inset(100% 0 0 100%); transition: clip-path 0.16s steps(5) 0.06s; }
+.pr-tag { position: absolute; right: 28px; bottom: 28px; display: flex; align-items: center; gap: 8px; white-space: nowrap;
+  padding: 3px 10px 3px 4px; color: var(--ui); font: 400 20px/1 "VT323", ui-monospace, "SF Mono", Menlo, monospace;
+  letter-spacing: 0.06em; text-transform: uppercase; text-shadow: 0 0 6px var(--ui-glow), 0 1px 0 #000;
+  background: rgba(6, 8, 6, 0.7); border: 2px solid var(--ui); -webkit-font-smoothing: none;
+  clip-path: inset(0 0 0 100%); transition: clip-path 0.2s steps(6) 0.14s; animation: pr-float 3.2s steps(4) infinite; }
+.pr-key { min-width: 20px; height: 20px; display: grid; place-items: center; background: var(--ui); color: #0a0c0a;
+  text-shadow: none; font-size: 18px; letter-spacing: 0; padding: 0 3px; }
+.pr-text { display: flex; flex-direction: column; gap: 0; }
+.pr-detail { font-size: 16px; opacity: 0.75; letter-spacing: 0.05em; }
 .pr.on .pr-dot { transform: scale(1); }
-.pr.on .pr-line { transform: rotate(45deg) scaleX(1); }
+.pr.on .pr-line { clip-path: inset(0 0 0 0); }
 .pr.on .pr-tag { clip-path: inset(0 0 0 0); }
 /* going away: the tag folds first, then the line, then the dot */
 .pr:not(.on) .pr-tag { transition-delay: 0s; transition-duration: 0.12s; }
@@ -51,8 +58,8 @@ const STYLE = `
 .pr:not(.on) .pr-dot { transition-delay: 0.16s; }
 .pr.off { --ui: var(--ui-dim); }
 .pr.nope .pr-tag { animation: pr-nope 0.3s linear, pr-float 3.2s ease-in-out infinite; }
-@keyframes pr-float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -3px; } }
-@keyframes pr-nope { 0%, 100% { margin-right: 0; } 25% { margin-right: 5px; } 75% { margin-right: -5px; } }
+@keyframes pr-float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -2px; } }
+@keyframes pr-nope { 0%, 100% { margin-right: 0; } 25% { margin-right: 6px; } 75% { margin-right: -6px; } }
 `;
 
 interface Live {
