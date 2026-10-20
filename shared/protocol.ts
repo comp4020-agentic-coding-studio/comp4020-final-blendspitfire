@@ -1,4 +1,5 @@
 import type { DefenceState, EnemyState } from "./enemies.ts";
+type Phase = DefenceState["phase"];
 
 export interface PlayerState {
   id: string;
@@ -61,12 +62,31 @@ export interface StateMessage {
   funds: number;
   /** one-off lines to show everyone (a wave starting, the reactor going down) */
   announcements?: string[];
+  /** summaries for the report panel: a wave's pay, an attempt's end */
+  reports?: Report[];
   /** blood and bodies left since the last message (all of them, after goreReset) */
   gore?: GoreMark[];
   /** drop every mark held before adding `gore`: a client's first message, or the facility cleaned after a won run */
   goreReset?: true;
   lift: LiftState;
 }
+
+/** a cleared wave's pay, itemised; or how an attempt ended, and who did what */
+export type Report =
+  | { type: "wave"; wave: number; size: number; clearMs: number; parMs: number; base: number; bonus: number; total: number }
+  | {
+      type: "attempt";
+      outcome: "won" | "lost";
+      reason: string;
+      attempt: number;
+      waves: number;
+      /** how long the crew held out after the reactor died (0 if it didn't) */
+      blackoutMs: number;
+      crew: { name: string; kills: number; out: boolean }[];
+    };
+
+/** after everyone's down: how long the view stays where they fell before the cut back to the garden */
+export const WIPE_HOLD_MS = 4500;
 
 /**
  * The arcade board, sent on joining and whenever it changes: the run in
@@ -726,7 +746,7 @@ export const OBSTACLES: Obstacle[] = [
 /** how close (centre to centre) a player has to be to switch the reactor on */
 export const ACTIVATE_RANGE = REACTOR.halfX + PICKUP_RANGE;
 
-export type ActivateVerdict = "ok" | "too far" | "already active" | "skip break";
+export type ActivateVerdict = "ok" | "too far" | "already active" | "skip break" | "stable" | "dead";
 
 /**
  * Shared, so the client's hint says exactly what the server would decide. E
@@ -736,10 +756,12 @@ export type ActivateVerdict = "ok" | "too far" | "already active" | "skip break"
  * dated from click-to-activate, when a click with a gun meant firing, and E
  * has no such conflict.
  */
-export function activateVerdict(player: { x: number; z: number }, objective: ObjectiveState, onBreak: boolean): ActivateVerdict {
+export function activateVerdict(player: { x: number; z: number }, objective: ObjectiveState, phase: Phase): ActivateVerdict {
   if (Math.hypot(player.x - REACTOR.x, player.z - REACTOR.z) > ACTIVATE_RANGE) return "too far";
   if (!objective.active) return "ok";
-  return onBreak ? "skip break" : "already active";
+  if (phase === "won") return "stable";
+  if (phase === "blackout") return "dead";
+  return phase === "break" ? "skip break" : "already active";
 }
 
 const SPAWN_Z = S.maxZ - 6;
@@ -751,12 +773,13 @@ export const LIFT_CALL_RANGE = 2.5;
  * What the lift button does for this player right now. Shared, so the
  * client's prompt says exactly what the server would decide.
  */
-export function liftVerdict(player: { x: number; z: number }, lift: LiftState, objective: ObjectiveState): LiftVerdict {
+export function liftVerdict(player: { x: number; z: number }, lift: LiftState, objective: ObjectiveState, phase: Phase): LiftVerdict {
   const level = levelOf(player.z);
   const door = LIFT_DOORS[level];
   const aboard = inCar(level, player.x, player.z);
   if (!aboard && Math.hypot(player.x - door.x, player.z - door.z) > LIFT_CALL_RANGE) return "too far";
-  if (level === "bottom" && objective.active) return "attempt on";
+  // won, the lift's the way out; otherwise nobody leaves a live attempt
+  if (level === "bottom" && objective.active && phase !== "won") return "attempt on";
   if (lift.phase !== "open") return "busy";
   if (aboard && lift.at === level) return lift.departAt !== undefined ? "already leaving" : "send";
   if (!aboard && lift.at !== level) return "call";

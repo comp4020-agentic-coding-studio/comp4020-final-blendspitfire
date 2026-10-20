@@ -69,6 +69,8 @@ export function loadDefence(): DefenceState | undefined {
   const row = getWorldStmt.get("defence") as { value: string } | undefined;
   if (!row) return undefined;
   const d = JSON.parse(row.value) as DefenceState;
+  // a run that ended (won, or the reactor dead) before the restart stays ended: the caller winds it up
+  if (d.phase === "won" || d.phase === "blackout") return d;
   // the enemies out at the time weren't saved, and neither is a wave/break
   // timer from before the restart: back to a fresh break before the same wave
   return { reactorHealth: d.reactorHealth, wave: d.wave, phase: "break" };

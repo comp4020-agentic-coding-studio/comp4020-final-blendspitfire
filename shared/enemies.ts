@@ -35,8 +35,15 @@ export interface DefenceState {
   reactorHealth: number;
   /** waves cleared so far this attempt; the objective is WAVES_TO_WIN of them */
   wave: number;
-  /** "spawning": the current wave's enemies are still coming or still alive. "break": cleared, waiting (or voted) to start the next */
-  phase: "spawning" | "break";
+  /**
+   * "spawning": the current wave's enemies are still coming or still alive.
+   * "break": cleared, waiting (or sent early) to start the next.
+   * "won": every wave cleared: the facility's lit and quiet, the lift takes the crew up.
+   * "blackout": the reactor's dead: the lights are out and they keep coming, faster, until nobody's left.
+   */
+  phase: "spawning" | "break" | "won" | "blackout";
+  /** blackout: server time the power went, for how long the crew held out in the dark */
+  blackoutAt?: number;
   /** server time the next wave starts (spawning: when the gap ends; break: when it ends, unless skipped) */
   nextWaveAt?: number;
 }
@@ -109,6 +116,17 @@ export const waveSize = (wave: number): number => {
   const w = Math.min(wave, WAVES_TO_WIN);
   return Math.round(6 + 3 * w + 0.45 * w * w);
 };
+/**
+ * The blackout: once the reactor's dead the breaches never stop. Spawns
+ * start at BLACKOUT_SPAWN_MS apart and tighten by a tenth every
+ * BLACKOUT_RAMP_MS down to BLACKOUT_SPAWN_MIN_MS, so holding out is a
+ * matter of seconds, not something to sit in.
+ */
+export const BLACKOUT_SPAWN_MS = 600;
+export const BLACKOUT_SPAWN_MIN_MS = 150;
+export const BLACKOUT_RAMP_MS = 5000;
+export const blackoutSpawnInterval = (sinceMs: number): number =>
+  Math.max(BLACKOUT_SPAWN_MIN_MS, BLACKOUT_SPAWN_MS * Math.pow(0.9, Math.floor(sinceMs / BLACKOUT_RAMP_MS)));
 /** gap between spawns within a wave: tighter as the waves climb */
 export const spawnInterval = (wave: number): number => Math.max(250, 700 - 50 * (Math.min(wave, WAVES_TO_WIN) - 1));
 
@@ -151,9 +169,14 @@ export class FlowField {
   /** distance (in steps) from the reactor for every cell, UNREACHED where blocked */
   private readonly dist = new Uint16Array(COLS * ROWS);
   private readonly open = new Uint8Array(COLS * ROWS);
+  private goal?: { x: number; z: number };
 
-  /** rebuild for this set of obstacles (walls, fixtures, boxes); cheap enough to run whenever a box moves */
-  build(obstacles: Obstacle[]): void {
+  /**
+   * Rebuild for this set of obstacles (walls, fixtures, boxes); cheap
+   * enough to run whenever a box moves. Leads to the reactor, or to `goal`
+   * when given (the blackout's hunt for whoever's left).
+   */
+  build(obstacles: Obstacle[], goal?: { x: number; z: number }): void {
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const [x, z] = centreOf(c, r);
@@ -162,15 +185,19 @@ export class FlowField {
         this.open[r * COLS + c] = isWalkable(x, z) && !inSafeRoom && !overlapsAnyObstacle(x, z, ENEMY_RADIUS * 0.9, obstacles) ? 1 : 0;
       }
     }
+    this.goal = goal;
     this.dist.fill(UNREACHED);
-    // seed: every open cell touching the reactor's footprint
+    // seed: every open cell touching the reactor's footprint (or right by the goal)
     const queue: number[] = [];
     const reach = ENEMY_REACH + ENEMY_RADIUS;
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         if (!this.open[r * COLS + c]) continue;
         const [x, z] = centreOf(c, r);
-        if (Math.abs(x - REACTOR.x) < REACTOR_BODY.halfX + reach && Math.abs(z - REACTOR.z) < REACTOR_BODY.halfZ + reach) {
+        const seed = goal
+          ? Math.hypot(x - goal.x, z - goal.z) < CELL * 1.5
+          : Math.abs(x - REACTOR.x) < REACTOR_BODY.halfX + reach && Math.abs(z - REACTOR.z) < REACTOR_BODY.halfZ + reach;
+        if (seed) {
           this.dist[r * COLS + c] = 0;
           queue.push(r * COLS + c);
         }
@@ -225,7 +252,7 @@ export class FlowField {
       br = nr;
     }
     if (bc < 0) {
-      if (here === 0) return { dx: REACTOR.x - x, dz: REACTOR.z - z };
+      if (here === 0) return this.goal ? { dx: this.goal.x - x, dz: this.goal.z - z } : { dx: REACTOR.x - x, dz: REACTOR.z - z };
       return undefined;
     }
     const [tx, tz] = centreOf(bc, br);

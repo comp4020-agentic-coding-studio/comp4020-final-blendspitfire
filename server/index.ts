@@ -69,6 +69,10 @@ import {
   SHOP,
   buyVerdict,
   waveReward,
+  PAR_MS_PER_ENEMY,
+  WAVE_BASE_REWARD,
+  WIPE_HOLD_MS,
+  type Report,
   capGore,
   type GoreMark,
   type ClientMessage,
@@ -313,20 +317,26 @@ const defence = new Defence(
     },
     changed: markWorldDirty,
     announce,
-    ended: (reason, wave) => {
-      console.log(`[attempt ${attempt.number}] failed: ${reason}, ${wave} wave(s) cleared (crew: ${crewNames().join(", ") || "nobody"})`);
+    ended: (reason, wave, blackoutMs) => {
+      console.log(`[attempt ${attempt.number}] failed: ${reason}, ${wave} wave(s) cleared${blackoutMs ? `, ${Math.round(blackoutMs / 1000)}s in the dark` : ""} (crew: ${crewNames().join(", ") || "nobody"})`);
       run.best = Math.max(run.best, wave);
       saveRun(run);
+      report({ type: "attempt", outcome: "lost", reason, attempt: attempt.number, waves: wave, blackoutMs, crew: crewReport() });
       carried.clear();
-      everyoneUp();
+      // a moment where they fell before the cut to black and back to the garden
+      bringUpAt = Date.now() + WIPE_HOLD_MS;
       boardDirty = true;
+    },
+    blackout: (wave) => {
+      console.log(`[attempt ${attempt.number}] the reactor is dead after ${wave} wave(s): blackout`);
+      announce("reactor lost — power's out. they're still coming");
     },
     won: winRun,
     cleared: (wave, size, clearMs) => {
       const pay = waveReward(size, clearMs);
       funds += pay;
       saveFunds(funds);
-      announce(`quota +${pay} for wave ${wave} (${Math.round(clearMs / 1000)}s)`);
+      report({ type: "wave", wave, size, clearMs, parMs: size * PAR_MS_PER_ENEMY, base: WAVE_BASE_REWARD, bonus: pay - WAVE_BASE_REWARD, total: funds });
       console.log(`[attempt ${attempt.number}] wave ${wave} cleared in ${Math.round(clearMs / 1000)}s: quota +${pay} -> ${funds}`);
     },
     turretFire: (id, x, z, tx, tz, now) => spawnProjectile({ id, x, z }, tx - x, tz - z, now, TURRET_MUZZLE),
@@ -373,6 +383,11 @@ const crewNames = (): string[] =>
     return c ? codename(c.player) : shortId(id);
   });
 
+/**
+ * The last wave's down: the reactor's stable and the facility lights up.
+ * The win is recorded now, but the crew is left to walk out: the lift
+ * takes them up, and once nobody's left below the facility resets.
+ */
 function winRun(): void {
   const crew = crewNames();
   console.log(`[attempt ${attempt.number}] WON: the reactor is stable after ${attempt.number} attempt(s) (crew: ${crew.join(", ")})`);
@@ -381,7 +396,22 @@ function winRun(): void {
     const c = connections.get(id);
     if (c) bumpStats(id, codename(c.player), { wins: 1 });
   }
-  announce(`reactor stable — run won in ${attempt.number} attempt(s)`);
+  report({ type: "attempt", outcome: "won", reason: "reactor stable", attempt: attempt.number, waves: defence.state.wave, blackoutMs: 0, crew: crewReport() });
+  // the fallen are back up at the garden: the crew that's left walks out
+  for (const conn of connections.values()) {
+    if (conn.deadUntil === Infinity) {
+      dropHeld(conn.player);
+      reviveAt(conn);
+    }
+  }
+  carried.clear();
+  boardDirty = true;
+}
+
+/** after a win, once the crew's all out of the facility: start the run over */
+function resetAfterWin(): void {
+  console.log(`[attempt ${attempt.number}] crew evacuated: the facility resets`);
+  defence.finish();
   run.attempts = 0;
   run.best = 0;
   saveRun(run);
@@ -389,15 +419,31 @@ function winRun(): void {
   saveFunds(funds);
   attempt.number = 0;
   attempt.players.clear();
-  carried.clear();
-  // the facility starts over: what was built goes, the starting kit comes back,
-  // everyone's sent back up to the garden
+  attemptKills.clear();
+  // the facility starts over: what was built goes, the starting kit comes back
   items.clear();
   clearItems();
   for (const it of [...INITIAL_ITEMS, ...STATIONS]) spawnItem(it.kind, it.x, it.z);
   cleanGore();
   everyoneUp();
   boardDirty = true;
+}
+
+/** set after a wipe: when to cut back to the garden (0 = not pending) */
+let bringUpAt = 0;
+
+/** kills this attempt, by player id, for the end-of-attempt summary */
+const attemptKills = new Map<string, number>();
+const crewReport = (): { name: string; kills: number; out: boolean }[] =>
+  [...attempt.players].map((id) => {
+    const c = connections.get(id);
+    return { name: c ? codename(c.player) : shortId(id), kills: attemptKills.get(id) ?? 0, out: c ? c.deadUntil === Infinity : true };
+  });
+
+/** summaries (a wave's pay, an attempt's end) for every client's report panel */
+let pendingReports: Report[] = [];
+function report(r: Report): void {
+  pendingReports.push(r);
 }
 
 /**
@@ -424,9 +470,14 @@ function reviveAt(conn: Connection): void {
   warped(conn);
 }
 
+/** an attempt's on and not yet won: the lift won't carry anyone up out of it */
+function attemptLocked(): boolean {
+  return objective.active && defence.state.phase !== "won";
+}
+
 /** in the facility, outside the car, while an attempt's on: the lift won't let them back in */
 function lockedOut(conn: Connection): boolean {
-  return objective.active && levelOf(conn.player.z) === "bottom" && !inCar("bottom", conn.player.x, conn.player.z);
+  return attemptLocked() && levelOf(conn.player.z) === "bottom" && !inCar("bottom", conn.player.x, conn.player.z);
 }
 
 /** the server just moved them: the client jumps there, and moves sent from the old spot are dropped */
@@ -440,13 +491,13 @@ function warped(conn: Connection): void {
 // anything lying in it, to the same spot in the car at the other end.
 const lift = new Lift({
   aboard: (level) => [...connections.values()].filter((c) => !isDead(c) && inCar(level, c.player.x, c.player.z)).map((c) => c.player.id),
-  attemptOn: () => objective.active,
+  attemptOn: () => attemptLocked(),
   onLevel: (level) => [...connections.values()].filter((c) => !isDead(c) && levelOf(c.player.z) === level).length,
   ride(from, to) {
     const dz = to === "bottom" ? -LIFT_DZ : LIFT_DZ;
     for (const conn of connections.values()) {
       if (isDead(conn) || !inCar(from, conn.player.x, conn.player.z)) continue;
-      if (from === "bottom" && objective.active) {
+      if (from === "bottom" && attemptLocked()) {
         // nobody leaves a live attempt: the doors won't shut on them, so
         // they're stood back out in the corridor and the car goes up empty
         conn.player.z = FACILITY_HALF - 1;
@@ -464,7 +515,7 @@ const lift = new Lift({
       }
     }
     for (const item of items.values()) {
-      if (item.heldBy === undefined && inCar(from, item.x, item.z) && !(from === "bottom" && objective.active)) {
+      if (item.heldBy === undefined && inCar(from, item.x, item.z) && !(from === "bottom" && attemptLocked())) {
         item.z += dz;
         markWorldDirty();
       }
@@ -672,6 +723,10 @@ wss.on("connection", (socket, req) => {
     if (back.out) conn.deadUntil = Infinity;
   }
   connections.set(playerId, conn);
+  if (DEV_ARMED && !heldItem(playerId)) {
+    const id = randomUUID();
+    items.set(id, { id, kind: "gun", x: player.x, z: player.z, heldBy: playerId });
+  }
   act(
     player,
     `joined (id ${shortId(playerId)}, ${connections.size} online)${back?.out ? " — still out this attempt" : back?.wounds ? ` — ${back.wounds} wound(s) carried over` : ""}`,
@@ -755,7 +810,7 @@ wss.on("connection", (socket, req) => {
     }
 
     if (msg.type === "lift") {
-      const verdict = liftVerdict(conn.player, lift.state, objective);
+      const verdict = liftVerdict(conn.player, lift.state, objective, defence.state.phase);
       if (verdict === "send") {
         lift.send(now);
         act(conn.player, `pressed the lift button (${lift.state.at})`);
@@ -769,9 +824,10 @@ wss.on("connection", (socket, req) => {
     }
 
     if (msg.type === "activate") {
-      const verdict = activateVerdict(conn.player, objective, defence.state.phase === "break");
+      const verdict = activateVerdict(conn.player, objective, defence.state.phase);
       if (verdict === "ok") {
         objective.active = true;
+        attemptKills.clear();
         defence.start(Date.now());
         attempt.number += 1;
         // everyone down here is in it: from now on the lift won't take them back up
@@ -930,6 +986,8 @@ const devPoint = (v: string | undefined) => {
 };
 const DEV_SPAWN = devPoint(process.env.DEV_SPAWN);
 const DEV_JOIN = devPoint(process.env.DEV_JOIN);
+/** DEV_ARMED=1: everyone joins holding a rifle (local testing only, like the rest) */
+const DEV_ARMED = process.env.DEV_ARMED === "1";
 
 function respawn(player: PlayerState, joining = false): void {
   const dev = DEV_SPAWN ?? (joining ? DEV_JOIN : undefined);
@@ -998,6 +1056,7 @@ function stepProjectiles(now: number): void {
         if (ownerConn) {
           ownerConn.score += 1;
           ownerConn.kills += 1;
+          if (objective.active) attemptKills.set(ownerConn.player.id, (attemptKills.get(ownerConn.player.id) ?? 0) + 1);
           bumpStats(ownerConn.player.id, codename(ownerConn.player), { kills: 1 });
           boardDirty = true;
         }
@@ -1060,10 +1119,11 @@ function kill(conn: Connection, now: number): void {
  * holding anything, and can't keep a lost attempt going.
  */
 function checkWipe(): void {
+  if (bringUpAt) return; // already over: holding on where they fell before the cut
   const below = [...connections.values()].filter((c) => c.deadUntil === Infinity || (!isDead(c) && levelOf(c.player.z) === "bottom"));
   if (below.length === 0 || !below.every((c) => c.deadUntil === Infinity)) return;
   if (objective.active) {
-    defence.fail("everyone's down");
+    defence.fail(defence.state.phase === "blackout" ? "everyone's down in the dark" : "everyone's down");
   } else {
     console.log(`everyone down in the facility died before the reactor was on (${below.map((c) => codename(c.player)).join(", ")})`);
     carried.clear();
@@ -1087,6 +1147,12 @@ setInterval(() => {
   defence.step(now, BROADCAST_INTERVAL_MS / 1000);
   stepProjectiles(now);
   checkWipe();
+  if (bringUpAt && now >= bringUpAt) {
+    bringUpAt = 0;
+    everyoneUp();
+  }
+  // won: once nobody's left below, the facility starts over
+  if (objective.active && defence.state.phase === "won" && ![...connections.values()].some((c) => levelOf(c.player.z) === "bottom")) resetAfterWin();
   restockStations(now);
   const players = [...connections.values()].map((c) => netPlayer(c, now));
   const projectileList: ProjectileState[] = [...projectiles.values()].map((p) => ({
@@ -1116,9 +1182,11 @@ setInterval(() => {
     defence: defence.state,
     funds,
     announcements: pendingAnnouncements.length ? pendingAnnouncements : undefined,
+    reports: pendingReports.length ? pendingReports : undefined,
     lift: lift.state,
   };
   pendingAnnouncements = [];
+  pendingReports = [];
   // a client that's never had the items, or the gore, gets them all; everyone else just what changed
   const newGore = goreReset ? { gore, goreReset: true as const } : goreNew.length ? { gore: goreNew } : {};
   const allGore = { gore, goreReset: true as const };
@@ -1167,6 +1235,10 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.exit(0);
   });
 }
+
+// a restart in the middle of an ending: nobody's below any more, so finish it now
+if (objective.active && defence.state.phase === "won") resetAfterWin();
+else if (objective.active && defence.state.phase === "blackout") defence.fail("the server restarted in the dark");
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`listening on 0.0.0.0:${PORT}`);

@@ -23,7 +23,7 @@ import {
 import { REACTOR_LIVE, REACTOR_STANDBY, buildFacility, reactorCore } from "./models/facility.ts";
 import { mesh } from "./models/kit.ts";
 import { LAMPS, LAMP_SPECS, lampSource } from "./world/dressing.ts";
-import { STENCIL, DANGER, OK, EMIT_RED, EMIT_TRACER } from "../shared/palette.ts";
+import { STENCIL, DANGER, OK, EMIT_RED, EMIT_TRACER, AMBIENT_SKY } from "../shared/palette.ts";
 import { INTERP_DELAY_MS, ServerClock, SnapshotBuffer, Tracer } from "./netsync.ts";
 import { ENEMY_RADIUS, WAVES_TO_WIN, type DefenceState, type EnemyState } from "../shared/enemies.ts";
 import {
@@ -92,6 +92,8 @@ import {
   type BoardMessage,
   type PlayerState,
   type ProjectileState,
+  type Report,
+  WIPE_HOLD_MS,
   PROJECTILE_SPEED,
 } from "../shared/protocol.ts";
 
@@ -177,7 +179,8 @@ scene.add(
     wallHeight: FACILITY_WALL_HALF_HEIGHT * 2,
   }),
 );
-scene.add(lampHalos());
+const halos = lampHalos();
+scene.add(halos);
 scene.add(buildYardGuides());
 scene.add(buildSurface());
 const sunlight = createSunlight(scene);
@@ -687,6 +690,8 @@ const ACTIVATE_TIPS: Record<string, string> = {
   "too far": "move closer",
   "skip break": "send the next wave now",
   "already active": "already active — defend it",
+  stable: "reactor stable — get to the lift",
+  dead: "the reactor's dead",
 };
 
 // --- Interaction: E, and the floating prompts ---------------------------------
@@ -823,11 +828,11 @@ function useTarget(target: Target | undefined): void {
   if (!target || !localMesh) return;
   if (target.kind === "item") net.pickup(target.item.state.id);
   else if (target.kind === "reactor") {
-    const verdict = activateVerdict(localMesh.position, objective, defenceState.phase === "break");
+    const verdict = activateVerdict(localMesh.position, objective, defenceState.phase);
     if (verdict === "ok" || verdict === "skip break") net.activate();
     else prompts.nope("reactor");
   } else if (target.kind === "lift") {
-    const verdict = liftVerdict(localMesh.position, lift, objective);
+    const verdict = liftVerdict(localMesh.position, lift, objective, defenceState.phase);
     if (verdict === "send" || verdict === "call") net.lift();
     else prompts.nope("lift");
   } else if (target.kind === "terminal") toggleShop();
@@ -847,8 +852,8 @@ function currentPrompts(): Prompt[] {
     const s = target.item.state;
     out.push({ id: `item:${s.id}`, at: v3(s.x, 0.4, s.z), key: "E", label: `pick up ${ITEM_NAMES[s.kind]}` });
   } else if (target?.kind === "reactor") {
-    const verdict = activateVerdict(p, objective, defenceState.phase === "break");
-    if (verdict !== "already active") out.push({ id: "reactor", at: v3(REACTOR.x - 1.4, 2, REACTOR.z - 1.4), key: "E", label: ACTIVATE_TIPS[verdict], enabled: verdict === "ok" || verdict === "skip break" });
+    const verdict = activateVerdict(p, objective, defenceState.phase);
+    if (verdict !== "already active") out.push({ id: "reactor", at: v3(REACTOR.x - 1.4, 2, REACTOR.z - 1.4), key: verdict === "stable" || verdict === "dead" ? "" : "E", label: ACTIVATE_TIPS[verdict], enabled: verdict === "ok" || verdict === "skip break" });
   } else if (target?.kind === "terminal") {
     const t = SUPPLY_TERMINAL;
     out.push({ id: "terminal", at: v3(t.x - 0.8, 1.9, t.z + 0.3), key: "E", label: shopOpen ? "close supply uplink" : "order supply", detail: `crew quota: ${funds}` });
@@ -856,10 +861,11 @@ function currentPrompts(): Prompt[] {
     out.push({ id: "board", at: v3(SCOREBOARD.x - 1.2, 2.6, SCOREBOARD.z), key: "E", label: boardOpen ? "close scores" : "read scores" });
   } else if (target?.kind === "lift") {
     const level = levelOf(p.z);
-    const verdict = liftVerdict(p, lift, objective);
+    const verdict = liftVerdict(p, lift, objective, defenceState.phase);
     let detail: string | undefined;
     if (verdict === "already leaving" && lift.departAt) detail = `doors close in ${Math.max(0, Math.ceil((lift.departAt - now) / 1000))}s`;
-    if (verdict === "send") detail = level === "top" ? "down to the facility" : "back up — leaves this attempt";
+    if (verdict === "send") detail = level === "top" ? "down to the facility" : defenceState.phase === "won" ? "evacuate to the surface" : "back up — leaves this attempt";
+    if (verdict === "attempt on" && defenceState.phase === "blackout") detail = "no power — no way out";
     if (verdict === "busy" && lift.phase === "moving") detail = `${Math.max(0, Math.ceil(((lift.until ?? now) - now) / 1000))}s`;
     out.push({ id: "lift", at: liftPanelAt(level), key: "E", label: LIFT_LABELS[verdict], enabled: verdict === "send" || verdict === "call", detail });
   }
@@ -884,7 +890,7 @@ function renderPointerFeedback(): void {
   const held = myHeldItem();
   if (localMesh && !isDead()) {
     if (hoveringReactor()) {
-      const verdict = activateVerdict(localMesh.position, objective, defenceState.phase === "break");
+      const verdict = activateVerdict(localMesh.position, objective, defenceState.phase);
       if (verdict === "ok" || verdict === "skip break") cursor = "pointer";
     } else if (!held) {
       if (hoveredItem()?.inReach) cursor = "pointer";
@@ -998,6 +1004,7 @@ const net = connect({
     funds = state.funds;
     if (state.lift) lift = state.lift;
     for (const line of state.announcements ?? []) showBanner(line);
+    for (const r of state.reports ?? []) queueReport(r);
     for (const p of players) {
       if (p.id === myId) {
         myRespawnAt = p.respawnAt ?? 0;
@@ -1153,7 +1160,7 @@ function primary(): void {
   const held = myHeldItem();
   // a click with something in hand is that item's action (firing over the reactor is firing); E still works
   if (hoveringReactor() && !held) {
-    const verdict = activateVerdict(localMesh.position, objective, defenceState.phase === "break");
+    const verdict = activateVerdict(localMesh.position, objective, defenceState.phase);
     if (verdict === "ok" || verdict === "skip break") net.activate();
     else flash(ACTIVATE_TIPS[verdict]);
     return;
@@ -1410,9 +1417,16 @@ function animate(): void {
       respawnEl.textContent = `${Math.max(1, Math.ceil((myRespawnAt - serverClock.now()) / 1000))}`;
     }
 
-    // out: watch a teammate (their view, their torch); otherwise our own
-    const watched = myOut ? spectateTarget() : undefined;
-    const eye = watched ? watched.drawn : { x: localMesh.position.x, z: localMesh.position.z, rotation: aimRotation };
+    // out: watch a teammate (their view, their torch); otherwise our own.
+    // In a wipe the view holds still where it was until the cut to black.
+    const watched = myOut && !wipeAt ? spectateTarget() : undefined;
+    let eye = watched ? { ...watched.drawn } : { x: localMesh.position.x, z: localMesh.position.z, rotation: aimRotation };
+    if (wipeAt) {
+      wipeEye ??= lastEye;
+      // until we've been moved up (behind the black), stay where everyone fell
+      if (levelOf(localMesh.position.z) === "bottom" || performance.now() - wipeAt < WIPE_HOLD_MS) eye = wipeEye;
+    }
+    lastEye = eye;
     camera.position.set(eye.x, CAMERA_ALTITUDE, eye.z);
     camera.lookAt(eye.x, 0, eye.z);
     torch.aim(eye.x, eye.z, eye.rotation);
@@ -1425,15 +1439,20 @@ function animate(): void {
 
   const time = clock.elapsedTime;
   const view = viewPoint;
-  lighting.update(view.x, view.z, time, { reactorActive: objective.active }, (lamp) => {
+  const power = powerNow(time);
+  halos.visible = power !== "out";
+  lighting.update(view.x, view.z, time, { reactorActive: objective.active, power, since: powerSince }, (lamp) => {
+    if (power === "full") return true;
     // a lamp lights the scene only if its light could reach what we see: in sight, or close
     const at = lampSource(lamp);
     return Math.hypot(at.x - view.x, at.z - view.z) < LAMP_SPECS[lamp.kind].range * 0.5 || canSee(view.x, view.z, at.x, at.z, visibility.segs);
   });
   const coreColour = objective.active ? REACTOR_LIVE : REACTOR_STANDBY;
-  coreMaterial.color.setHex(coreColour);
+  coreMaterial.color.setHex(power === "out" ? 0x080808 : coreColour);
+  coreHalo.visible = power !== "out";
   coreHalo.material.color.setHex(coreColour);
-  coreHalo.material.opacity = objective.active ? 0.7 + 0.2 * Math.sin(time * 2) : 0.3 + 0.15 * Math.sin(time * 1.3);
+  coreHalo.material.opacity = power === "full" ? 0.95 : objective.active ? 0.7 + 0.2 * Math.sin(time * 2) : 0.3 + 0.15 * Math.sin(time * 1.3);
+  stepWipe(dt);
   liftDoors.update(lift, serverClock.now());
   updateSightDoors();
   stepRide(dt);
@@ -1482,7 +1501,10 @@ function stepLevel(x: number, z: number, dt: number): void {
   const want = up && !inside ? 1 : up && lift.phase === "open" && lift.at === "top" ? 0.6 : 0;
   paintLevel += (want - paintLevel) * Math.min(1, dt * 2.5);
   post.effects.paint = paintLevel < 0.01 ? 0 : paintLevel;
-  lighting.ambient.intensity = FACILITY_AMBIENT * (1 - paintLevel);
+  // powered up after a win the place is bright and white; blacked out there's barely a shape
+  const fill = powerLevel === "full" ? 1 + 4 * Math.min(1, (clock.elapsedTime - powerSince) / 2.5) : powerLevel === "out" ? 0.04 : 1;
+  lighting.ambient.intensity = FACILITY_AMBIENT * fill * (1 - paintLevel);
+  lighting.ambient.color.setHex(powerLevel === "full" ? 0xdfe8f0 : AMBIENT_SKY);
   // no headlamp in the sun
   torch.light.intensity = 18 * (1 - paintLevel);
 }
@@ -1626,6 +1648,23 @@ const hudChargePct = hudEl.querySelector<HTMLSpanElement>("#hud-charge-pct")!;
 function renderDefenceHud(): void {
   hudEl.style.display = objective.active ? "block" : "none";
   if (!objective.active) return;
+  if (defenceState.phase === "won") {
+    hudChargePct.textContent = `${WAVES_TO_WIN} / ${WAVES_TO_WIN} cleared · quota ${funds}`;
+    hudCharge.style.width = "calc(100% - 2px)";
+    hudWave.textContent = "stable";
+    hudHp.style.width = "calc(100% - 2px)";
+    hudHp.classList.remove("low");
+    hudNext.textContent = "power restored · evacuate: take the lift up";
+    return;
+  }
+  if (defenceState.phase === "blackout") {
+    const held = Math.max(0, Math.floor((serverClock.now() - (defenceState.blackoutAt ?? serverClock.now())) / 1000));
+    hudChargePct.textContent = `${defenceState.wave} / ${WAVES_TO_WIN} cleared`;
+    hudWave.textContent = "dead";
+    hudHp.style.width = "0";
+    hudNext.textContent = `blackout · held ${held}s · ${enemies.size} hostile · no way out`;
+    return;
+  }
   const onBreak = defenceState.phase === "break";
   // waves fully cleared: the one being fought doesn't count until it's down
   const cleared = onBreak ? defenceState.wave : Math.max(0, defenceState.wave - 1);
@@ -1680,6 +1719,120 @@ function renderBoard(b: BoardMessage): void {
 setInterval(() => {
   if (boardOpen && eTarget()?.kind !== "board") toggleBoard();
 }, 200);
+
+// The facility's power, from the attempt's phase: "full" once the run's
+// won (the place lights up as if it's only just been properly switched
+// on), "out" once the reactor's dead (only torches), "normal" otherwise.
+// `powerSince` is when it last changed, for the lamps' flicker-up.
+let powerLevel: "normal" | "full" | "out" = "normal";
+let powerSince = 0;
+function powerNow(time: number): "normal" | "full" | "out" {
+  const want = !objective.active ? "normal" : defenceState.phase === "won" ? "full" : defenceState.phase === "blackout" ? "out" : "normal";
+  if (want !== powerLevel) {
+    powerLevel = want;
+    powerSince = time;
+  }
+  return powerLevel;
+}
+
+// A wipe: everyone's down. The view holds where it is (on your own body,
+// or on the last teammate you watched) a few seconds, then fades to black;
+// the server moves everyone up behind the black, and it fades back in on
+// the garden.
+const wipeEl = document.createElement("div");
+wipeEl.className = "ui-wipe";
+document.body.appendChild(wipeEl);
+/** performance.now() the wipe began, or 0 */
+let wipeAt = 0;
+/** where the camera rests through a wipe */
+let wipeEye: { x: number; z: number; rotation: number } | undefined;
+/** the last frame's view, so a wipe holds on what was being watched */
+let lastEye = { x: 0, z: 0, rotation: 0 };
+const FADE_MS = 1300;
+function startWipe(): void {
+  wipeAt = performance.now();
+}
+function stepWipe(_dt: number): void {
+  if (!wipeAt) {
+    wipeEl.style.opacity = "0";
+    return;
+  }
+  const t = performance.now() - wipeAt;
+  const fadeOutAt = WIPE_HOLD_MS - FADE_MS;
+  let a = 0;
+  if (t < fadeOutAt) a = 0;
+  else if (t < WIPE_HOLD_MS + 400) a = Math.min(1, (t - fadeOutAt) / FADE_MS);
+  else a = Math.max(0, 1 - (t - WIPE_HOLD_MS - 400) / FADE_MS);
+  wipeEl.style.opacity = a.toFixed(3);
+  if (t > WIPE_HOLD_MS + 400 + FADE_MS) {
+    wipeAt = 0;
+    wipeEye = undefined;
+  }
+}
+
+// Reports: what a wave paid, itemised, and how an attempt ended --- a panel
+// at the right edge that slides in and stays a few seconds (an attempt's
+// end longer, and on top of a wave's).
+const reportEl = document.createElement("div");
+reportEl.className = "ui-report";
+document.body.appendChild(reportEl);
+let reportTimer: ReturnType<typeof setTimeout> | undefined;
+const secs = (ms: number): string => `${Math.round(ms / 1000)}s`;
+/** a wave's report and the attempt's end can land together: the wave gets a few seconds first */
+let reportQueue: Report[] = [];
+let reportBusyUntil = 0;
+function queueReport(r: Report): void {
+  // a lost attempt's wipe runs on the server's clock, not the panel's queue
+  if (r.type === "attempt" && r.outcome === "lost" && (myOut || (localMesh && levelOf(localMesh.position.z) === "bottom"))) startWipe();
+  reportQueue.push(r);
+  pumpReports();
+}
+function pumpReports(): void {
+  if (!reportQueue.length) return;
+  const wait = reportBusyUntil - performance.now();
+  if (wait > 0) {
+    setTimeout(pumpReports, wait + 10);
+    return;
+  }
+  const r = reportQueue.shift()!;
+  showReport(r);
+  // a wave report holds the panel a moment before anything queued behind it
+  reportBusyUntil = performance.now() + (r.type === "wave" && reportQueue.length ? 3500 : 0);
+  if (reportQueue.length) setTimeout(pumpReports, 3510);
+}
+function showReport(r: Report): void {
+  let html: string;
+  let hold = 6000;
+  if (r.type === "wave") {
+    const rows: [string, string][] = [
+      [`wave ${r.wave}`, `${r.size} hostiles`],
+      ["time", `${secs(r.clearMs)} / par ${secs(r.parMs)}`],
+      ["base pay", `+${r.base}`],
+      ["speed bonus", r.bonus > 0 ? `+${r.bonus}` : "—"],
+    ];
+    html =
+      `<div class="title">wave ${r.wave} cleared</div>` +
+      rows.map(([k, v]) => `<div class="row"><span>${k}</span><span class="score">${v}</span></div>`).join("") +
+      `<div class="row total"><span>quota</span><span class="score">+${r.base + r.bonus} → ${r.total}</span></div>`;
+  } else {
+    hold = 11000;
+    const crew = [...r.crew].sort((a, b) => b.kills - a.kills);
+    html =
+      `<div class="title">${r.outcome === "won" ? "reactor stabilised" : "attempt failed"}</div>` +
+      `<div class="run">attempt ${r.attempt} · ${escapeText(r.reason)}</div>` +
+      `<div class="row"><span>waves cleared</span><span class="score">${r.waves} / ${WAVES_TO_WIN}</span></div>` +
+      (r.blackoutMs ? `<div class="row"><span>held in the dark</span><span class="score">${secs(r.blackoutMs)}</span></div>` : "") +
+      `<div class="title sub">crew</div>` +
+      (crew.length
+        ? crew.map((c) => `<div class="row${c.out ? " dim" : ""}"><span>${escapeText(c.name)}${c.out ? " †" : ""}</span><span class="score">${c.kills} kills</span></div>`).join("")
+        : '<div class="row dim">nobody</div>') +
+      (r.outcome === "won" ? '<div class="legend">power restored · take the lift up</div>' : "");
+  }
+  reportEl.innerHTML = html;
+  reportEl.classList.add("open");
+  clearTimeout(reportTimer);
+  reportTimer = setTimeout(() => reportEl.classList.remove("open"), hold);
+}
 
 // The objective banner: a line across the top of the screen when the reactor goes live.
 const bannerEl = document.createElement("div");

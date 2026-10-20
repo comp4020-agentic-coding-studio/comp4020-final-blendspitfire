@@ -29,7 +29,20 @@ export interface Lighting {
   /** the facility's dim cold fill, faded out on the surface */
   ambient: THREE.HemisphereLight;
   /** call every frame: which lamps light the scene, flicker, pulses, objective glow */
-  update(viewX: number, viewZ: number, time: number, state: { reactorActive: boolean }, visible?: (lamp: Lamp) => boolean): void;
+  update(viewX: number, viewZ: number, time: number, state: LightState, visible?: (lamp: Lamp) => boolean): void;
+}
+
+/**
+ * What the facility's power is doing. `power` is "normal" day to day;
+ * "full" once the run's won (every lamp on, the dead ones too, after a
+ * staggered flicker-up from `since`); "out" once the reactor's dead (not a
+ * lamp lit: the torch is all there is).
+ */
+export interface LightState {
+  reactorActive: boolean;
+  power?: "normal" | "full" | "out";
+  /** seconds (on the update's clock) the power last changed: for the flicker-up */
+  since?: number;
 }
 
 /** a small hash for per-lamp flicker that's the same on every client */
@@ -66,7 +79,18 @@ export function setupLighting(scene: THREE.Scene, reactor?: { x: number; z: numb
   return {
     ambient,
     update(viewX, viewZ, time, state, visible) {
+      const power = state.power ?? "normal";
       const brightness = (l: (typeof lamps)[number]): number => {
+        if (power === "out") return 0;
+        if (power === "full") {
+          // the alarm's over: the red emergency lamps go off, everything else comes up
+          if (l.lamp.kind === "emergency") return 0;
+          // each lamp catches at its own moment over the first two seconds, with a stutter, then holds
+          const t = time - (state.since ?? 0) - hash(l.seed * 3.1) * 2;
+          if (t < 0) return 0;
+          if (t < 0.35) return hash(Math.floor(t * 30) + l.seed) < 0.5 ? 0.15 : 1.8;
+          return 1.8;
+        }
         if (l.lamp.dead) return 0;
         if (l.lamp.kind === "emergency") {
           // a faint standby glow, a slow sweep once the reactor's live
@@ -82,6 +106,8 @@ export function setupLighting(scene: THREE.Scene, reactor?: { x: number; z: numb
         .map((l) => ({ l, d: Math.hypot(l.at.x - viewX, l.at.z - viewZ), b: brightness(l) }))
         .filter((r) => r.b > 0 && (!visible || visible(r.l.lamp)))
         .sort((a, b) => a.d - b.d);
+      // powered up, the pooled lamps reach further: the room fills instead of pooling
+      const reach = power === "full" ? 1.6 : 1;
       lights.forEach((light, i) => {
         const r = ranked[i];
         if (!r) {
@@ -90,7 +116,7 @@ export function setupLighting(scene: THREE.Scene, reactor?: { x: number; z: numb
         }
         const { at, spec, color } = r.l;
         light.color.copy(color);
-        light.distance = spec.range;
+        light.distance = spec.range * reach;
         light.position.set(at.x, spec.height - 0.1, at.z);
         // ease the farthest pooled lamps out, so a light swapping in or out isn't a pop
         const fade = i < pool - 2 ? 1 : 1 - (i - (pool - 3)) * 0.3;
@@ -98,7 +124,8 @@ export function setupLighting(scene: THREE.Scene, reactor?: { x: number; z: numb
       });
       if (reactor) {
         reactorLight.color.setHex(state.reactorActive ? EMIT_REACTOR : EMIT_RED);
-        reactorLight.intensity = state.reactorActive ? 12 + 2 * Math.sin(time * 2) : 2.5 + 0.8 * Math.sin(time * 1.3);
+        reactorLight.intensity =
+          power === "out" ? 0 : power === "full" ? 16 : state.reactorActive ? 12 + 2 * Math.sin(time * 2) : 2.5 + 0.8 * Math.sin(time * 1.3);
       }
     },
   };

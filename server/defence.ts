@@ -23,6 +23,7 @@ import {
   WAVE_BREAK_MS,
   WAVES_TO_WIN,
   waveSize,
+  blackoutSpawnInterval,
   type DefenceState,
   type EnemyState,
 } from "../shared/enemies.ts";
@@ -67,9 +68,11 @@ export interface World {
   changed(): void;
   /** tell everyone something happened */
   announce(text: string): void;
-  /** the attempt just ended in failure, having cleared this many waves: bring everyone who's out back */
-  ended(reason: string, wave: number): void;
-  /** WAVES_TO_WIN cleared: the run is won */
+  /** the attempt just ended in failure, having cleared this many waves (and held `blackoutMs` in the dark, if the reactor died) */
+  ended(reason: string, wave: number, blackoutMs: number): void;
+  /** the reactor's dead: the lights go and the breaches never stop */
+  blackout(wave: number): void;
+  /** WAVES_TO_WIN cleared: the facility's lit, the crew can leave */
   won(): void;
   /** a wave was cleared, `size` enemies in `clearMs` from its start: pay the crew */
   cleared(wave: number, size: number, clearMs: number): void;
@@ -81,6 +84,9 @@ export class Defence {
   private readonly enemies = new Map<string, Enemy>();
   private readonly field = new FlowField();
   private fieldKey = "";
+  /** the blackout's hunt: a flow field to one of the crew, rebuilt as they move */
+  private readonly hunt = new FlowField();
+  private huntAt = 0;
   private readonly boxDamage = new Map<string, number>();
   state: DefenceState;
   private toSpawn = 0;
@@ -100,7 +106,9 @@ export class Defence {
 
   /** the reactor just went live: the first wave comes after a breather, same as any other break */
   start(now: number): void {
-    this.state = { reactorHealth: 1, wave: 0, phase: "break", nextWaveAt: now + FIRST_WAVE_DELAY_MS };
+    // DEV_REACTOR: local testing only (never set in fly.toml), to reach the blackout quickly
+    const hp = (typeof process !== "undefined" ? Number(process.env?.DEV_REACTOR) || 0 : 0) || 1;
+    this.state = { reactorHealth: hp, wave: 0, phase: "break", nextWaveAt: now + FIRST_WAVE_DELAY_MS };
     this.toSpawn = 0;
     this.world.changed();
   }
@@ -143,15 +151,60 @@ export class Defence {
   }
 
   step(now: number, dt: number): void {
-    if (!this.world.objective.active) {
-      // no live reactor, no attack: anything left over goes away
+    if (!this.world.objective.active || this.state.phase === "won") {
+      // no live reactor (or a won one), no attack: anything left over goes away
       if (this.enemies.size) this.enemies.clear();
       return;
     }
     this.rebuildFieldIfBoxesMoved();
-    this.runWaves(now);
+    if (this.state.phase === "blackout") this.runBlackout(now);
+    else this.runWaves(now);
     this.moveAndAttack(now, dt);
-    if (this.world.objective.active) this.fireTurrets(now);
+    // turrets run off the reactor too
+    if (this.world.objective.active && this.state.phase !== "blackout") this.fireTurrets(now);
+  }
+
+  /** the dark: they keep coming from every breach, closer together the longer it goes on */
+  private runBlackout(now: number): void {
+    // and they know where the crew is: every second, a fresh trail to one of them
+    if (now >= this.huntAt) {
+      this.huntAt = now + 1000;
+      const players = this.world.players();
+      if (players.length) {
+        const prey = players[Math.floor(now / 4000) % players.length];
+        const boxes = [...this.world.items.values()].filter(isBlocking);
+        this.hunt.build([...OBSTACLES, ...boxes.map(boxObstacle)], prey);
+      }
+    }
+    const since = now - (this.state.blackoutAt ?? now);
+    while (now >= this.nextSpawnAt && this.enemies.size < MAX_ENEMIES) {
+      this.spawnAtBreach();
+      this.nextSpawnAt = now + blackoutSpawnInterval(since);
+    }
+  }
+
+  private spawnAtBreach(): void {
+    const spawn = SPAWNS[this.spawnTurn++ % SPAWNS.length];
+    const id = randomUUID();
+    this.enemies.set(id, {
+      id,
+      x: spawn.x + (Math.random() - 0.5) * 0.6,
+      z: spawn.z + (Math.random() - 0.5) * 0.6,
+      rotation: 0,
+      health: 1,
+      hp: ENEMY_HIT_POINTS,
+      nextAttackAt: 0,
+      nextThinkAt: 0,
+    });
+  }
+
+  /** the crew is gone (dead, or ridden out after a win): the attempt is over */
+  finish(): void {
+    this.world.objective.active = false;
+    this.enemies.clear();
+    this.toSpawn = 0;
+    this.state = { reactorHealth: 1, wave: 0, phase: "spawning" };
+    this.world.changed();
   }
 
   private fireTurrets(now: number): void {
@@ -203,8 +256,9 @@ export class Defence {
     if (this.toSpawn === 0 && this.enemies.size === 0) {
       this.world.cleared(s.wave, this.waveSizeNow, now - this.waveStartedAt);
       if (s.wave >= WAVES_TO_WIN) {
-        this.world.objective.active = false;
-        this.state = { reactorHealth: 1, wave: 0, phase: "spawning" };
+        // the reactor's stable: the attempt stays on (the crew's still below) until they've ridden up
+        s.phase = "won";
+        s.nextWaveAt = undefined;
         this.world.changed();
         this.world.won();
         return;
@@ -216,18 +270,7 @@ export class Defence {
       return;
     }
     while (this.toSpawn > 0 && now >= this.nextSpawnAt && this.enemies.size < MAX_ENEMIES) {
-      const spawn = SPAWNS[this.spawnTurn++ % SPAWNS.length];
-      const id = randomUUID();
-      this.enemies.set(id, {
-        id,
-        x: spawn.x + (Math.random() - 0.5) * 0.6,
-        z: spawn.z + (Math.random() - 0.5) * 0.6,
-        rotation: 0,
-        health: 1,
-        hp: ENEMY_HIT_POINTS,
-        nextAttackAt: 0,
-        nextThinkAt: 0,
-      });
+      this.spawnAtBreach();
       this.toSpawn -= 1;
       this.nextSpawnAt = now + spawnInterval(this.state.wave);
     }
@@ -274,19 +317,18 @@ export class Defence {
         this.walk(e, chase.x - e.x, chase.z - e.z, dt, solid, boxes, now, false);
         continue;
       }
-      // at the reactor: attack it
-      if (reactorGap < ENEMY_REACH + ENEMY_RADIUS) {
+      // at the reactor: attack it (not in the dark: it's dead, they're hunting)
+      if (reactorGap < ENEMY_REACH + ENEMY_RADIUS && this.state.phase !== "blackout") {
         e.rotation = Math.atan2(REACTOR.x - e.x, REACTOR.z - e.z);
         if (now >= e.nextAttackAt) {
           e.nextAttackAt = now + ENEMY_ATTACK_INTERVAL_MS;
-          this.hitReactor();
-          if (!this.world.objective.active) return;
+          this.hitReactor(now);
         }
         continue;
       }
-      // otherwise walk the flow field; sealed in, head straight at the
-      // reactor and chew through whatever box is in the way
-      let dir = this.field.direction(e.x, e.z);
+      // otherwise walk the flow field (in the dark, the hunt's); sealed in,
+      // head straight at the reactor and chew through whatever box is in the way
+      let dir = (this.state.phase === "blackout" ? this.hunt : this.field).direction(e.x, e.z);
       let sealed = false;
       if (!dir) {
         dir = { dx: REACTOR.x - e.x, dz: REACTOR.z - e.z };
@@ -326,12 +368,14 @@ export class Defence {
       // lost sight (or too far): search where they were last seen, then give up
       e.target = undefined;
     }
-    if (reactorGap < REACTOR_COMMIT) {
+    const dark = this.state.phase === "blackout";
+    if (reactorGap < REACTOR_COMMIT && !dark) {
       e.lastSeen = undefined;
       return;
     }
     let best: { id: string; x: number; z: number } | undefined;
-    let bestD = AGGRO_RANGE;
+    // in the dark they hunt: any crewmate they can see, however far
+    let bestD = dark ? LEASH_RANGE * 2 : AGGRO_RANGE;
     for (const p of players) {
       const d = Math.hypot(p.x - e.x, p.z - e.z);
       if (d < bestD && this.clearLine(e.x, e.z, p.x, p.z, solid)) {
@@ -397,27 +441,33 @@ export class Defence {
     }
   }
 
-  private hitReactor(): void {
+  private hitReactor(now: number): void {
+    if (this.state.phase === "blackout") return; // already dead; they've come for the crew now
     this.state.reactorHealth = Math.max(0, this.state.reactorHealth - ENEMY_REACTOR_DAMAGE);
     this.world.changed();
     if (this.state.reactorHealth > 0) return;
-    this.fail("the reactor is down");
+    // the reactor's dead: the lights go, the waves stop counting, the breaches never close
+    const cleared = this.state.phase === "break" ? this.state.wave : Math.max(0, this.state.wave - 1);
+    this.state = { reactorHealth: 0, wave: cleared, phase: "blackout", blackoutAt: now };
+    this.toSpawn = 0;
+    this.nextSpawnAt = now + 1500;
+    // every crawler forgets the reactor and comes for whoever's left
+    for (const e of this.enemies.values()) e.nextThinkAt = 0;
+    this.world.changed();
+    this.world.blackout(cleared);
   }
 
   /**
-   * The attempt has failed (the reactor's destroyed, or everyone defending
-   * it is dead): the reactor goes dark and the attack stops, but every box
-   * players built stays for the next attempt.
+   * The attempt has failed: everyone defending the reactor is dead (in the
+   * blackout, or before it). The attack stops, but every box players built
+   * stays for the next attempt.
    */
-  fail(reason: string): void {
+  fail(reason: string, now = Date.now()): void {
     if (!this.world.objective.active) return;
-    this.world.objective.active = false;
-    this.enemies.clear();
-    this.toSpawn = 0;
-    const wave = this.state.wave;
-    this.world.announce(`${reason} — ${wave} wave(s) cleared`);
-    this.state = { reactorHealth: 1, wave: 0, phase: "spawning" };
-    this.world.changed();
-    this.world.ended(reason, wave);
+    const s = this.state;
+    const blackoutMs = s.phase === "blackout" && s.blackoutAt ? now - s.blackoutAt : 0;
+    const wave = s.phase === "blackout" ? s.wave : s.phase === "break" ? s.wave : Math.max(0, s.wave - 1);
+    this.finish();
+    this.world.ended(reason, wave, blackoutMs);
   }
 }

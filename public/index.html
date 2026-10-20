@@ -12,7 +12,7 @@
         --ui-font: 600 11px/1.35 ui-monospace, "SF Mono", Menlo, monospace; }
       html, body { margin: 0; height: 100%; background: #111; overflow: hidden; }
       canvas { display: block; }
-      .ui-frame, #leaderboard, #board .board-panel, #shop .board-panel, .ui-hud, .ui-wounds, .ui-spectate, .ui-banner, #connection-lost {
+      .ui-frame, #leaderboard, #board .board-panel, #shop .board-panel, .ui-report, .ui-hud, .ui-wounds, .ui-spectate, .ui-banner, #connection-lost {
         position: fixed; color: var(--ui); font: var(--ui-font); letter-spacing: 0.1em; text-transform: uppercase;
         background: var(--ui-wash); padding: 8px 12px; pointer-events: none; text-shadow: 0 0 4px rgba(0,0,0,0.5);
         border: 0; border-radius: 0;
@@ -84,6 +84,17 @@
       .ui-ride-fill { position: absolute; left: -1px; width: 3px; top: 0; background: var(--ui); }
       .ui-ride-label { color: var(--ui); font: var(--ui-font); letter-spacing: 0.14em; text-transform: uppercase;
         writing-mode: vertical-rl; text-shadow: 0 0 4px #000; }
+      .ui-wipe { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 5; }
+      .ui-report { right: 16px; top: 90px; min-width: 240px; max-width: min(320px, 80vw); padding: 12px 16px;
+        background-color: rgba(8, 10, 12, 0.8); opacity: 0; transform: translateX(16px); transition: opacity 0.3s, transform 0.3s; z-index: 6; }
+      .ui-report.open { opacity: 1; transform: none; }
+      .ui-report .title { margin-bottom: 6px; padding-bottom: 3px; border-bottom: 1px solid rgba(255,255,255,0.35); }
+      .ui-report .title.sub { margin-top: 8px; }
+      .ui-report .run, .ui-report .dim, .ui-report .legend { color: var(--ui-dim); }
+      .ui-report .legend { margin-top: 8px; }
+      .ui-report .row { display: flex; gap: 10px; padding: 1px 0; }
+      .ui-report .row.total { margin-top: 4px; padding-top: 4px; border-top: 1px dashed rgba(255,255,255,0.3); }
+      .ui-report .score { margin-left: auto; font-variant-numeric: tabular-nums; }
       #fatal-error {
         position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
         background: #111; color: #eee; font: 15px/1.5 system-ui, sans-serif;

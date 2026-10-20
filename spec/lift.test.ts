@@ -111,16 +111,22 @@ describe("the lift's rules", () => {
 
   it("sends from inside the car, calls from outside its door, and does nothing from afar", () => {
     const open = { at: "top" as const, phase: "open" as const };
-    expect(liftVerdict(carMid("top"), open, off)).toBe("send");
-    expect(liftVerdict({ x: 0, z: LIFT_CARS.top.minZ - 1.5 }, { at: "bottom", phase: "open" }, off)).toBe("call");
-    expect(liftVerdict({ x: 8, z: LIFT_CARS.top.minZ - 8 }, open, off)).toBe("too far");
+    expect(liftVerdict(carMid("top"), open, off, "spawning")).toBe("send");
+    expect(liftVerdict({ x: 0, z: LIFT_CARS.top.minZ - 1.5 }, { at: "bottom", phase: "open" }, off, "spawning")).toBe("call");
+    expect(liftVerdict({ x: 8, z: LIFT_CARS.top.minZ - 8 }, open, off, "spawning")).toBe("too far");
   });
 
   it("won't take anyone back up once an attempt is on, but anyone can still come down", () => {
     const atBottom = { at: "bottom" as const, phase: "open" as const };
-    expect(liftVerdict(carMid("bottom"), atBottom, off)).toBe("send");
-    expect(liftVerdict(carMid("bottom"), atBottom, on)).toBe("attempt on");
-    expect(liftVerdict(carMid("top"), { at: "top", phase: "open" }, on)).toBe("send");
+    expect(liftVerdict(carMid("bottom"), atBottom, off, "spawning")).toBe("send");
+    expect(liftVerdict(carMid("bottom"), atBottom, on, "spawning")).toBe("attempt on");
+    expect(liftVerdict(carMid("top"), { at: "top", phase: "open" }, on, "spawning")).toBe("send");
+  });
+
+  it("takes the crew up once the run's won, and not in a blackout", () => {
+    const atBottom = { at: "bottom" as const, phase: "open" as const };
+    expect(liftVerdict(carMid("bottom"), atBottom, on, "won")).toBe("send");
+    expect(liftVerdict(carMid("bottom"), atBottom, on, "blackout")).toBe("attempt on");
   });
 
   it("shuts the bottom door to someone locked out, and every door the car isn't open at", () => {

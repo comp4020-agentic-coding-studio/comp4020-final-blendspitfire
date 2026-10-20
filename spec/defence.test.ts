@@ -18,7 +18,7 @@ import { REACTOR, type ItemState } from "../shared/protocol.ts";
 
 function world(players: { id: string; x: number; z: number }[]) {
   const hurt: string[] = [];
-  const outcome: { ended?: number; won?: boolean } = {};
+  const outcome: { ended?: number; won?: boolean; blackout?: number; blackoutMs?: number } = {};
   const paid: { wave: number; size: number; clearMs: number }[] = [];
   const shots: { from: string; tx: number; tz: number }[] = [];
   const w: World = {
@@ -28,7 +28,11 @@ function world(players: { id: string; x: number; z: number }[]) {
     hurtPlayer: (id) => hurt.push(id),
     changed: () => {},
     announce: () => {},
-    ended: (_reason, wave) => (outcome.ended = wave),
+    ended: (_reason, wave, ms) => {
+      outcome.ended = wave;
+      outcome.blackoutMs = ms;
+    },
+    blackout: (wave) => (outcome.blackout = wave),
     won: () => (outcome.won = true),
     cleared: (wave, size, clearMs) => paid.push({ wave, size, clearMs }),
     turretFire: (from, _x, _z, tx, tz) => shots.push({ from, tx, tz }),
@@ -165,21 +169,49 @@ describe("waves", () => {
     expect(d.skipBreak(200)).toBe(false);
   });
 
-  it("clearing the last wave wins the run", () => {
+  it("clearing the last wave wins: the facility goes quiet and stays on until the crew's out", () => {
     const { w, outcome } = world([]);
     const d = new Defence(w, { reactorHealth: 1, wave: WAVES_TO_WIN, phase: "spawning" });
     run(d, 0.1);
     expect(outcome.won).toBe(true);
+    expect(d.state.phase).toBe("won");
+    expect(w.objective.active).toBe(true);
+    // nothing more comes, whatever the time
+    run(d, 60, 1000);
+    expect(d.snapshot()).toEqual([]);
+    d.finish();
     expect(w.objective.active).toBe(false);
     expect(d.state.wave).toBe(0);
   });
 
   it("a failed attempt reports how many waves it cleared and starts again from zero", () => {
     const { w, outcome } = world([]);
-    const d = new Defence(w, { reactorHealth: 1, wave: 3, phase: "spawning", nextWaveAt: 1e12 });
-    d.fail("the reactor is down");
+    const d = new Defence(w, { reactorHealth: 1, wave: 4, phase: "spawning", nextWaveAt: 1e12 });
+    d.fail("everyone's down");
+    // wave 4 was being fought: three were cleared
     expect(outcome.ended).toBe(3);
     expect(d.state.wave).toBe(0);
+  });
+
+  it("a dead reactor blacks out: no win, no let-up, spawns tightening until the crew is gone", () => {
+    const player = { id: "p", x: -12, z: 10 };
+    const { w, outcome } = world([player]);
+    const d = new Defence(w, { reactorHealth: ENEMY_REACTOR_DAMAGE, wave: 3, phase: "break", nextWaveAt: 1e12 });
+    d.spawnAt(REACTOR.x, REACTOR.z + 2.4);
+    let now = run(d, 1.5);
+    expect(outcome.blackout).toBe(3);
+    expect(d.state.phase).toBe("blackout");
+    expect(w.objective.active).toBe(true);
+    // they keep coming
+    now = run(d, 8, now);
+    const early = d.snapshot().length;
+    expect(early).toBeGreaterThan(3);
+    // and they hunt: the one that was at the reactor has left it for the crew
+    now = run(d, 10, now);
+    expect(d.snapshot().some((e) => Math.hypot(e.x - player.x, e.z - player.z) < 4)).toBe(true);
+    d.fail("everyone's down in the dark", now);
+    expect(outcome.ended).toBe(3);
+    expect(outcome.blackoutMs).toBeGreaterThan(15000);
   });
 
   it("waves grow faster than linearly toward the last one", () => {
