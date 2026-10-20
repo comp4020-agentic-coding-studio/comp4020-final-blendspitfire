@@ -29,14 +29,15 @@ export interface EnemyState {
   health: number;
 }
 
-/** what the reactor has left, how charged it is, and which wave is on; broadcast with the objective */
+/** what the reactor has left, which wave is on, and whether it's fighting or between waves; broadcast with the objective */
 export interface DefenceState {
   /** 0..1 */
   reactorHealth: number;
-  /** 0..1: the objective --- at 1 the reactor is stable and the run is won */
-  charge: number;
+  /** waves cleared so far this attempt; the objective is WAVES_TO_WIN of them */
   wave: number;
-  /** server time the next wave starts */
+  /** "spawning": the current wave's enemies are still coming or still alive. "break": cleared, waiting (or voted) to start the next */
+  phase: "spawning" | "break";
+  /** server time the next wave starts (spawning: when the gap ends; break: when it ends, unless skipped) */
   nextWaveAt?: number;
 }
 
@@ -70,24 +71,24 @@ export const REACTOR_COMMIT = 2.5;
 export const BOX_HIT_POINTS = 6;
 
 /**
- * The objective: holding the reactor while it charges. Full charge takes
- * CHARGE_MS of the attack (the clock runs from the first wave's breather),
- * and a failed attempt starts it again from zero. The attack is driven by
- * how far it's got, not by a wave count: as the charge climbs the waves get
- * bigger and closer together, and they stop waiting for the last one to be
- * cleared, so the end is a flood. Tuned so a run takes a dozen or so
- * attempts, the boxes piling up from one to the next.
+ * The objective: clear WAVES_TO_WIN waves. Each wave ends when every enemy
+ * in it is down; a WAVE_BREAK_MS breather follows (buy time), then the next
+ * wave starts --- sooner if someone sends it early. A failed attempt (the
+ * reactor destroyed, or everyone out) starts the wave count again from
+ * zero, boxes and turrets left standing. Waves grow in size as the count
+ * climbs toward the win; tuned so a run takes a dozen or so attempts, the
+ * defences piling up from one to the next.
  */
-export const CHARGE_MS =
-  // DEV_CHARGE_S: local testing only (never set in fly.toml), to see a whole run end quickly
-  (typeof process !== "undefined" ? Number(process.env?.DEV_CHARGE_S) || 0 : 0) * 1000 || 6 * 60 * 1000;
+export const WAVES_TO_WIN =
+  // DEV_WAVES: local testing only (never set in fly.toml), to see a whole run end quickly
+  (typeof process !== "undefined" ? Number(process.env?.DEV_WAVES) || 0 : 0) || 10;
 export const FIRST_WAVE_DELAY_MS = 10000;
+/** the breather between a cleared wave and the next */
+export const WAVE_BREAK_MS = 30000;
 /** never more than this many alive at once: the 256 MB machine is the limit */
 export const MAX_ENEMIES = 40;
-/** how many come in a wave that starts at this charge */
-export const waveSize = (charge: number): number => Math.round(4 + 22 * charge);
-/** time from one wave starting to the next, at this charge */
-export const waveGapMs = (charge: number): number => Math.round(15000 - 11000 * charge);
+/** how many come in the wave numbered `wave` (1-based), scaled by how close that is to the win */
+export const waveSize = (wave: number): number => Math.round(4 + 22 * Math.min(1, wave / WAVES_TO_WIN));
 /** gap between spawns within a wave */
 export const SPAWN_INTERVAL_MS = 700;
 

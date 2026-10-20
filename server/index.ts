@@ -300,9 +300,9 @@ const defence = new Defence(
     },
     changed: markWorldDirty,
     announce,
-    ended: (reason, charge) => {
-      console.log(`[attempt ${attempt.number}] failed: ${reason}, charge ${Math.floor(charge * 100)}% (crew: ${crewNames().join(", ") || "nobody"})`);
-      run.best = Math.max(run.best, charge);
+    ended: (reason, wave) => {
+      console.log(`[attempt ${attempt.number}] failed: ${reason}, ${wave} wave(s) cleared (crew: ${crewNames().join(", ") || "nobody"})`);
+      run.best = Math.max(run.best, wave);
       saveRun(run);
       carried.clear();
       everyoneUp();
@@ -713,7 +713,7 @@ wss.on("connection", (socket, req) => {
     }
 
     if (msg.type === "activate") {
-      const verdict = activateVerdict(conn.player, heldItem(playerId) !== undefined, objective);
+      const verdict = activateVerdict(conn.player, objective, defence.state.phase === "break");
       if (verdict === "ok") {
         objective.active = true;
         defence.start(Date.now());
@@ -727,6 +727,9 @@ wss.on("connection", (socket, req) => {
         act(conn.player, `switched the reactor on: attempt ${attempt.number} begins`);
         announce("the reactor is live — hold it");
         markWorldDirty();
+      } else if (verdict === "skip break") {
+        defence.skipBreak(Date.now());
+        act(conn.player, "sent the next wave early");
       } else {
         refuse(conn, "activate", `refused: reactor switch (${verdict})`);
       }

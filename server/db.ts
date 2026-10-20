@@ -69,8 +69,9 @@ export function loadDefence(): DefenceState | undefined {
   const row = getWorldStmt.get("defence") as { value: string } | undefined;
   if (!row) return undefined;
   const d = JSON.parse(row.value) as DefenceState;
-  // a wave timer from before the restart means nothing now
-  return { reactorHealth: d.reactorHealth, charge: d.charge ?? 0, wave: d.wave };
+  // the enemies out at the time weren't saved, and neither is a wave/break
+  // timer from before the restart: back to a fresh break before the same wave
+  return { reactorHealth: d.reactorHealth, wave: d.wave, phase: "break" };
 }
 
 /**
@@ -138,7 +139,7 @@ export interface RunRecord {
 export interface RunProgress {
   /** attempts started in this run so far */
   attempts: number;
-  /** the furthest any of them charged the reactor, 0..1 */
+  /** the most waves any of them cleared */
   best: number;
 }
 

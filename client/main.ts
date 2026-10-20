@@ -23,7 +23,7 @@ import { mesh } from "./models/kit.ts";
 import { LAMPS, LAMP_SPECS, lampSource } from "./world/dressing.ts";
 import { STENCIL, DANGER, OK, EMIT_RED, EMIT_TRACER } from "../shared/palette.ts";
 import { INTERP_DELAY_MS, ServerClock, SnapshotBuffer, Tracer } from "./netsync.ts";
-import { CHARGE_MS, ENEMY_RADIUS, type DefenceState, type EnemyState } from "../shared/enemies.ts";
+import { ENEMY_RADIUS, WAVES_TO_WIN, type DefenceState, type EnemyState } from "../shared/enemies.ts";
 import {
   BOX_HALF_EXTENT,
   BREACHES,
@@ -626,7 +626,7 @@ function hoveringReactor(): boolean {
 const ACTIVATE_TIPS: Record<string, string> = {
   ok: "activate the reactor",
   "too far": "move closer",
-  "hands full": "hands full — drop it first (Q)",
+  "skip break": "send the next wave now",
   "already active": "already active — defend it",
 };
 
@@ -703,8 +703,8 @@ function useTarget(target: Target | undefined): void {
   if (!target || !localMesh) return;
   if (target.kind === "item") net.pickup(target.item.state.id);
   else if (target.kind === "reactor") {
-    const verdict = activateVerdict(localMesh.position, !!myHeldItem(), objective);
-    if (verdict === "ok") net.activate();
+    const verdict = activateVerdict(localMesh.position, objective, defenceState.phase === "break");
+    if (verdict === "ok" || verdict === "skip break") net.activate();
     else prompts.nope("reactor");
   } else if (target.kind === "lift") {
     const verdict = liftVerdict(localMesh.position, lift, objective);
@@ -726,8 +726,8 @@ function currentPrompts(): Prompt[] {
     const s = target.item.state;
     out.push({ id: `item:${s.id}`, at: v3(s.x, 0.4, s.z), key: "E", label: `pick up ${s.kind === "gun" ? "rifle" : "box"}` });
   } else if (target?.kind === "reactor") {
-    const verdict = activateVerdict(p, !!myHeldItem(), objective);
-    if (verdict !== "already active") out.push({ id: "reactor", at: v3(REACTOR.x - 1.4, 2, REACTOR.z - 1.4), key: "E", label: ACTIVATE_TIPS[verdict], enabled: verdict === "ok" });
+    const verdict = activateVerdict(p, objective, defenceState.phase === "break");
+    if (verdict !== "already active") out.push({ id: "reactor", at: v3(REACTOR.x - 1.4, 2, REACTOR.z - 1.4), key: "E", label: ACTIVATE_TIPS[verdict], enabled: verdict === "ok" || verdict === "skip break" });
   } else if (target?.kind === "board") {
     out.push({ id: "board", at: v3(SCOREBOARD.x - 1.2, 2.6, SCOREBOARD.z), key: "E", label: boardOpen ? "close scores" : "read scores" });
   } else if (target?.kind === "lift") {
@@ -760,7 +760,8 @@ function renderPointerFeedback(): void {
   const held = myHeldItem();
   if (localMesh && !isDead()) {
     if (hoveringReactor()) {
-      if (activateVerdict(localMesh.position, !!held, objective) === "ok") cursor = "pointer";
+      const verdict = activateVerdict(localMesh.position, objective, defenceState.phase === "break");
+      if (verdict === "ok" || verdict === "skip break") cursor = "pointer";
     } else if (!held) {
       if (hoveredItem()?.inReach) cursor = "pointer";
     } else if (held.state.kind === "gun") {
@@ -1012,9 +1013,10 @@ function primary(): void {
   }
   if (isDead() || !localMesh) return;
   const held = myHeldItem();
-  if (hoveringReactor()) {
-    const verdict = activateVerdict(localMesh.position, !!held, objective);
-    if (verdict === "ok") net.activate();
+  // a click with something in hand is that item's action (firing over the reactor is firing); E still works
+  if (hoveringReactor() && !held) {
+    const verdict = activateVerdict(localMesh.position, objective, defenceState.phase === "break");
+    if (verdict === "ok" || verdict === "skip break") net.activate();
     else flash(ACTIVATE_TIPS[verdict]);
     return;
   }
@@ -1150,7 +1152,7 @@ interface ClientEnemy {
   hitUntil: number;
 }
 const enemies = new Map<string, ClientEnemy>();
-let defenceState: DefenceState = { reactorHealth: 1, charge: 0, wave: 0 };
+let defenceState: DefenceState = { reactorHealth: 1, wave: 0, phase: "spawning" };
 const enemyBarGeometry = new THREE.PlaneGeometry(0.7, 0.07).rotateX(-Math.PI / 2);
 
 function updateEnemies(incoming: EnemyState[], t: number): void {
@@ -1456,7 +1458,7 @@ function renderSpectating(dt: number): void {
 const hudEl = document.createElement("div");
 hudEl.className = "ui-hud";
 hudEl.innerHTML =
-  '<div class="line"><span>charge</span><span id="hud-charge-pct"></span></div>' +
+  '<div class="line"><span>waves</span><span id="hud-charge-pct"></span></div>' +
   '<div class="bar"><div id="hud-charge" style="width:0"></div></div>' +
   '<div class="line"><span>reactor</span><span id="hud-wave"></span></div>' +
   '<div class="bar hp"><div id="hud-hp" style="width:100%"></div></div>' +
@@ -1470,23 +1472,29 @@ const hudChargePct = hudEl.querySelector<HTMLSpanElement>("#hud-charge-pct")!;
 function renderDefenceHud(): void {
   hudEl.style.display = objective.active ? "block" : "none";
   if (!objective.active) return;
-  const charge = defenceState.charge ?? 0;
-  hudCharge.style.width = `calc(${(charge * 100).toFixed(1)}% - 2px)`;
-  const left = Math.ceil(((1 - charge) * CHARGE_MS) / 1000);
-  hudChargePct.textContent = `${Math.floor(charge * 100)}% · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} to stable`;
+  const onBreak = defenceState.phase === "break";
+  // waves fully cleared: the one being fought doesn't count until it's down
+  const cleared = onBreak ? defenceState.wave : Math.max(0, defenceState.wave - 1);
+  hudCharge.style.width = `calc(${((cleared / WAVES_TO_WIN) * 100).toFixed(1)}% - 2px)`;
+  hudChargePct.textContent = `${cleared} / ${WAVES_TO_WIN} cleared`;
   const hp = defenceState.reactorHealth;
   hudHp.style.width = `calc(${Math.round(hp * 100)}% - 2px)`;
   // white until it's in danger, then alarm red
   hudHp.classList.toggle("low", hp <= 0.3);
-  hudWave.textContent = defenceState.wave > 0 ? `wave ${defenceState.wave}` : "";
+  hudWave.textContent = !onBreak && defenceState.wave > 0 ? `wave ${defenceState.wave}` : "";
   const next = defenceState.nextWaveAt;
   const nextIn = next ? Math.max(0, Math.ceil((next - serverClock.now()) / 1000)) : 0;
-  hudNext.textContent = [enemies.size ? `${enemies.size} hostile` : "", next ? `next wave ${nextIn}s` : ""].filter(Boolean).join(" · ");
+  hudNext.textContent = [
+    enemies.size ? `${enemies.size} hostile` : "",
+    onBreak && next ? `wave ${defenceState.wave + 1} in ${nextIn}s · E at the reactor: send it now` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 // The scoreboard: a screen in the garden (client/world/surface.ts) that
 // opens full-screen when you use it --- how this run is going (attempts so
-// far, the best charge any got to), the all-time top players, and the runs
+// far, the most waves any cleared), the all-time top players, and the runs
 // that were won. Kept by the server across restarts; sent when it changes.
 const boardEl = document.createElement("div");
 boardEl.id = "board";
@@ -1498,7 +1506,7 @@ function toggleBoard(): void {
 function renderBoard(b: BoardMessage): void {
   scoreboard.draw(b.top.slice(0, 3).map((p, i) => `${i + 1} ${p.name.slice(0, 14).padEnd(14)} ${p.kills}`));
   const runLine = b.run.attempts
-    ? `run: attempt ${b.run.attempts}${b.run.best ? ` · best ${Math.floor(b.run.best * 100)}%` : ""}`
+    ? `run: attempt ${b.run.attempts}${b.run.best ? ` · best ${b.run.best}/${WAVES_TO_WIN} waves` : ""}`
     : "run: no attempts yet";
   const rows = b.top
     .map((p, i) => `<div class="row"><span class="rank">${i + 1}</span><span>${escapeText(p.name)}</span><span class="score">${p.wins ? `★${p.wins} ` : ""}${p.kills}k ${p.boxes}b</span></div>`)

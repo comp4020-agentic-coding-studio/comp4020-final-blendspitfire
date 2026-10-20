@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { Defence, type World } from "../server/defence.ts";
-import { AGGRO_RANGE, CHARGE_MS, ENEMY_REACTOR_DAMAGE, waveGapMs, waveSize } from "../shared/enemies.ts";
+import {
+  AGGRO_RANGE,
+  ENEMY_REACTOR_DAMAGE,
+  FIRST_WAVE_DELAY_MS,
+  SPAWN_INTERVAL_MS,
+  WAVE_BREAK_MS,
+  WAVES_TO_WIN,
+  waveSize,
+} from "../shared/enemies.ts";
 import { REACTOR, type ItemState } from "../shared/protocol.ts";
 
 // Enemies pick between the reactor and a player: a player they can see and
@@ -40,7 +48,7 @@ describe("enemy targeting", () => {
     // the core is open floor: an enemy at its west end, a player a few units east
     const player = { id: "p", x: -6, z: -16 };
     const { w, hurt } = world([player]);
-    const d = new Defence(w, { reactorHealth: 1, charge: 0, wave: 1, nextWaveAt: 1e12 });
+    const d = new Defence(w, { reactorHealth: 1, wave: 1, phase: "spawning", nextWaveAt: 1e12 });
     const id = d.spawnAt(-6 - (AGGRO_RANGE - 1.5), -16);
     run(d, 3);
     expect(hurt).toContain("p");
@@ -52,7 +60,7 @@ describe("enemy targeting", () => {
     // enemy in the west passage, player in the lab on the far side of its wall: in range, out of sight
     const player = { id: "p", x: -9, z: 3 };
     const { w, hurt } = world([player]);
-    const d = new Defence(w, { reactorHealth: 1, charge: 0, wave: 1, nextWaveAt: 1e12 });
+    const d = new Defence(w, { reactorHealth: 1, wave: 1, phase: "spawning", nextWaveAt: 1e12 });
     const start = { x: -12, z: -1 };
     expect(Math.hypot(player.x - start.x, player.z - start.z)).toBeLessThan(AGGRO_RANGE);
     const id = d.spawnAt(start.x, start.z);
@@ -66,7 +74,7 @@ describe("enemy targeting", () => {
   it("stays on the reactor once it's there, even with a player close by", () => {
     const player = { id: "p", x: REACTOR.x + 4, z: REACTOR.z + 3.2 };
     const { w, hurt } = world([player]);
-    const d = new Defence(w, { reactorHealth: 1, charge: 0, wave: 1, nextWaveAt: 1e12 });
+    const d = new Defence(w, { reactorHealth: 1, wave: 1, phase: "spawning", nextWaveAt: 1e12 });
     d.spawnAt(REACTOR.x, REACTOR.z + 2.4);
     run(d, 3);
     expect(hurt).toEqual([]);
@@ -76,7 +84,7 @@ describe("enemy targeting", () => {
   it("gives up on a player who gets away and goes back to the reactor", () => {
     const player = { id: "p", x: -6, z: -16 };
     const { w } = world([player]);
-    const d = new Defence(w, { reactorHealth: 1, charge: 0, wave: 1, nextWaveAt: 1e12 });
+    const d = new Defence(w, { reactorHealth: 1, wave: 1, phase: "spawning", nextWaveAt: 1e12 });
     const id = d.spawnAt(-10, -16);
     run(d, 0.5);
     // the player vanishes from reach (through a door, out of range)
@@ -96,7 +104,7 @@ describe("chewing through boxes", () => {
     const ring: [number, number][] = [];
     for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) if (dx || dz) ring.push([-8 + dx, -12 + dz]);
     ring.forEach(([x, z], i) => w.items.set(`b${i}`, { id: `b${i}`, kind: "box", x, z }));
-    const d = new Defence(w, { reactorHealth: 1, charge: 0, wave: 1, nextWaveAt: 1e12 });
+    const d = new Defence(w, { reactorHealth: 1, wave: 1, phase: "spawning", nextWaveAt: 1e12 });
     d.spawnAt(-8, -12);
     const wears: number[] = [];
     let now = 0;
@@ -114,29 +122,63 @@ describe("chewing through boxes", () => {
   });
 });
 
-describe("the charge", () => {
-  it("fills in CHARGE_MS of holding, and a full charge wins the run", () => {
+/** kill everything currently alive, as if the crew shot it all */
+function killAll(d: Defence): void {
+  for (const e of d.snapshot()) while (!d.damage(e.id));
+}
+
+describe("waves", () => {
+  it("the first wave comes after the breather; a cleared wave starts a break", () => {
+    const { w } = world([]);
+    const d = new Defence(w, undefined);
+    d.start(0);
+    expect(d.state.phase).toBe("break");
+    let now = run(d, FIRST_WAVE_DELAY_MS / 1000 + 0.1);
+    expect(d.state.phase).toBe("spawning");
+    expect(d.state.wave).toBe(1);
+    // let the whole wave come in, then shoot it all
+    now = run(d, (waveSize(1) * SPAWN_INTERVAL_MS) / 1000 + 0.5, now);
+    expect(d.snapshot().length).toBe(waveSize(1));
+    killAll(d);
+    now = run(d, 0.1, now);
+    expect(d.state.phase).toBe("break");
+    expect(d.state.nextWaveAt).toBeGreaterThan(now);
+    // the break runs out and the next wave starts
+    run(d, WAVE_BREAK_MS / 1000 + 0.1, now);
+    expect(d.state.phase).toBe("spawning");
+    expect(d.state.wave).toBe(2);
+  });
+
+  it("anyone can send the next wave early during a break, but not mid-wave", () => {
+    const { w } = world([]);
+    const d = new Defence(w, undefined);
+    d.start(0);
+    expect(d.skipBreak(10)).toBe(true);
+    run(d, 0.1, 10);
+    expect(d.state.wave).toBe(1);
+    expect(d.state.phase).toBe("spawning");
+    expect(d.skipBreak(200)).toBe(false);
+  });
+
+  it("clearing the last wave wins the run", () => {
     const { w, outcome } = world([]);
-    const d = new Defence(w, { reactorHealth: 1, charge: 0, wave: 0, nextWaveAt: 1e12 });
-    run(d, CHARGE_MS / 1000 / 2);
-    expect(d.state.charge).toBeCloseTo(0.5, 2);
-    expect(outcome.won).toBeUndefined();
-    run(d, CHARGE_MS / 1000 / 2 + 1);
+    const d = new Defence(w, { reactorHealth: 1, wave: WAVES_TO_WIN, phase: "spawning" });
+    run(d, 0.1);
     expect(outcome.won).toBe(true);
     expect(w.objective.active).toBe(false);
-    expect(d.state.charge).toBe(0);
+    expect(d.state.wave).toBe(0);
   });
 
-  it("a failed attempt reports how far it got and starts the charge again from zero", () => {
+  it("a failed attempt reports how many waves it cleared and starts again from zero", () => {
     const { w, outcome } = world([]);
-    const d = new Defence(w, { reactorHealth: 1, charge: 0.4, wave: 3, nextWaveAt: 1e12 });
+    const d = new Defence(w, { reactorHealth: 1, wave: 3, phase: "spawning", nextWaveAt: 1e12 });
     d.fail("the reactor is down");
-    expect(outcome.ended).toBeCloseTo(0.4);
-    expect(d.state.charge).toBe(0);
+    expect(outcome.ended).toBe(3);
+    expect(d.state.wave).toBe(0);
   });
 
-  it("waves grow and come faster as the charge climbs", () => {
-    expect(waveSize(1)).toBeGreaterThan(waveSize(0) * 4);
-    expect(waveGapMs(1)).toBeLessThan(waveGapMs(0) / 3);
+  it("waves grow toward the last one", () => {
+    expect(waveSize(WAVES_TO_WIN)).toBeGreaterThan(waveSize(1) * 3);
+    expect(waveSize(WAVES_TO_WIN + 5)).toBe(waveSize(WAVES_TO_WIN));
   });
 });

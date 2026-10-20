@@ -649,18 +649,20 @@ export const OBSTACLES: Obstacle[] = [
 /** how close (centre to centre) a player has to be to switch the reactor on */
 export const ACTIVATE_RANGE = REACTOR.halfX + PICKUP_RANGE;
 
-export type ActivateVerdict = "ok" | "too far" | "hands full" | "already active";
+export type ActivateVerdict = "ok" | "too far" | "already active" | "skip break";
 
-/** shared, so the client's hint says exactly what the server would decide */
-export function activateVerdict(
-  player: { x: number; z: number },
-  holding: boolean,
-  objective: ObjectiveState,
-): ActivateVerdict {
-  if (objective.active) return "already active";
+/**
+ * Shared, so the client's hint says exactly what the server would decide. E
+ * at the reactor switches it on; once it's live, the same key sends the
+ * next wave early during a break (anyone can, not just whoever started the
+ * attempt) and does nothing mid-wave. No empty-hands requirement: that rule
+ * dated from click-to-activate, when a click with a gun meant firing, and E
+ * has no such conflict.
+ */
+export function activateVerdict(player: { x: number; z: number }, objective: ObjectiveState, onBreak: boolean): ActivateVerdict {
   if (Math.hypot(player.x - REACTOR.x, player.z - REACTOR.z) > ACTIVATE_RANGE) return "too far";
-  if (holding) return "hands full";
-  return "ok";
+  if (!objective.active) return "ok";
+  return onBreak ? "skip break" : "already active";
 }
 
 const SPAWN_Z = S.maxZ - 6;
