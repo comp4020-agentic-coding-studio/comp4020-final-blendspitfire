@@ -35,6 +35,11 @@ Updated: 2026-10-20 (surface garden + lift + floating UI, on branch `surface`)
 
 ## Next work (ordered)
 0. Branch `surface`: user playtests garden look, prompts, lift (single + two tabs), scoreboard; decides merge to main (after crit-10 ship). Rough edges: garden layout placed by eye; scoreboard roof preview tiny; DEV_JOIN/DEV_SPAWN skip the lift (spawning below counts as in the attempt).
+- User's improvement notes for the surface/lift (2026-10-20; queued, NOT now; do when user says):
+  - a. Lift doors: open/close animation that sight follows: view narrows/widens with the door gap (now: leaves slide, but the LOS door obstacle is all-or-nothing, see main.ts updateSightDoors).
+  - b. Garden out-of-sight = black like underground, not cream canvas (postprocess.ts mask mix with `paint`).
+  - c. Garden bigger, bounded by a see-through fence instead of LOS occlusion (can see what's beyond it).
+  - d. Garden colour/tone stays; dressing should tell the story: an ancient ruined facility being explored by a military-type organisation, so ruins/rust AND recently deployed kit (supply crates etc.).
 1. Crit 10 prep (before Wed 08:30): user playtests the charge bar/board/logs; user decides push + /ship (tag crit-10). Rehearse: two Chrome profiles + `flyctl logs` tail, check lines read clearly. User writes reflections/crit-10.md and PROCESS.md (skeleton only from agent).
 2. Tune difficulty for "~a dozen attempts": DEV_CHARGE_S env shortens the charge for local runs. Unknown: how far an empty map gets now; boxes chewed in 6 hits may make carry-over too weak or strong. Numbers in shared/enemies.ts (waveSize, waveGapMs, ENEMY_REACTOR_DAMAGE, BOX_HIT_POINTS).
 3. Still pending playtest from 2026-10-14 autonomous round: wound effects, CRT/daze strength, aggro 6, grace 1s, rate of fire.
