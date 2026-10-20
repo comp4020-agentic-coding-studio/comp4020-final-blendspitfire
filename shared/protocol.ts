@@ -132,7 +132,16 @@ export interface ProjectileState {
   range: number;
 }
 
-export type ServerMessage = WelcomeMessage | StateMessage | BoardMessage;
+/**
+ * This tab has been taken over by a newer one for the same player. Sent
+ * just before the server closes the socket: a close frame doesn't always
+ * make it through a proxy, a message on the open socket does.
+ */
+export interface ReplacedMessage {
+  type: "replaced";
+}
+
+export type ServerMessage = WelcomeMessage | StateMessage | BoardMessage | ReplacedMessage;
 export type ClientMessage = MoveMessage | PickupMessage | PrimaryMessage | DropMessage | ActivateMessage | LiftMessage;
 
 /**

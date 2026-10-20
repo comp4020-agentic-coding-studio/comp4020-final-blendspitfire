@@ -27,6 +27,8 @@ export function connect(handlers: NetHandlers): Net {
   let queuedMove: Omit<MoveMessage, "type"> | undefined;
   let attempt = 0;
   let closedByUs = false;
+  /** a newer tab for this player took over: never reconnect, or we'd take it back */
+  let replaced = false;
 
   const send = (payload: unknown): void => {
     if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload));
@@ -48,6 +50,11 @@ export function connect(handlers: NetHandlers): Net {
       if (msg.type === "welcome") handlers.onWelcome(msg.you, msg.players, msg.t);
       else if (msg.type === "state") handlers.onState(msg);
       else if (msg.type === "board") handlers.onBoard(msg);
+      else if (msg.type === "replaced") {
+        replaced = true;
+        handlers.onReplaced();
+        ws.close();
+      }
     });
 
     // A Fly machine that scales to zero, a wifi blip, a laptop sleeping ---
@@ -56,8 +63,9 @@ export function connect(handlers: NetHandlers): Net {
     // itself is going away.
     ws.addEventListener("close", (event) => {
       // reconnecting would just take the session back from the newer tab
-      if (event.code === 4000) {
-        handlers.onReplaced();
+      if (event.code === 4000 || replaced) {
+        if (!replaced) handlers.onReplaced();
+        replaced = true;
         return;
       }
       handlers.onConnectionChange(false);

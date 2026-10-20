@@ -21,6 +21,8 @@ interface Session {
   items?: { id: string; kind: string; x: number; z: number; heldBy?: string }[];
   board?: { top: { name: string }[] };
   closedWith?: number;
+  /** told by the server that a newer tab took over */
+  replaced?: boolean;
 }
 
 /** join as a fresh browser, or as the one that holds `cookie` */
@@ -39,6 +41,7 @@ async function join(cookie?: string): Promise<Session> {
       s.last = m;
       if (m.items) s.items = m.items;
     } else if (m.type === "board") s.board = m;
+    else if (m.type === "replaced") s.replaced = true;
   });
   s.ws.on("close", (code) => (s.closedWith = code));
   await new Promise<void>((resolve, reject) => {
@@ -72,7 +75,9 @@ it("the same browser coming back is the same person; a second tab replaces the f
   await wait(300);
   expect(again.id).toBe(a.id);
   expect(again.name).toBe(a.name);
-  expect(a.closedWith).toBe(4000);
+  // the old tab is told, whether or not the close itself gets through a proxy
+  for (let i = 0; i < 40 && !a.replaced; i++) await wait(50);
+  expect(a.replaced).toBe(true);
   // one body, not two
   expect(again.last!.players.filter((p) => p.id === a.id)).toHaveLength(1);
   again.ws.close();

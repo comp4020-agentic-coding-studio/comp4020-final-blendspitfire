@@ -603,7 +603,11 @@ wss.on("connection", (socket, req) => {
   if (previous) {
     act(player, "opened a second tab: closing the first");
     dropHeld(previous.player);
+    previous.socket.send(JSON.stringify({ type: "replaced" } satisfies ServerMessage));
     previous.socket.close(4000, "opened in another tab");
+    // and if the closing handshake never completes (a proxy in between can
+    // swallow it), drop the connection outright
+    setTimeout(() => previous.socket.terminate(), 2000);
   }
   const back = carried.get(playerId);
   if (back) {
