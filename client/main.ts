@@ -45,7 +45,8 @@ import {
   inAnyCar,
   inCar,
   levelOf,
-  liftDoorObstacles,
+  liftDoorOpen,
+  DOOR_HALF_WIDTH,
   liftVerdict,
   noFireAt,
   type LiftState,
@@ -211,15 +212,36 @@ let activeVisibility = visibility;
 let viewLevel: "top" | "bottom" = "bottom";
 post.setMask(activeVisibility.postMask(FACILITY_WALL_HALF_HEIGHT * 2 - 0.05));
 let lastDoorKey = "";
-/** shut lift doors block sight like walls: refreshed when the lift changes */
+/**
+ * The lift doors block sight leaf by leaf, exactly where they're drawn
+ * (client/world/lift.ts): as they slide the gap between them widens or
+ * narrows, and so does what you can see through it. Each leaf is clipped to
+ * the doorway, and the doorway's edges are padded a little into the wall so
+ * sight can't slip round a leaf's outer edge.
+ */
 function updateSightDoors(): void {
-  // a little wider than the opening, so sight can't slip past the leaves' edges
-  const shut = liftDoorObstacles(lift, false).map((o) => ({ ...o, halfX: o.halfX + 0.4 }));
-  const key = shut.map((o) => o.z).join(",");
-  if (key === lastDoorKey) return;
-  lastDoorKey = key;
-  visibility.setExtra(shut.filter((o) => o.z < SURFACE.minZ));
-  surfaceVisibility.setExtra(shut.filter((o) => o.z > SURFACE.minZ));
+  const now = serverClock.now();
+  const leaves: Obstacle[] = [];
+  const key: string[] = [];
+  const D = DOOR_HALF_WIDTH;
+  for (const level of ["top", "bottom"] as const) {
+    const door = LIFT_DOORS[level];
+    // the open fraction, quantised so the mask is redrawn per few centimetres, not every frame
+    const open = Math.round(liftDoorOpen(lift, level, now) * 40) / 40;
+    key.push(`${level}${open}`);
+    if (open >= 1) continue;
+    // a leaf's inner edge sits `gap` from the centre line; its outer edge runs past the doorway into the wall
+    const gap = open * D * 0.95;
+    const outer = D + 0.4;
+    for (const side of [-1, 1]) {
+      leaves.push({ x: side * (gap + outer) / 2, z: door.z, halfX: (outer - gap) / 2, halfZ: door.halfZ, halfHeight: door.halfHeight });
+    }
+  }
+  const k = key.join(",");
+  if (k === lastDoorKey) return;
+  lastDoorKey = k;
+  visibility.setExtra(leaves.filter((o) => o.z < SURFACE.minZ));
+  surfaceVisibility.setExtra(leaves.filter((o) => o.z > SURFACE.minZ));
 }
 
 // The scoreboard in the garden: its little screen, redrawn when the board changes
