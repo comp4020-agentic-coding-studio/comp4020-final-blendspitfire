@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-10-20, Direction: charge bar to become waves (not built)
+Synced from the draft up to: 2026-10-21, Sight through the lift doors follows the leaves
 
 ---
 
@@ -555,3 +555,55 @@ Suggested minimal topology: safe room, one main corridor (bottleneck), a fork in
 
 **Why.** The developer wants a rhythm of pressure and relief rather than one continuous climb, and a reason, in the game's own terms, for the currency a shop would need.
 
+---
+
+## ADR-040: Waves built: ten to win, a break after each, anyone can send the next early
+*2026-10-21 · Status: Accepted as a default (built by the agent while the developer was away; awaiting review)*
+
+**Context.** The developer asked for ADR-039 to be built in order (waves, then a turret and the economy, then the queued surface and lift items). Because they couldn't correct course live, they said to list options but build what the agent judged best, and review afterwards.
+
+**Decision.**
+- The 6-minute charge bar is gone. The objective is clearing `WAVES_TO_WIN` = 10 waves (`DEV_WAVES` shortens it for local testing).
+- A wave is cleared once all of its enemies have spawned and none are left alive. A 30 s break follows, then the next wave. The 10 s breather after switching the reactor on is treated as the first break.
+- Wave size keeps the old charge formula's range, now driven by wave number: `4 + 22 × wave/10`, so 6 in wave 1 and 26 in wave 10.
+- E at the reactor during a break sends the next wave early. **Anyone** can do it. The alternative, an all-ready vote like the lift's "everyone aboard" shortcut, was not built.
+- A failed attempt reports waves cleared instead of charge percent. The board's "best" is now the most waves cleared.
+- After a server restart, the saved wave count is kept and the attempt resumes with a fresh break. Enemies were never saved.
+- Also done here (queued item f): the reactor's E no longer needs empty hands. A click on the reactor with an item in hand still uses the item, so firing over the reactor stays firing.
+
+**Why.** Why waves at all is the developer's reason in ADR-039. Letting anyone skip is the simplest version that works with one player and doesn't stall on an idle teammate. It's the first thing to revisit if groups find it griefable. The empty-hands rule went for the developer's reason: it felt anti-human, and E has no conflict with firing.
+
+## ADR-041: A shared quota and one thing to buy with it, a sentry turret
+*2026-10-21 · Status: Accepted as a default (built by the agent; numbers untuned; awaiting review)*
+
+**Context.** ADR-039 fixed that the score doubles as currency, framed as a corp's supply quota, but not who holds it, how it's earned, or what it buys.
+
+**Decision (agent defaults).**
+- The quota is **shared by the crew**, not per player: the defences are everyone's, so is what pays for them. The alternative, per-player balances split by kills or contribution, was not built.
+- It's earned only by clearing a wave: 15, plus 1 for every second under par (par = 2.5 s per enemy in the wave). The other ADR-039 candidates (no-damage, no-death, streaks, per-kill points) are still unchosen.
+- The quota carries over between attempts, like boxes, and is cleared when a run is won. It's saved in the `world` table.
+- The shop is a supply terminal in the corridor, where the dead vending machine stood, so it can be reached in a break without the lift. Buying isn't limited to breaks: running back mid-wave is its own risk.
+- One item for sale: a sentry turret, 40 quota, at most 8 in the world. It's handed straight to the buyer and placed exactly like a box (one tile, grid snap, same no-build zones). It blocks and reroutes enemies like a box, and is chewed down in 10 hits (a box takes 6).
+- A placed turret fires a real projectile every 0.6 s at the nearest enemy it can see within 7 units. Its shots pass through the crew, and its kills count for nobody.
+
+**Why.** These are the smallest economy that closes the loop: clear waves, earn, buy defence, clear faster. They're meant to be judged in play, not argued in advance.
+
+## ADR-042: The garden becomes a fenced dig site among ruins
+*2026-10-21 · Status: Accepted (direction from the developer, queued 2026-10-20; layout and models by the agent, awaiting review)*
+
+**Context.** The developer queued three surface changes: out of sight should be black as underground, not cream canvas; the garden should be bigger, bounded by a see-through fence rather than by sight; and the dressing should tell a story, an ancient ruined facility being explored by a military-type organisation, keeping the garden's colour and tone.
+
+**Decision.**
+- Out of sight on the surface is black.
+- The garden grows from 26×18 to 34×24. The hedges become a chain-link fence on the same lines, which stops movement but not sight. Sight reaches 6 units past it, onto ruins nobody can walk to: broken walls, toppled drums, an old rusted gantry, rubble.
+- Inside the fence: stumps of a colonnade with moss in the joins and a lintel fallen in two (the ruin), and olive drop crates by the lift, a field tent and hazard tags on the fence (the corp). Colours, lawn, path and sun are unchanged.
+- Everything inside is kept below sight-blocking height. A first try with one tall pillar cast a wide black wedge across the sunny lawn, which the agent judged wrong for the surface.
+
+**Why.** The developer's reasons: the fence shows the edge while letting players see what's beyond it, and the dressing should say who's here and what came before.
+
+## ADR-043: Sight through the lift doors follows the leaves
+*2026-10-21 · Status: Accepted (the developer's request, queued 2026-10-20)*
+
+**Decision.** Each door leaf is its own sight blocker, placed where it's drawn and sized by how open the door is, so the view through the doorway narrows and widens with the gap. Before, the door blocked sight all at once the moment it began to close.
+
+**Why.** The developer wanted the door animation and what you can see to agree.
