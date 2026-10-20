@@ -258,7 +258,7 @@ const shiftRect = (r: Rect, dz: number): Rect => ({ ...r, minZ: r.minZ + dz, max
 export type LiftLevel = "top" | "bottom";
 export const LIFT_CARS: Record<LiftLevel, Rect> = { bottom: CAR_BOTTOM, top: shiftRect(CAR_BOTTOM, LIFT_DZ) };
 /** the garden on the surface: the car's door opens north into it */
-export const SURFACE: Rect = { minX: -13, maxX: 13, minZ: LIFT_CARS.top.minZ - 2 * WALL_HALF - 18, maxZ: LIFT_CARS.top.minZ - 2 * WALL_HALF };
+export const SURFACE: Rect = { minX: -17, maxX: 17, minZ: LIFT_CARS.top.minZ - 2 * WALL_HALF - 24, maxZ: LIFT_CARS.top.minZ - 2 * WALL_HALF };
 /** anything south of this is on the surface */
 export const LEVEL_SPLIT_Z = (CAR_BOTTOM.maxZ + SURFACE.minZ) / 2;
 export const levelOf = (z: number): LiftLevel => (z > LEVEL_SPLIT_Z ? "top" : "bottom");
@@ -503,23 +503,27 @@ export const WALLS: Obstacle[] = [...FACILITY_WALLS, ...LIFT_WALLS];
 
 const shiftObstacle = (o: Obstacle, dz: number): Obstacle => ({ ...o, z: o.z + dz });
 const S = SURFACE;
-const hedge = (x1: number, z1: number, x2: number, z2: number) => wallBetween(x1, z1, x2, z2, 0.55);
+/** chain-link: tall enough to stop anyone, open enough to see straight through */
+const fence = (x1: number, z1: number, x2: number, z2: number) => wallBetween(x1, z1, x2, z2, 1.1);
 /**
  * The surface: the same car, LIFT_DZ further south, with its own front
- * wall either side of the door (the lift house), and the garden's hedges.
+ * wall either side of the door (the lift house), and the perimeter fence
+ * the corp has thrown up round the dig site.
  */
 export const LIFT_HOUSE_WALLS: Obstacle[] = [
   ...LIFT_WALLS.map((w) => shiftObstacle(w, LIFT_DZ)),
   facilityWall(-CAR_BOTTOM.maxX - 2 * WALL_HALF, O + LIFT_DZ, -DOOR_HALF_WIDTH, O + LIFT_DZ),
   facilityWall(DOOR_HALF_WIDTH, O + LIFT_DZ, CAR_BOTTOM.maxX + 2 * WALL_HALF, O + LIFT_DZ),
 ];
-export const HEDGES: Obstacle[] = [
-  hedge(S.minX - WALL_HALF, S.minZ - 2 * WALL_HALF, S.minX - WALL_HALF, S.maxZ + 2 * WALL_HALF), // west
-  hedge(S.maxX + WALL_HALF, S.minZ - 2 * WALL_HALF, S.maxX + WALL_HALF, S.maxZ + 2 * WALL_HALF), // east
-  hedge(S.minX - 2 * WALL_HALF, S.minZ - WALL_HALF, S.maxX + 2 * WALL_HALF, S.minZ - WALL_HALF), // north
-  hedge(S.minX - 2 * WALL_HALF, S.maxZ + WALL_HALF, -C - WALL_HALF, S.maxZ + WALL_HALF), // south, either side of the lift house
-  hedge(C + WALL_HALF, S.maxZ + WALL_HALF, S.maxX + 2 * WALL_HALF, S.maxZ + WALL_HALF),
+export const FENCES: Obstacle[] = [
+  fence(S.minX - WALL_HALF, S.minZ - 2 * WALL_HALF, S.minX - WALL_HALF, S.maxZ + 2 * WALL_HALF), // west
+  fence(S.maxX + WALL_HALF, S.minZ - 2 * WALL_HALF, S.maxX + WALL_HALF, S.maxZ + 2 * WALL_HALF), // east
+  fence(S.minX - 2 * WALL_HALF, S.minZ - WALL_HALF, S.maxX + 2 * WALL_HALF, S.minZ - WALL_HALF), // north
+  fence(S.minX - 2 * WALL_HALF, S.maxZ + WALL_HALF, -C - WALL_HALF, S.maxZ + WALL_HALF), // south, either side of the lift house
+  fence(C + WALL_HALF, S.maxZ + WALL_HALF, S.maxX + 2 * WALL_HALF, S.maxZ + WALL_HALF),
 ];
+/** how far past the fence sight reaches on the surface: the ruins outside are part of the picture */
+export const SURFACE_VIEW_MARGIN = 6;
 
 /** every wall, as the room it faces: so a wall's two faces can be painted for the rooms either side */
 export type Zone = keyof typeof ROOMS | "lift" | "liftTop";
@@ -628,13 +632,14 @@ export const REACTOR_BODY: Obstacle = { x: REACTOR.x, z: REACTOR.z, halfX: 1.5, 
  * The garden's furniture: not the facility's art (the surface has its own,
  * see client/world/surface.ts), but solid all the same.
  */
-export type SurfaceKind = "tree" | "target" | "scoreboard" | "bench" | "planter";
+export type SurfaceKind = "tree" | "target" | "scoreboard" | "bench" | "planter" | "ruinPillar" | "ruinLintel" | "supplyCrates" | "fieldTent";
 export interface SurfaceFixture extends Obstacle {
   kind: SurfaceKind;
 }
 const sf = (kind: SurfaceKind, x: number, z: number, halfX: number, halfZ: number, halfHeight: number): SurfaceFixture => ({ kind, x, z, halfX, halfZ, halfHeight });
 export const SURFACE_FIXTURES: SurfaceFixture[] = [
-  // the range, north-west: targets to shoot at from the gun station
+  // the range, north-west: targets to shoot at from the gun station (the
+  // tutorial strip stays where it was relative to the north fence)
   sf("target", -11, S.minZ + 2.6, 0.45, 0.15, 0.8),
   sf("target", -8.5, S.minZ + 1.8, 0.45, 0.15, 0.8),
   sf("target", -6, S.minZ + 2.6, 0.45, 0.15, 0.8),
@@ -645,10 +650,22 @@ export const SURFACE_FIXTURES: SurfaceFixture[] = [
   sf("tree", 11.4, S.maxZ - 1.8, 0.3, 0.3, 1.5),
   sf("tree", 11.6, S.minZ + 1.5, 0.3, 0.3, 1.5),
   sf("tree", -2.2, S.minZ + 1.2, 0.3, 0.3, 1.5),
-  // a bench by the east hedge, planters either side of the lift
+  // a bench by the east fence, planters either side of the lift
   sf("bench", S.maxX - 0.45, S.minZ + 10, 0.35, 1.2, 0.25),
   sf("planter", -4.6, S.maxZ - 0.7, 0.9, 0.5, 0.35),
   sf("planter", 4.6, S.maxZ - 0.7, 0.9, 0.5, 0.35),
+  // what was here before: the stumps of an old colonnade, and a lintel that
+  // fell off it --- all kept under sight height (0.95), so they're seen over
+  // instead of throwing black wedges across a sunny lawn
+  sf("ruinPillar", -14.5, S.minZ + 9, 0.55, 0.55, 0.85),
+  sf("ruinPillar", -14.5, S.minZ + 14, 0.55, 0.55, 0.5),
+  sf("ruinPillar", -10.5, S.minZ + 14, 0.55, 0.55, 0.75),
+  sf("ruinLintel", -12.4, S.minZ + 11.6, 1.6, 0.4, 0.3),
+  sf("ruinPillar", 14.5, S.minZ + 3, 0.55, 0.55, 0.7),
+  // what the corp brought: a supply drop by the lift and a field tent for the crew
+  sf("supplyCrates", -8.5, S.maxZ - 2.2, 1.1, 0.6, 0.45),
+  sf("supplyCrates", 9.5, S.maxZ - 3, 0.6, 1.1, 0.45),
+  sf("fieldTent", 12.5, S.minZ + 15, 2, 1.6, 0.85),
 ];
 export const SCOREBOARD = SURFACE_FIXTURES.find((f) => f.kind === "scoreboard")!;
 /** how close to stand to read the scoreboard */
@@ -657,7 +674,7 @@ export const SCOREBOARD_RANGE = 2.8;
 export const OBSTACLES: Obstacle[] = [
   ...WALLS,
   ...LIFT_HOUSE_WALLS,
-  ...HEDGES,
+  ...FENCES,
   ...FIXTURES.map((f) => (f === REACTOR ? REACTOR_BODY : f)),
   ...SURFACE_FIXTURES,
 ];

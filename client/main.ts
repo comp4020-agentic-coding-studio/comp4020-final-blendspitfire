@@ -34,9 +34,9 @@ import {
   FIXTURES,
   REACTOR,
   BUILT_WALLS,
-  HEDGES,
   SURFACE,
   SURFACE_FIXTURES,
+  SURFACE_VIEW_MARGIN,
   SCOREBOARD,
   SCOREBOARD_RANGE,
   LIFT_CARS,
@@ -189,10 +189,16 @@ coreHalo.position.set(REACTOR.x, 2.1, REACTOR.z);
 scene.add(coreHalo);
 let objective: ObjectiveState = { active: false };
 
-// Line of sight, one mask per level: the facility's walls below, the lift
-// house and the hedges up top (trees and the scoreboard are seen past).
+// Line of sight, one mask per level: the facility's walls below; up top the
+// lift house and the tall ruins (trees, the scoreboard and the chain-link
+// fence are seen through, out to the ruins past it).
 const visibility = new VisibilityMask(sightBlockers(WALLS, FIXTURES), SOLID, SIGHT_BOUNDS);
-const SURFACE_SIGHT = { minX: SURFACE.minX - 1, maxX: SURFACE.maxX + 1, minZ: SURFACE.minZ - 1, maxZ: LIFT_CARS.top.maxZ + 1 };
+const SURFACE_SIGHT = {
+  minX: SURFACE.minX - SURFACE_VIEW_MARGIN,
+  maxX: SURFACE.maxX + SURFACE_VIEW_MARGIN,
+  minZ: SURFACE.minZ - SURFACE_VIEW_MARGIN,
+  maxZ: LIFT_CARS.top.maxZ + 1,
+};
 const surfaceVisibility = new VisibilityMask(
   sightBlockers(
     BUILT_WALLS.filter((w) => w.z > SURFACE.minZ - 2),
@@ -201,8 +207,6 @@ const surfaceVisibility = new VisibilityMask(
   [],
   SURFACE_SIGHT,
 );
-// the hedges are waist height: seen over, but they're the edge of the world
-void HEDGES;
 let activeVisibility = visibility;
 let viewLevel: "top" | "bottom" = "bottom";
 post.setMask(activeVisibility.postMask(FACILITY_WALL_HALF_HEIGHT * 2 - 0.05));

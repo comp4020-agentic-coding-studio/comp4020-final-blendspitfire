@@ -11,7 +11,8 @@ import type { Grade } from "./assets/grade.ts";
 // distortion, scanlines, colour fringing, noise and the odd rolling jolt).
 // And one for the surface: "paint", an impressionist look (Kuwahara brush
 // strokes, warm high-key grade, canvas grain) that fades in when the viewer
-// is up in the garden, in place of the facility's grade.
+// is up in the garden, in place of the facility's grade. What's out of sight
+// is black on both levels.
 //
 // Rendering into a target skips three.js's own tone mapping and sRGB
 // conversion (it only applies them when drawing to the canvas), so both
@@ -214,9 +215,8 @@ const fragment = /* glsl */ `
       // face shows, its top is black, so walls read as cut-outs into dark
       seen *= 1.0 - smoothstep(topCutoff - 0.05, topCutoff, world.y);
       if (muv.x < 0.0 || muv.x > 1.0 || muv.y < 0.0 || muv.y > 1.0) seen = 0.0;
-      // underground the unseen is black; on the surface it's bare canvas,
-      // the picture left unpainted where you can't see
-      c = mix(vec3(0.94, 0.9, 0.82) * paint, c, seen);
+      // unseen is black on both levels: the painted look is for what you can see
+      c = mix(vec3(0.0), c, seen);
     }
 
     vec2 v = (vUv - 0.5) * aspect;
