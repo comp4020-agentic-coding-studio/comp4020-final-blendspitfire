@@ -2,11 +2,11 @@
 
 > **AI-recorded.** Written and kept current automatically by the coding agent (Claude Code) as its session-to-session handoff, not written by hand. Terse on purpose: it's for the next agent session to pick up from. Decision history lives in [adr.md](adr.md).
 
-Updated: 2026-10-20 (surface merged into main; PROCESS + crit-10 reflection done; awaiting ship)
+Updated: 2026-10-21 (shipped: main pushed + deployed, live spec 117/117; crit-10 tag not yet made)
 
 ## Where we are
 - Crit 10 "Fly by instruments" cutoff Wed 2026-10-21 08:30 (tag crit-10 via /ship). Spec: multi-user, server-checked permissions written down with why (ADR-036), server logs of who did what, pod plays from URL alone while user narrates from `mise exec -- flyctl logs -a <repo>`, reflections/crit-10.md + PROCESS.md (both done 2026-10-20). Final project due 2026-11-09 12:00.
-- Everything up to 508ca16 is pushed/deployed. LOCAL ONLY on main (8 commits ahead of origin): ee12b19 identity/charge/board, d4c3fa3 surface/lift/UI, PROCESS rewrite, crit-10 reflection, handoff notes. User decides push / `/comp4020:ship` (tag crit-10); push to main = deploy.
+- Everything up to 93f097f is pushed and deployed (CI check + deploy green; spec passes against the live fly.dev app). Second-tab takeover now sends a "replaced" message before closing (Fly's proxy swallowed the 4000 close frame). Not done: crit-10 tag (`/comp4020:ship`); course plugin update 0.14.26 -> 0.14.30.
 - Branch `surface` is merged (fast-forward) into main; can be deleted.
 - Commit finished+verified work without asking (CLAUDE.md). Never push unasked.
 
