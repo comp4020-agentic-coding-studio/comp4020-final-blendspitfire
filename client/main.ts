@@ -1,10 +1,13 @@
 import * as THREE from "three";
 import { connect } from "./net.ts";
-import { CAMERA_ALTITUDE, CAMERA_FOV, configureRenderer, createTorch, glow, lampHalos, setupLighting } from "./look.ts";
+import { CAMERA_ALTITUDE, CAMERA_FOV, FACILITY_AMBIENT, configureRenderer, createTorch, glow, lampHalos, setupLighting } from "./look.ts";
 import { createPostProcess } from "./postprocess.ts";
 import { GRADE } from "./assets/grade.ts";
 import { VisibilityMask, canSee, sightBlockers } from "./visibility.ts";
 import { buildYardGuides } from "./floorGuides.ts";
+import { Prompts, type Prompt } from "./ui/prompts.ts";
+import { buildSurface, createSunlight, scoreboardScreen } from "./world/surface.ts";
+import { LiftDoors, liftPanelAt } from "./world/lift.ts";
 import {
   GUN_REST_HEIGHT,
   HELD_GUN_OFFSET,
@@ -18,7 +21,7 @@ import {
 import { REACTOR_LIVE, REACTOR_STANDBY, buildFacility, reactorCore } from "./models/facility.ts";
 import { mesh } from "./models/kit.ts";
 import { LAMPS, LAMP_SPECS, lampSource } from "./world/dressing.ts";
-import { ACCENT, STENCIL, DANGER, OK, EMIT_GREEN, EMIT_RED, EMIT_TRACER } from "../shared/palette.ts";
+import { STENCIL, DANGER, OK, EMIT_RED, EMIT_TRACER } from "../shared/palette.ts";
 import { INTERP_DELAY_MS, ServerClock, SnapshotBuffer, Tracer } from "./netsync.ts";
 import { CHARGE_MS, ENEMY_RADIUS, type DefenceState, type EnemyState } from "../shared/enemies.ts";
 import {
@@ -28,8 +31,24 @@ import {
   FACILITY_HALF,
   FACILITY_WALL_HALF_HEIGHT,
   FIXTURES,
-  GATE,
   REACTOR,
+  BUILT_WALLS,
+  HEDGES,
+  SURFACE,
+  SURFACE_FIXTURES,
+  SCOREBOARD,
+  SCOREBOARD_RANGE,
+  LIFT_CARS,
+  LIFT_DOORS,
+  LIFT_RIDE_MS,
+  inAnyCar,
+  inCar,
+  levelOf,
+  liftDoorObstacles,
+  liftVerdict,
+  noFireAt,
+  type LiftState,
+  type LiftVerdict,
   SIGHT_BOUNDS,
   SOLID,
   WALLS,
@@ -49,8 +68,6 @@ import {
   shotRange,
   activateVerdict,
   clampToPlayBounds,
-  hasPassedGate,
-  isInYard,
   obstaclesFor,
   placementVerdict,
   resolveObstacles,
@@ -138,7 +155,7 @@ const torch = createTorch(scene);
 scene.add(
   buildFacility({
     zones: ZONE_RECTS,
-    walls: WALLS,
+    walls: BUILT_WALLS,
     doorways: DOORWAYS,
     solids: SOLID,
     fixtures: FIXTURES,
@@ -149,6 +166,11 @@ scene.add(
 );
 scene.add(lampHalos());
 scene.add(buildYardGuides());
+scene.add(buildSurface());
+const sunlight = createSunlight(scene);
+const liftDoors = new LiftDoors();
+scene.add(liftDoors.group);
+let lift: LiftState = { at: "top", phase: "open" };
 
 // The reactor's core window glows dim red on standby and blue once live.
 const coreMaterial = new THREE.MeshBasicMaterial({ color: REACTOR_STANDBY });
@@ -160,36 +182,39 @@ coreHalo.position.set(REACTOR.x, 2.1, REACTOR.z);
 scene.add(coreHalo);
 let objective: ObjectiveState = { active: false };
 
+// Line of sight, one mask per level: the facility's walls below, the lift
+// house and the hedges up top (trees and the scoreboard are seen past).
 const visibility = new VisibilityMask(sightBlockers(WALLS, FIXTURES), SOLID, SIGHT_BOUNDS);
-post.setMask(visibility.postMask(FACILITY_WALL_HALF_HEIGHT * 2 - 0.05));
+const SURFACE_SIGHT = { minX: SURFACE.minX - 1, maxX: SURFACE.maxX + 1, minZ: SURFACE.minZ - 1, maxZ: LIFT_CARS.top.maxZ + 1 };
+const surfaceVisibility = new VisibilityMask(
+  sightBlockers(
+    BUILT_WALLS.filter((w) => w.z > SURFACE.minZ - 2),
+    SURFACE_FIXTURES.filter((f) => f.kind !== "tree" && f.kind !== "scoreboard"),
+  ),
+  [],
+  SURFACE_SIGHT,
+);
+// the hedges are waist height: seen over, but they're the edge of the world
+void HEDGES;
+let activeVisibility = visibility;
+let viewLevel: "top" | "bottom" = "bottom";
+post.setMask(activeVisibility.postMask(FACILITY_WALL_HALF_HEIGHT * 2 - 0.05));
+let lastDoorKey = "";
+/** shut lift doors block sight like walls: refreshed when the lift changes */
+function updateSightDoors(): void {
+  // a little wider than the opening, so sight can't slip past the leaves' edges
+  const shut = liftDoorObstacles(lift, false).map((o) => ({ ...o, halfX: o.halfX + 0.4 }));
+  const key = shut.map((o) => o.z).join(",");
+  if (key === lastDoorKey) return;
+  lastDoorKey = key;
+  visibility.setExtra(shut.filter((o) => o.z < SURFACE.minZ));
+  surfaceVisibility.setExtra(shut.filter((o) => o.z > SURFACE.minZ));
+}
 
-// The one-way gate, drawn for this viewer: open (green) until they're
-// through, then shut (red) behind them.
-const gateGroup = new THREE.Group();
-const gateBar = mesh(new THREE.BoxGeometry(GATE.halfX * 2, 0.14, 0.14).toNonIndexed(), "glossy");
-const gateBarColour = new THREE.Color(0x8a8f94);
-const barColours = new Float32Array(gateBar.geometry.attributes.position.count * 3);
-for (let i = 0; i < barColours.length; i += 3) gateBarColour.toArray(barColours, i);
-gateBar.geometry.setAttribute("color", new THREE.BufferAttribute(barColours, 3));
-gateBar.geometry.computeVertexNormals();
-gateGroup.add(gateBar);
-const gateLampMaterial = new THREE.MeshBasicMaterial({ color: EMIT_GREEN });
-for (const side of [-1, 1]) {
-  const l = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.16), gateLampMaterial);
-  l.position.set(side * (GATE.halfX + 0.05), 1.9, 0);
-  gateGroup.add(l);
-}
-gateGroup.position.set(GATE.x, 0, GATE.z);
-scene.add(gateGroup);
-let gateWasShut = false;
-function updateGate(shut: boolean): void {
-  // the bar slides down into place once you're through
-  const target = shut ? 0.9 : 2.2;
-  gateBar.position.y += (target - gateBar.position.y) * 0.15;
-  gateLampMaterial.color.setHex(shut ? EMIT_RED : EMIT_GREEN);
-  if (shut && !gateWasShut) flash("the gate shuts behind you");
-  gateWasShut = shut;
-}
+// The scoreboard in the garden: its little screen, redrawn when the board changes
+const scoreboard = scoreboardScreen();
+scene.add(scoreboard.mesh);
+scoreboard.draw(["waiting for scores…"]);
 
 // --- Players ---------------------------------------------------------------
 
@@ -199,7 +224,7 @@ interface RemotePlayer {
   snaps: SnapshotBuffer;
   /** where they are drawn this frame (also what box placement keeps clear of) */
   drawn: { x: number; z: number; rotation: number };
-  /** alive and through the gate: someone a spectator can watch */
+  /** alive and down in the facility: someone a spectator can watch */
   watchable: boolean;
 }
 
@@ -212,8 +237,8 @@ let myOut = false;
 let watchingId: string | undefined;
 /** wounds taken since we last (re)spawned, as the server sees it */
 let myWounds = 0;
-/** through the gate (as the server sees it); shuts the gate behind us */
-let myEntered = false;
+/** the warp count we've caught up with: moves are stamped with it (see PlayerState.warp) */
+let myWarp = 0;
 const remotes = new Map<string, RemotePlayer>();
 const serverClock = new ServerClock();
 const respawnEl = document.getElementById("respawn")!;
@@ -270,14 +295,9 @@ function renderLeaderboard(players: PlayerState[]): void {
       </div>`;
     })
     .join("");
-  placeBoard();
 }
 
-/** the arcade board sits just under the room list, whose height changes with who's on */
-function placeBoard(): void {
-  const el = document.getElementById("board");
-  if (el) el.style.top = `${leaderboardEl.getBoundingClientRect().bottom + 8}px`;
-}
+
 
 // --- Aim -------------------------------------------------------------------
 
@@ -341,7 +361,7 @@ let obstacles: Obstacle[] = OBSTACLES;
 /** a box's secondary action toggles this; it stays put between boxes */
 let gridSnap = false;
 
-const outlineInReach = new THREE.MeshBasicMaterial({ color: ACCENT, side: THREE.BackSide, transparent: true });
+const outlineInReach = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.BackSide, transparent: true });
 const outlineOutOfReach = new THREE.MeshBasicMaterial({
   color: STENCIL,
   side: THREE.BackSide,
@@ -519,7 +539,7 @@ let refusedAt = -Infinity;
 
 const hoverRing = new THREE.Mesh(
   new THREE.RingGeometry(0.75, 0.9, 32),
-  new THREE.MeshBasicMaterial({ color: ACCENT, transparent: true, depthWrite: false }),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false }),
 );
 hoverRing.rotation.x = -Math.PI / 2;
 hoverRing.visible = false;
@@ -532,7 +552,12 @@ function holderMesh(playerId: string): THREE.Object3D | undefined {
 
 function stepItemVisuals(time: number): void {
   const dead = isDead();
-  const hovered = dead || myHeldItem() ? undefined : hoveredItem();
+  // what's lit up: the item under the cursor, or failing that the one E would pick up
+  let hovered = dead || myHeldItem() ? undefined : hoveredItem();
+  if (!hovered && !dead) {
+    const t = eTarget();
+    if (t?.kind === "item") hovered = { item: t.item, inReach: true };
+  }
   const pulse = 0.6 + 0.4 * Math.sin(time * 6);
   outlineInReach.opacity = pulse;
 
@@ -540,7 +565,7 @@ function stepItemVisuals(time: number): void {
     const { state, lying, held, outline } = item;
     const isHovered = hovered?.item === item;
     outline.visible = isHovered;
-    if (isHovered) outline.material = hovered.inReach ? outlineInReach : outlineOutOfReach;
+    if (hovered && isHovered) outline.material = hovered.inReach ? outlineInReach : outlineOutOfReach;
 
     if (state.heldBy === undefined) {
       held.removeFromParent();
@@ -599,11 +624,135 @@ function hoveringReactor(): boolean {
 }
 
 const ACTIVATE_TIPS: Record<string, string> = {
-  ok: "click to activate the reactor",
+  ok: "activate the reactor",
   "too far": "move closer",
   "hands full": "hands full — drop it first (Q)",
   "already active": "already active — defend it",
 };
+
+// --- Interaction: E, and the floating prompts ---------------------------------
+// The one key for "use the thing next to me": pick up the nearest item,
+// press the lift button, switch the reactor on, read the scoreboard. A tap,
+// never a hold, so it's fine while walking. The same things still respond
+// to a click (an item or the reactor under the cursor), for anyone who'd
+// rather point.
+//
+// Whatever E would act on right now gets a prompt pinned to it
+// (client/ui/prompts.ts): white when it'll work, grey with the reason when
+// it won't. Being out of range of everything shows nothing.
+
+type Target =
+  | { kind: "item"; item: ClientItem }
+  | { kind: "reactor" }
+  | { kind: "lift" }
+  | { kind: "board" };
+
+const prompts = new Prompts();
+/** the scoreboard overlay is open */
+let boardOpen = false;
+
+const LIFT_LABELS: Record<LiftVerdict, string> = {
+  send: "send the lift",
+  call: "call the lift",
+  "too far": "move closer",
+  "attempt on": "locked — attempt in progress",
+  busy: "lift on its way",
+  "already leaving": "leaving soon",
+};
+
+function nearestItem(): ClientItem | undefined {
+  if (!localMesh) return undefined;
+  let best: ClientItem | undefined;
+  let bestD = PICKUP_RANGE;
+  for (const item of items.values()) {
+    if (item.state.heldBy !== undefined) continue;
+    const d = Math.hypot(item.state.x - localMesh.position.x, item.state.z - localMesh.position.z);
+    if (d < bestD) {
+      best = item;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+const nearLiftButton = (): boolean => {
+  if (!localMesh) return false;
+  const level = levelOf(localMesh.position.z);
+  const p = localMesh.position;
+  if (inCar(level, p.x, p.z)) return true;
+  const door = LIFT_DOORS[level];
+  return Math.hypot(p.x - door.x, p.z - door.z) < 2.5 && p.z < door.z;
+};
+
+/** what E would act on, nearest first: the lift (when in or at it), an item, the reactor, the scoreboard */
+function eTarget(): Target | undefined {
+  if (!localMesh || isDead()) return undefined;
+  const p = localMesh.position;
+  if (nearLiftButton()) return { kind: "lift" };
+  const held = myHeldItem();
+  if (!held) {
+    const item = nearestItem();
+    if (item) return { kind: "item", item };
+  }
+  if (Math.hypot(p.x - REACTOR.x, p.z - REACTOR.z) <= REACTOR.halfX + PICKUP_RANGE) return { kind: "reactor" };
+  if (Math.hypot(p.x - SCOREBOARD.x, p.z - SCOREBOARD.z) <= SCOREBOARD_RANGE) return { kind: "board" };
+  return undefined;
+}
+
+function useTarget(target: Target | undefined): void {
+  if (!target || !localMesh) return;
+  if (target.kind === "item") net.pickup(target.item.state.id);
+  else if (target.kind === "reactor") {
+    const verdict = activateVerdict(localMesh.position, !!myHeldItem(), objective);
+    if (verdict === "ok") net.activate();
+    else prompts.nope("reactor");
+  } else if (target.kind === "lift") {
+    const verdict = liftVerdict(localMesh.position, lift, objective);
+    if (verdict === "send" || verdict === "call") net.lift();
+    else prompts.nope("lift");
+  } else if (target.kind === "board") toggleBoard();
+}
+
+const v3 = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+
+/** every prompt to show this frame */
+function currentPrompts(): Prompt[] {
+  const out: Prompt[] = [];
+  if (!localMesh || isDead()) return out;
+  const target = eTarget();
+  const p = localMesh.position;
+  const now = serverClock.now();
+  if (target?.kind === "item") {
+    const s = target.item.state;
+    out.push({ id: `item:${s.id}`, at: v3(s.x, 0.4, s.z), key: "E", label: `pick up ${s.kind === "gun" ? "rifle" : "box"}` });
+  } else if (target?.kind === "reactor") {
+    const verdict = activateVerdict(p, !!myHeldItem(), objective);
+    if (verdict !== "already active") out.push({ id: "reactor", at: v3(REACTOR.x - 1.4, 2, REACTOR.z - 1.4), key: "E", label: ACTIVATE_TIPS[verdict], enabled: verdict === "ok" });
+  } else if (target?.kind === "board") {
+    out.push({ id: "board", at: v3(SCOREBOARD.x - 1.2, 2.6, SCOREBOARD.z), key: "E", label: boardOpen ? "close scores" : "read scores" });
+  } else if (target?.kind === "lift") {
+    const level = levelOf(p.z);
+    const verdict = liftVerdict(p, lift, objective);
+    let detail: string | undefined;
+    if (verdict === "already leaving" && lift.departAt) detail = `doors close in ${Math.max(0, Math.ceil((lift.departAt - now) / 1000))}s`;
+    if (verdict === "send") detail = level === "top" ? "down to the facility" : "back up — leaves this attempt";
+    if (verdict === "busy" && lift.phase === "moving") detail = `${Math.max(0, Math.ceil(((lift.until ?? now) - now) / 1000))}s`;
+    out.push({ id: "lift", at: liftPanelAt(level), key: "E", label: LIFT_LABELS[verdict], enabled: verdict === "send" || verdict === "call", detail });
+  }
+  // the lift's countdown hangs over its door for everyone on that level, button or not
+  if (lift.phase === "open" && lift.departAt && levelOf(p.z) === lift.at && target?.kind !== "lift") {
+    const d = LIFT_DOORS[lift.at];
+    out.push({ id: "lift-count", at: v3(d.x - 1.6, 2.4, d.z), label: `lift leaves in ${Math.max(0, Math.ceil((lift.departAt - now) / 1000))}s` });
+  }
+  // the held box: where it'll go, or why it can't
+  const held = myHeldItem();
+  if (held?.state.kind === "box") {
+    const t = boxTarget();
+    const verdict = boxVerdict(t);
+    if (verdict !== "ok") out.push({ id: "place", at: v3(t.x, 0.9, t.z), key: "", label: verdict, enabled: false });
+  }
+  return out;
+}
 
 function renderPointerFeedback(): void {
   let cursor = "default";
@@ -611,25 +760,12 @@ function renderPointerFeedback(): void {
   const held = myHeldItem();
   if (localMesh && !isDead()) {
     if (hoveringReactor()) {
-      const verdict = activateVerdict(localMesh.position, !!held, objective);
-      tip = ACTIVATE_TIPS[verdict];
-      if (verdict === "ok") cursor = "pointer";
+      if (activateVerdict(localMesh.position, !!held, objective) === "ok") cursor = "pointer";
     } else if (!held) {
-      const hovered = hoveredItem();
-      if (hovered?.inReach) {
-        cursor = "pointer";
-        tip = `click to pick up`;
-      } else if (hovered) {
-        tip = "move closer";
-      } else if (myEntered && Math.hypot(aimPoint.x - GATE.x, aimPoint.z - GATE.z) < 2.5) {
-        tip = "one way — the safe room is behind you";
-      }
+      if (hoveredItem()?.inReach) cursor = "pointer";
     } else if (held.state.kind === "gun") {
       cursor = "crosshair";
-      if (isInYard(localMesh.position.x, localMesh.position.z)) tip = "no firing in the safe room";
-    } else if (held.state.kind === "box") {
-      const verdict = boxVerdict(boxTarget());
-      if (verdict !== "ok") tip = verdict;
+      if (noFireAt(localMesh.position.x, localMesh.position.z)) tip = "no firing in the lift";
     }
   }
   if (performance.now() < flashUntil) tip = flashText;
@@ -637,6 +773,7 @@ function renderPointerFeedback(): void {
   tipEl.textContent = tip;
   tipEl.style.display = tip ? "block" : "none";
   tipEl.style.transform = `translate(${pointerPx.x + 16}px, ${pointerPx.y + 14}px)`;
+  prompts.render(currentPrompts(), camera);
 }
 
 let lastControlsText = "";
@@ -646,7 +783,7 @@ function renderControls(): void {
   if (myOut) {
     text = "you're out until this attempt ends";
   } else if (!held) {
-    text = "WASD to move · click an item next to you to pick it up";
+    text = "WASD move · E use";
   } else {
     const info = ITEM_KINDS[held.state.kind];
     const parts = [held.state.kind === "gun" ? "click / hold: fire" : `click: ${info.primaryLabel}`];
@@ -655,7 +792,7 @@ function renderControls(): void {
       parts.push(`right-click / Space: ${info.secondaryLabel}${state}`);
     }
     parts.push(held.state.kind === "box" ? "Q: place" : "Q: drop");
-    text = `WASD to move · ${parts.join(" · ")}`;
+    text = `WASD move · ${parts.join(" · ")}`;
   }
   if (text !== lastControlsText) {
     controlsEl.textContent = text;
@@ -711,7 +848,7 @@ const net = connect({
     myRespawnAt = you.respawnAt ?? 0;
     myOut = !!you.out;
     myWounds = you.wounds ?? 0;
-    myEntered = !!you.entered;
+    myWarp = you.warp ?? 0;
     localMesh = makeCharacter(you.color, true);
     localMesh.position.set(you.x, 0, you.z);
     for (const p of players) {
@@ -730,6 +867,7 @@ const net = connect({
     const seenPlayers = new Set<string>();
     objective = state.objective;
     defenceState = state.defence;
+    if (state.lift) lift = state.lift;
     for (const line of state.announcements ?? []) showBanner(line);
     for (const p of players) {
       if (p.id === myId) {
@@ -738,10 +876,17 @@ const net = connect({
         const wounds = p.wounds ?? 0;
         if (wounds > myWounds) onWounded(wounds);
         myWounds = wounds;
-        myEntered = !!p.entered;
+        // the server moved us (a respawn, a lift ride): jump there now, and
+        // stamp moves from here on with the new count
+        if (localMesh && (p.warp ?? 0) !== myWarp) {
+          myWarp = p.warp ?? 0;
+          localMesh.position.x = p.x;
+          localMesh.position.z = p.z;
+          continue;
+        }
         // the server is authoritative: if it has us somewhere a frame of
-        // walking couldn't explain (a respawn, or a move it refused), snap
-        // there; small differences are just our own prediction running ahead
+        // walking couldn't explain (a move it refused), snap there; small
+        // differences are just our own prediction running ahead
         if (localMesh && Math.hypot(p.x - localMesh.position.x, p.z - localMesh.position.z) > 2) {
           localMesh.position.x = p.x;
           localMesh.position.z = p.z;
@@ -902,8 +1047,8 @@ let triggerHeld = false;
 /** one shot if the gun's ready; `clicked` is a fresh press, the only time a refusal is worth saying */
 function fireGun(clicked: boolean): void {
   if (!localMesh) return;
-  if (isInYard(localMesh.position.x, localMesh.position.z)) {
-    if (clicked) flash("no firing in the safe room");
+  if (noFireAt(localMesh.position.x, localMesh.position.z)) {
+    if (clicked) flash("no firing in the lift");
     return;
   }
   const now = performance.now();
@@ -973,6 +1118,8 @@ window.addEventListener("keydown", (e) => {
   if (e.repeat) return;
   if (key === " ") secondary();
   else if (key === "q") drop();
+  else if (key === "e") useTarget(eTarget());
+  else if (key === "escape" && boardOpen) toggleBoard();
 });
 
 function addOrUpdateRemote(p: PlayerState, t: number): void {
@@ -1094,9 +1241,9 @@ function animate(): void {
           localMesh.position.x + dx * woundedSpeed(myWounds) * dt,
           localMesh.position.z + dz * woundedSpeed(myWounds) * dt,
         );
-        // predict the gate shutting the moment we're through, rather than a round-trip later
-        if (!myEntered && hasPassedGate(localMesh.position.z)) myEntered = true;
-        const resolved = resolveObstacles(next.x, next.z, obstaclesFor(myEntered, obstacles));
+        const p = localMesh.position;
+        const lockedOut = objective.active && levelOf(p.z) === "bottom" && !inCar("bottom", p.x, p.z);
+        const resolved = resolveObstacles(next.x, next.z, obstaclesFor(lift, lockedOut, obstacles));
         localMesh.position.x = resolved.x;
         localMesh.position.z = resolved.z;
       }
@@ -1104,7 +1251,7 @@ function animate(): void {
       updateAim();
 
       if (sinceLastSend >= MOVE_SEND_INTERVAL_MS) {
-        net.sendMove({ x: localMesh.position.x, z: localMesh.position.z, rotation: aimRotation });
+        net.sendMove({ x: localMesh.position.x, z: localMesh.position.z, rotation: aimRotation, warp: myWarp });
         sinceLastSend = 0;
       }
     }
@@ -1122,7 +1269,8 @@ function animate(): void {
     camera.lookAt(eye.x, 0, eye.z);
     torch.aim(eye.x, eye.z, eye.rotation);
     torch.light.visible = !dead || !!watched;
-    visibility.update(renderer, eye.x, eye.z);
+    stepLevel(eye.x, eye.z, dt);
+    activeVisibility.update(renderer, eye.x, eye.z);
     viewPoint.set(eye.x, 0, eye.z);
   }
   renderSpectating(dt);
@@ -1138,8 +1286,9 @@ function animate(): void {
   coreMaterial.color.setHex(coreColour);
   coreHalo.material.color.setHex(coreColour);
   coreHalo.material.opacity = objective.active ? 0.7 + 0.2 * Math.sin(time * 2) : 0.3 + 0.15 * Math.sin(time * 1.3);
-  updateGate(myEntered);
-  gateGroup.visible = true;
+  liftDoors.update(lift, serverClock.now());
+  updateSightDoors();
+  stepRide(dt);
 
   stepRemotes();
   stepEnemies(time);
@@ -1158,6 +1307,65 @@ function animate(): void {
   requestAnimationFrame(animate);
 }
 
+// --- Levels and the ride --------------------------------------------------------
+// Which level the viewer is on decides the light (the sun up top, the
+// facility's lamps and torch below), the line-of-sight mask, and the grade
+// (paint up top). The swap happens while the lift's shut and moving, inside
+// the identical car, and the grade cross-fades over the ride, so stepping
+// out at the bottom is the first you see of the dark.
+
+let paintLevel = 1;
+function stepLevel(x: number, z: number, dt: number): void {
+  const level = levelOf(z);
+  if (level !== viewLevel) {
+    viewLevel = level;
+    activeVisibility = level === "top" ? surfaceVisibility : visibility;
+    activeVisibility.invalidate();
+    // underground the wall tops are out of sight; outdoors there's nothing overhead to hide (tree crowns stand above the walls)
+    post.setMask(activeVisibility.postMask(level === "top" ? 50 : FACILITY_WALL_HALF_HEIGHT * 2 - 0.05));
+  }
+  const up = level === "top";
+  // in the car the light is the car's own bulbs whichever end it's at; the
+  // sun and the paint only once you step out (or, riding, as you arrive)
+  const inside = inAnyCar(x, z);
+  sunlight.setOn(up);
+  sunlight.follow(x, z);
+  const want = up && !inside ? 1 : up && lift.phase === "open" && lift.at === "top" ? 0.6 : 0;
+  paintLevel += (want - paintLevel) * Math.min(1, dt * 2.5);
+  post.effects.paint = paintLevel < 0.01 ? 0 : paintLevel;
+  lighting.ambient.intensity = FACILITY_AMBIENT * (1 - paintLevel);
+  // no headlamp in the sun
+  torch.light.intensity = 18 * (1 - paintLevel);
+}
+
+/** while the car's moving with us in it: a gentle sway, so the ride is felt */
+let rideShake = 0;
+function stepRide(dt: number): void {
+  const p = localMesh?.position;
+  const riding = !!p && lift.phase === "moving" && inCar(lift.at, p.x, p.z);
+  rideShake += ((riding ? 1 : 0) - rideShake) * Math.min(1, dt * 4);
+  if (rideShake > 0.01) {
+    const t = performance.now() / 1000;
+    camera.position.x += Math.sin(t * 23) * 0.025 * rideShake;
+    camera.position.z += Math.sin(t * 17 + 1) * 0.02 * rideShake;
+    camera.position.y += Math.sin(t * 9) * 0.08 * rideShake;
+  }
+  rideEl.style.opacity = riding ? "1" : "0";
+  if (riding) {
+    const left = Math.max(0, (lift.until ?? 0) - serverClock.now()) / LIFT_RIDE_MS;
+    const down = lift.at === "bottom";
+    rideFill.style.height = `${((down ? 1 - left : left) * 100).toFixed(1)}%`;
+    rideLabel.textContent = down ? "descending" : "ascending";
+  }
+}
+// the ride indicator: a thin vertical gauge down the right edge
+const rideEl = document.createElement("div");
+rideEl.className = "ui-ride";
+rideEl.innerHTML = '<div class="ui-ride-track"><div class="ui-ride-fill"></div></div><div class="ui-ride-label"></div>';
+document.body.appendChild(rideEl);
+const rideFill = rideEl.querySelector<HTMLDivElement>(".ui-ride-fill")!;
+const rideLabel = rideEl.querySelector<HTMLDivElement>(".ui-ride-label")!;
+
 // Wounds: a hit doesn't take a bar down, it leaves something you feel. A
 // red flash and a line saying what's wrong the moment it lands; after
 // that, the effect itself --- slower legs, a swimming view (the post
@@ -1169,8 +1377,7 @@ hurtFlashEl.style.cssText =
   "position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center, rgba(160,0,0,0) 40%, rgba(170,10,10,0.55) 100%);opacity:0;transition:opacity 0.5s";
 document.body.appendChild(hurtFlashEl);
 const woundsEl = document.createElement("div");
-woundsEl.style.cssText =
-  "position:fixed;left:12px;bottom:44px;padding:6px 10px;background:rgba(6,8,12,0.72);border-radius:4px;font:700 11px system-ui,sans-serif;letter-spacing:0.06em;color:#dfe8f2;text-transform:uppercase;pointer-events:none;display:none";
+woundsEl.className = "ui-wounds";
 document.body.appendChild(woundsEl);
 const forcedDaze = params.has("daze") ? Number(params.get("daze")) || 0 : undefined;
 let dazeLevel = 0;
@@ -1196,22 +1403,19 @@ function stepWounds(dt: number): void {
   if (wounds === lastWoundsShown) return;
   lastWoundsShown = wounds;
   woundsEl.style.display = wounds > 0 ? "block" : "none";
-  const pips = Array.from({ length: MAX_WOUNDS + 1 }, (_, i) =>
-    `<span style="display:inline-block;width:10px;height:10px;margin-right:4px;border-radius:2px;background:${i < wounds ? "#ff3346" : "rgba(223,232,242,0.25)"}"></span>`,
-  ).join("");
-  woundsEl.innerHTML = `<div style="margin-bottom:4px">${pips}</div>` + WOUNDS.slice(0, wounds).map((w) => `<div style="opacity:0.8">${w.label}</div>`).join("");
+  const pips = Array.from({ length: MAX_WOUNDS + 1 }, (_, i) => `<span class="pip${i < wounds ? " hit" : ""}"></span>`).join("");
+  woundsEl.innerHTML = `<div style="margin-bottom:4px">${pips}</div>` + WOUNDS.slice(0, wounds).map((w) => `<div class="w">${w.label}</div>`).join("");
 }
 
 // Spectating. Out for the rest of an attempt, you watch a teammate who's
 // still in it --- through their eyes: their view, their torch, their line
 // of sight --- on an old CRT (see client/postprocess.ts). Click for the
 // next teammate. With nobody left to watch, the view rests where you fell
-// until the attempt ends and everyone's back in the safe room.
+// until the attempt ends and everyone's back up in the garden.
 // ?crt=0..1 forces the CRT, for checking it.
 const viewPoint = new THREE.Vector3(0, 0, 24);
 const spectateEl = document.createElement("div");
-spectateEl.style.cssText =
-  "position:fixed;left:50%;bottom:64px;transform:translateX(-50%);padding:6px 14px;background:rgba(6,8,12,0.72);border-radius:4px;font:700 12px ui-monospace,monospace;letter-spacing:0.12em;color:#cfe8d0;text-transform:uppercase;pointer-events:none;display:none;text-align:center";
+spectateEl.className = "ui-spectate";
 document.body.appendChild(spectateEl);
 const forcedCrt = params.has("crt") ? Number(params.get("crt")) || 0 : undefined;
 let crtLevel = 0;
@@ -1250,14 +1454,13 @@ function renderSpectating(dt: number): void {
 // across the top of the screen --- the one number the whole room is
 // fighting over --- and a countdown between waves.
 const hudEl = document.createElement("div");
-hudEl.style.cssText =
-  "position:fixed;top:12px;left:50%;transform:translateX(-50%);width:min(360px,70vw);padding:8px 12px;background:rgba(6,8,12,0.72);border-radius:4px;font:700 12px system-ui,sans-serif;letter-spacing:0.06em;color:#dfe8f2;text-transform:uppercase;pointer-events:none;display:none;text-align:center";
+hudEl.className = "ui-hud";
 hudEl.innerHTML =
-  '<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>charge</span><span id="hud-charge-pct"></span></div>' +
-  '<div style="height:12px;background:rgba(10,14,20,0.8);border:1px solid rgba(143,224,138,0.55);border-radius:2px;overflow:hidden;margin-bottom:8px"><div id="hud-charge" style="height:100%;width:0;background:#8fe08a;transition:width 0.3s"></div></div>' +
-  '<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>reactor</span><span id="hud-wave"></span></div>' +
-  '<div style="height:8px;background:rgba(10,14,20,0.8);border:1px solid rgba(90,168,255,0.5);border-radius:2px;overflow:hidden"><div id="hud-hp" style="height:100%;width:100%;background:#5aa8ff;transition:width 0.2s"></div></div>' +
-  '<div id="hud-next" style="margin-top:4px;opacity:0.75"></div>';
+  '<div class="line"><span>charge</span><span id="hud-charge-pct"></span></div>' +
+  '<div class="bar"><div id="hud-charge" style="width:0"></div></div>' +
+  '<div class="line"><span>reactor</span><span id="hud-wave"></span></div>' +
+  '<div class="bar hp"><div id="hud-hp" style="width:100%"></div></div>' +
+  '<div id="hud-next" class="next"></div>';
 document.body.appendChild(hudEl);
 const hudHp = hudEl.querySelector<HTMLDivElement>("#hud-hp")!;
 const hudWave = hudEl.querySelector<HTMLSpanElement>("#hud-wave")!;
@@ -1268,26 +1471,32 @@ function renderDefenceHud(): void {
   hudEl.style.display = objective.active ? "block" : "none";
   if (!objective.active) return;
   const charge = defenceState.charge ?? 0;
-  hudCharge.style.width = `${(charge * 100).toFixed(1)}%`;
+  hudCharge.style.width = `calc(${(charge * 100).toFixed(1)}% - 2px)`;
   const left = Math.ceil(((1 - charge) * CHARGE_MS) / 1000);
   hudChargePct.textContent = `${Math.floor(charge * 100)}% · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} to stable`;
   const hp = defenceState.reactorHealth;
-  hudHp.style.width = `${Math.round(hp * 100)}%`;
-  // the bar turns from the reactor's blue to alarm red as it's worn down
-  hudHp.style.background = hp > 0.5 ? "#5aa8ff" : hp > 0.25 ? "#ffa02e" : "#ff3346";
+  hudHp.style.width = `calc(${Math.round(hp * 100)}% - 2px)`;
+  // white until it's in danger, then alarm red
+  hudHp.classList.toggle("low", hp <= 0.3);
   hudWave.textContent = defenceState.wave > 0 ? `wave ${defenceState.wave}` : "";
   const next = defenceState.nextWaveAt;
   const nextIn = next ? Math.max(0, Math.ceil((next - serverClock.now()) / 1000)) : 0;
   hudNext.textContent = [enemies.size ? `${enemies.size} hostile` : "", next ? `next wave ${nextIn}s` : ""].filter(Boolean).join(" · ");
 }
 
-// The arcade board, under the room list: how this run is going (attempts so
+// The scoreboard: a screen in the garden (client/world/surface.ts) that
+// opens full-screen when you use it --- how this run is going (attempts so
 // far, the best charge any got to), the all-time top players, and the runs
 // that were won. Kept by the server across restarts; sent when it changes.
 const boardEl = document.createElement("div");
 boardEl.id = "board";
-leaderboardEl.after(boardEl);
+document.body.appendChild(boardEl);
+function toggleBoard(): void {
+  boardOpen = !boardOpen;
+  boardEl.classList.toggle("open", boardOpen);
+}
 function renderBoard(b: BoardMessage): void {
+  scoreboard.draw(b.top.slice(0, 3).map((p, i) => `${i + 1} ${p.name.slice(0, 14).padEnd(14)} ${p.kills}`));
   const runLine = b.run.attempts
     ? `run: attempt ${b.run.attempts}${b.run.best ? ` · best ${Math.floor(b.run.best * 100)}%` : ""}`
     : "run: no attempts yet";
@@ -1298,17 +1507,21 @@ function renderBoard(b: BoardMessage): void {
     .map((w) => `<div class="row won"><span>#${w.n}</span><span>${w.attempts} attempt(s)</span><span class="score">${escapeText(w.crew.slice(0, 3).join(", "))}${w.crew.length > 3 ? "…" : ""}</span></div>`)
     .join("");
   boardEl.innerHTML =
+    '<div class="board-panel">' +
     `<div class="title">high scores</div><div class="run">${runLine}</div>` +
     (rows || '<div class="row dim">nobody yet</div>') +
     (wins ? `<div class="title">reactor stabilised</div>${wins}` : "") +
-    '<div class="legend">★ runs won · k kills · b boxes placed</div>';
-  placeBoard();
+    '<div class="legend">★ runs won · k kills · b boxes placed</div>' +
+    '<div class="legend">E / Esc to close</div></div>';
 }
+// walking away closes it
+setInterval(() => {
+  if (boardOpen && eTarget()?.kind !== "board") toggleBoard();
+}, 200);
 
 // The objective banner: a line across the top of the screen when the reactor goes live.
 const bannerEl = document.createElement("div");
-bannerEl.style.cssText =
-  "position:fixed;top:18%;left:50%;transform:translateX(-50%);padding:10px 22px;font:700 20px system-ui,sans-serif;letter-spacing:0.08em;color:#e6f0ff;background:rgba(10,14,20,0.75);border:1px solid rgba(90,168,255,0.6);border-radius:4px;pointer-events:none;opacity:0;transition:opacity 0.6s;text-transform:uppercase";
+bannerEl.className = "ui-banner";
 document.body.appendChild(bannerEl);
 function showBanner(text: string): void {
   bannerEl.textContent = text;

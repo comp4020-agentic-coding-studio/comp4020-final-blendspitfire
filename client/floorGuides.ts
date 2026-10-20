@@ -1,8 +1,8 @@
 import * as THREE from "three";
 import { ACCENT, STENCIL, hex } from "../shared/palette.ts";
-import { FACILITY_HALF, STATIONS } from "../shared/protocol.ts";
+import { LIFT_DOORS, SPAWN_POINTS, STATIONS } from "../shared/protocol.ts";
 
-// The yard's tutorial: controls painted on the floor right next to the
+// The garden's tutorial: controls painted on the floor right next to the
 // thing they're about, so a new player reads them where they need them
 // instead of in a menu. Each guide is drawn with canvas 2D (keycaps, a
 // mouse, a trackpad, arrows, text) into a texture on a flat decal --- the
@@ -128,15 +128,18 @@ function stationMark(x: number, z: number): THREE.Mesh {
 
 export function buildYardGuides(): THREE.Group {
   const group = new THREE.Group();
+  const spawn = SPAWN_POINTS[1];
 
-  // movement, just above the spawn strip
+  // movement and the use key, just north of where everyone arrives
   group.add(
-    decal(3.2, 1.4, 0, 24.2, (ctx) => {
+    decal(4.4, 1.4, spawn.x, spawn.z - 1.6, (ctx) => {
       key(ctx, "W", 0.62, 0.1);
       key(ctx, "A", 0.06, 0.68);
       key(ctx, "S", 0.62, 0.68);
       key(ctx, "D", 1.18, 0.68);
       text(ctx, "move", 1.95, 0.7, 0.38);
+      key(ctx, "E", 3.0, 0.4);
+      text(ctx, "use", 3.62, 0.66, 0.38);
     }),
   );
 
@@ -145,24 +148,24 @@ export function buildYardGuides(): THREE.Group {
     const x = station.x;
     // how to pick it up, right below the item
     group.add(
-      decal(3.4, 0.9, x, 23.65, (ctx) => {
-        mouse(ctx, 0.35, 0.12, "left");
+      decal(3.4, 0.9, x, station.z + 1.65, (ctx) => {
+        key(ctx, "E", 0.32, 0.2);
         text(ctx, "pick up", 1.0, 0.45);
       }),
     );
     if (station.kind === "gun") {
       group.add(
-        decal(3.4, 1.5, x, 25.0, (ctx) => {
+        decal(3.4, 1.5, x, station.z + 3.0, (ctx) => {
           mouse(ctx, 0.35, 0.05, "left");
           text(ctx, "fire", 1.0, 0.25);
-          text(ctx, "hold for auto · not in the safe room", 1.0, 0.55, 0.2);
+          text(ctx, "hold for auto · try the targets", 1.0, 0.55, 0.2);
           key(ctx, "Q", 0.32, 0.9);
           text(ctx, "drop", 1.0, 1.15);
         }),
       );
     } else {
       group.add(
-        decal(3.4, 1.5, x, 25.0, (ctx) => {
+        decal(3.4, 1.5, x, station.z + 3.0, (ctx) => {
           mouse(ctx, 0.35, 0.05, "left");
           text(ctx, "place", 1.0, 0.38);
           mouse(ctx, 0.08, 0.8, "right");
@@ -174,12 +177,17 @@ export function buildYardGuides(): THREE.Group {
     }
   }
 
-  // the way in, at the gate: and the warning that there's no coming back
+  // the way down, in front of the lift door
+  const door = LIFT_DOORS.top;
   group.add(
-    decal(3.2, 1.6, 0, FACILITY_HALF + 1.9, (ctx) => {
-      arrowUp(ctx, 0.5, 0.15, 1.0);
-      text(ctx, "facility", 0.95, 0.5, 0.4);
-      text(ctx, "one way — no coming back", 0.95, 1.0, 0.2);
+    decal(3.4, 1.4, door.x, door.z - 2.2, (ctx) => {
+      ctx.save();
+      ctx.translate(0.5, 0.7);
+      ctx.rotate(Math.PI);
+      arrowUp(ctx, 0, -0.55, 1.0);
+      ctx.restore();
+      text(ctx, "lift", 0.95, 0.45, 0.4);
+      text(ctx, "down to the facility", 0.95, 0.95, 0.2);
     }),
   );
 

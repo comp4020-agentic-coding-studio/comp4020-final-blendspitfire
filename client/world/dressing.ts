@@ -16,14 +16,14 @@ import {
   CONCRETE,
   type Ramp,
 } from "../../shared/palette.ts";
-import { FACILITY_HALF, YARD, type Zone } from "../../shared/protocol.ts";
+import { FACILITY_HALF, LIFT_CARS, LIFT_DZ, type Zone } from "../../shared/protocol.ts";
 
 // Where the facility's light comes from, and how each zone is dressed.
 // Pure data: the lighting system and the facility builder read it, so
 // moving a lamp or repainting a room never touches either.
 //
 // Each zone has one dominant light temperature --- the main way the scene
-// gets hue variety while every surface stays greyed. The intake room is
+// gets hue variety while every surface stays greyed. The lift car is
 // warm (tungsten: the one place that feels safe), the corridor's tubes
 // are failing, the lab is clinical cool fluorescent, the server hall cold
 // LED with green status lights, and the core puts sodium amber right
@@ -100,20 +100,25 @@ export function lampSource(lamp: Lamp): { x: number; z: number } {
   return { x: lamp.x + d.x * 0.35, z: lamp.z + d.z * 0.35 };
 }
 
-const Y_MID = (YARD.minZ + YARD.maxZ) / 2;
+const CAR = LIFT_CARS.bottom;
+const CAR_MID = (CAR.minZ + CAR.maxZ) / 2;
+/** the lift car's lamps: identical at both ends, so a ride looks like nothing moved */
+const carLamps = (dz: number): Lamp[] => [
+  wall("bulb", CAR.minX + 0.05, CAR_MID + 0.6 + dz, "east"),
+  wall("bulb", CAR.maxX - 0.05, CAR_MID + 0.6 + dz, "west"),
+];
 
 // The camera looks down through the ceiling, so a fixture hung from it
 // would float over everyone's heads. Where a room's edges can light it ---
-// the narrow corridor and passages, the intake, the core's margins ---
+// the narrow corridor and passages, the lift car, the core's margins ---
 // lamps are on the walls, where they're seen the way they'd really be
 // mounted. Out in the middle of the big rooms the light stays overhead,
 // but its fixture is above the camera's cut and isn't drawn: you see the
 // pool it throws on the floor, not the lamp.
 export const LAMPS: Lamp[] = [
-  // intake room: warm bulbs on the side walls, one overhead to fill the middle
-  ceiling("bulb", 0, Y_MID),
-  wall("bulb", -6.95, 22, "east"),
-  wall("bulb", 6.95, 22, "west"),
+  // the lift car, at the bottom and at the top: warm bulbs on its side walls
+  ...carLamps(0),
+  ...carLamps(LIFT_DZ),
   // corridor: tubes down alternate walls (clear of the doorways), one failing, one dead
   wall("fluoro", -1.95, 16, "east"),
   wall("fluoro", 1.95, 10.5, "west", { flicker: true }),
@@ -164,7 +169,8 @@ export interface ZonePaint {
 }
 
 export const ZONE_PAINT: Record<Zone, ZonePaint> = {
-  intake: { upper: PAINT_PUTTY, lower: PAINT_OCHRE, label: "B1 INTAKE" },
+  lift: { upper: PAINT_PUTTY, lower: PAINT_OCHRE, label: "LIFT" },
+  liftTop: { upper: PAINT_PUTTY, lower: PAINT_OCHRE, label: "LIFT" },
   corridor: { upper: CONCRETE, lower: PAINT_OXIDE, label: "B2 CORRIDOR" },
   lab: { upper: PAINT_SAGE, lower: PAINT_SAGE, label: "B2 LAB 04" },
   hall: { upper: PAINT_STEEL_BLUE, lower: PAINT_STEEL_BLUE, label: "B2 DATA" },

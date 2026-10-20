@@ -19,6 +19,7 @@ import {
   topStats,
 } from "./db.ts";
 import { Defence } from "./defence.ts";
+import { Lift } from "./lift.ts";
 import { PLAYER_COLORS, codename } from "../shared/palette.ts";
 import {
   BROADCAST_INTERVAL_MS,
@@ -43,10 +44,17 @@ import {
   STATION_RESTOCK_MS,
   activateVerdict,
   clampToPlayBounds,
-  hasPassedGate,
+  inAnyCar,
+  inCar,
   inRect,
-  isInYard,
+  isSafe,
   isWalkable,
+  levelOf,
+  liftVerdict,
+  noFireAt,
+  LIFT_DZ,
+  FACILITY_HALF,
+  type LiftLevel,
   obstaclesFor,
   overlapsAnyObstacle,
   placementVerdict,
@@ -155,8 +163,8 @@ interface Connection {
   /** in-memory only: resets to 0 on every (re)connect, never persisted */
   score: number;
   lastFireAt: number;
-  /** through the one-way gate since the last (re)spawn; in memory only */
-  entered: boolean;
+  /** bumped whenever the server moves them (respawn, lift ride): moves stamped with an older one are dropped */
+  warp: number;
   /** wounds taken since the last (re)spawn; in memory only */
   wounds: number;
   /** no further wound lands before this (Date.now()-scale) */
@@ -284,8 +292,8 @@ const defence = new Defence(
   {
     objective,
     items,
-    // enemies never come into the safe room, so a player in there isn't a target
-    players: () => [...connections.values()].filter((c) => !isDead(c) && !isInYard(c.player.x, c.player.z)).map((c) => c.player),
+    // enemies never leave the facility, so a player in the lift or the garden isn't a target
+    players: () => [...connections.values()].filter((c) => !isDead(c) && !isSafe(c.player.x, c.player.z)).map((c) => c.player),
     hurtPlayer: (id, now) => {
       const conn = connections.get(id);
       if (conn && !isDead(conn)) wound(conn, now, "a crawler");
@@ -297,7 +305,7 @@ const defence = new Defence(
       run.best = Math.max(run.best, charge);
       saveRun(run);
       carried.clear();
-      reviveTheFallen();
+      everyoneUp();
       boardDirty = true;
     },
     won: winRun,
@@ -309,7 +317,7 @@ const defence = new Defence(
 // gets it to full. Every attempt is logged and counted; a win goes on the
 // board and the facility starts over.
 const run = loadRun();
-/** the attempt under way: its number in the run, and everyone who's been through the gate during it */
+/** the attempt under way: its number in the run, and everyone who's come down to the facility during it */
 const attempt = { number: run.attempts, players: new Set<string>() };
 const crewNames = (): string[] =>
   [...attempt.players].map((id) => {
@@ -333,20 +341,84 @@ function winRun(): void {
   attempt.players.clear();
   carried.clear();
   // the facility starts over: what was built goes, the starting kit comes back,
-  // everyone's sent back to the intake
+  // everyone's sent back up to the garden
   items.clear();
   clearItems();
   for (const it of [...INITIAL_ITEMS, ...STATIONS]) spawnItem(it.kind, it.x, it.z);
-  for (const conn of connections.values()) {
-    respawn(conn.player);
-    conn.entered = false;
-    conn.wounds = 0;
-    conn.deadUntil = 0;
-    conn.lastMoveAt = 0;
-    conn.dirty = true;
-  }
+  everyoneUp();
   boardDirty = true;
 }
+
+/**
+ * An attempt's over (won, lost, or everyone down before it began): whoever
+ * was down there, the fallen included, is back in the garden, unhurt, and
+ * the lift's waiting at the top.
+ */
+function everyoneUp(): void {
+  for (const conn of connections.values()) {
+    if (conn.deadUntil === Infinity || levelOf(conn.player.z) === "bottom") {
+      dropHeld(conn.player);
+      reviveAt(conn);
+    }
+  }
+  lift.reset();
+}
+
+function reviveAt(conn: Connection): void {
+  respawn(conn.player);
+  conn.wounds = 0;
+  conn.woundGraceUntil = 0;
+  conn.deadUntil = 0;
+  warped(conn);
+}
+
+/** in the facility, outside the car, while an attempt's on: the lift won't let them back in */
+function lockedOut(conn: Connection): boolean {
+  return objective.active && levelOf(conn.player.z) === "bottom" && !inCar("bottom", conn.player.x, conn.player.z);
+}
+
+/** the server just moved them: the client jumps there, and moves sent from the old spot are dropped */
+function warped(conn: Connection): void {
+  conn.warp += 1;
+  conn.lastMoveAt = 0;
+  conn.dirty = true;
+}
+
+// The lift (server/lift.ts). A ride moves whoever's in the car, and
+// anything lying in it, to the same spot in the car at the other end.
+const lift = new Lift({
+  aboard: (level) => [...connections.values()].filter((c) => !isDead(c) && inCar(level, c.player.x, c.player.z)).map((c) => c.player.id),
+  attemptOn: () => objective.active,
+  onLevel: (level) => [...connections.values()].filter((c) => !isDead(c) && levelOf(c.player.z) === level).length,
+  ride(from, to) {
+    const dz = to === "bottom" ? -LIFT_DZ : LIFT_DZ;
+    for (const conn of connections.values()) {
+      if (isDead(conn) || !inCar(from, conn.player.x, conn.player.z)) continue;
+      if (from === "bottom" && objective.active) {
+        // nobody leaves a live attempt: the doors won't shut on them, so
+        // they're stood back out in the corridor and the car goes up empty
+        conn.player.z = FACILITY_HALF - 1;
+        conn.player.x = Math.max(-1.5, Math.min(1.5, conn.player.x));
+        warped(conn);
+        continue;
+      }
+      conn.player.z += dz;
+      warped(conn);
+      act(conn.player, to === "bottom" ? "rode the lift down" : "rode the lift up");
+      if (to === "bottom" && objective.active && !attempt.players.has(conn.player.id)) {
+        attempt.players.add(conn.player.id);
+        bumpStats(conn.player.id, codename(conn.player), { attempts: 1 });
+        boardDirty = true;
+      }
+    }
+    for (const item of items.values()) {
+      if (item.heldBy === undefined && inCar(from, item.x, item.z) && !(from === "bottom" && objective.active)) {
+        item.z += dz;
+        markWorldDirty();
+      }
+    }
+  },
+});
 
 function spawnItem(kind: ItemKind, x: number, z: number): void {
   const id = randomUUID();
@@ -405,9 +477,9 @@ function handlePrimary(conn: Connection, x: number, z: number, now: number): voi
   const item = heldItem(conn.player.id);
   if (!item) return;
   if (item.kind === "gun") {
-    // the yard is a no-fire zone; the client says so, the server enforces it
-    if (isInYard(conn.player.x, conn.player.z)) {
-      refuse(conn, "fire", "refused: firing in the safe room");
+    // the lift car is a no-fire zone; the client says so, the server enforces it
+    if (noFireAt(conn.player.x, conn.player.z)) {
+      refuse(conn, "fire", "refused: firing in the lift");
       return;
     }
     if (now - conn.lastFireAt < FIRE_COOLDOWN_MS) return;
@@ -440,7 +512,7 @@ function handlePrimary(conn: Connection, x: number, z: number, now: number): voi
 }
 
 /**
- * Dead until the server has actually moved them back to the safe room ---
+ * Dead until the server has actually moved them back to the garden ---
  * not merely until the timer runs out. Between the two (up to one tick) a
  * player counted as alive would still be standing where they died, and
  * anything there would kill them again the moment the timer expired.
@@ -455,7 +527,8 @@ function netPlayer(conn: Connection, now: number): PlayerState {
     respawnAt: isDead(conn) && conn.deadUntil !== Infinity ? conn.deadUntil : undefined,
     out: conn.deadUntil === Infinity ? true : undefined,
     score: conn.score,
-    entered: conn.entered ? true : undefined,
+    entered: levelOf(conn.player.z) === "bottom" ? true : undefined,
+    warp: conn.warp,
     wounds: conn.wounds || undefined,
     name: codename(conn.player),
   };
@@ -509,7 +582,7 @@ wss.on("connection", (socket, req) => {
     deadUntil: 0,
     score: 0,
     lastFireAt: 0,
-    entered: false,
+    warp: 0,
     wounds: 0,
     woundGraceUntil: 0,
     lastMoveAt: 0,
@@ -583,6 +656,8 @@ wss.on("connection", (socket, req) => {
     if (msg.type === "move") {
       const move = msg as MoveMessage;
       if (!Number.isFinite(move.x) || !Number.isFinite(move.z) || !Number.isFinite(move.rotation)) return;
+      // sent before the server last moved them (a respawn, a lift ride): from somewhere they no longer are
+      if (move.warp !== undefined && move.warp !== conn.warp) return;
       // no teleporting: a move can only cover as far as the player could
       // have walked since the last one (with slack for packets that arrive
       // bunched up); a longer claim is cut short along the way
@@ -601,30 +676,31 @@ wss.on("connection", (socket, req) => {
         tz = conn.player.z + ((tz - conn.player.z) / dist) * budget;
       }
       const clamped = clampToPlayBounds(tx, tz);
-      const resolved = resolveObstacles(clamped.x, clamped.z, obstaclesFor(conn.entered, worldObstacles(items.values())));
+      const resolved = resolveObstacles(clamped.x, clamped.z, obstaclesFor(lift.state, lockedOut(conn), worldObstacles(items.values())));
       // walls stop a walking player, but a client could still claim a
-      // jump straight to the far side of one --- or back through the gate
-      if (!isWalkable(resolved.x, resolved.z)) {
+      // jump straight to the far side of one --- or from one level to the other
+      if (!isWalkable(resolved.x, resolved.z) || levelOf(resolved.z) !== levelOf(conn.player.z)) {
         refuse(conn, "wall", `refused: move into a wall at ${pos(resolved.x, resolved.z)}`);
-        return;
-      }
-      if (conn.entered && isInYard(resolved.x, resolved.z)) {
-        refuse(conn, "gate", "refused: back through the one-way gate");
         return;
       }
       conn.player.x = resolved.x;
       conn.player.z = resolved.z;
       conn.player.rotation = move.rotation;
-      if (!conn.entered && hasPassedGate(resolved.z)) {
-        conn.entered = true;
-        act(conn.player, "went through the gate into the facility");
-        if (objective.active && !attempt.players.has(playerId)) {
-          attempt.players.add(playerId);
-          bumpStats(playerId, codename(conn.player), { attempts: 1 });
-          boardDirty = true;
-        }
-      }
       conn.dirty = true;
+      return;
+    }
+
+    if (msg.type === "lift") {
+      const verdict = liftVerdict(conn.player, lift.state, objective);
+      if (verdict === "send") {
+        lift.send(now);
+        act(conn.player, `pressed the lift button (${lift.state.at})`);
+      } else if (verdict === "call") {
+        lift.call(levelOf(conn.player.z), now);
+        act(conn.player, `called the lift (${levelOf(conn.player.z)})`);
+      } else {
+        refuse(conn, "lift", `refused: lift (${verdict})`);
+      }
       return;
     }
 
@@ -634,7 +710,8 @@ wss.on("connection", (socket, req) => {
         objective.active = true;
         defence.start(Date.now());
         attempt.number += 1;
-        attempt.players = new Set([playerId, ...[...connections.values()].filter((c) => c.entered).map((c) => c.player.id)]);
+        // everyone down here is in it: from now on the lift won't take them back up
+        attempt.players = new Set([playerId, ...[...connections.values()].filter((c) => !isDead(c) && levelOf(c.player.z) === "bottom").map((c) => c.player.id)]);
         run.attempts = attempt.number;
         saveRun(run);
         for (const id of attempt.players) bumpStats(id, codename(connections.get(id)!.player), { attempts: 1 });
@@ -692,7 +769,7 @@ wss.on("connection", (socket, req) => {
     // a tab replaced by a newer one mustn't take the newer one down with it
     if (connections.get(playerId) === conn) {
       connections.delete(playerId);
-      if (objective.active && (conn.wounds > 0 || conn.deadUntil === Infinity)) {
+      if (conn.deadUntil === Infinity || (objective.active && conn.wounds > 0)) {
         carried.set(playerId, { wounds: conn.wounds, out: conn.deadUntil === Infinity });
       }
       act(conn.player, `left (${connections.size} online)`);
@@ -745,7 +822,7 @@ function spawnProjectile(owner: PlayerState, aimX: number, aimZ: number, now: nu
 
 /**
  * For local testing only, never set in production (fly.toml doesn't):
- * DEV_SPAWN="x,z" puts every player there instead of the safe room, every
+ * DEV_SPAWN="x,z" puts every player there instead of the garden, every
  * time; DEV_JOIN="x,z" only on joining, so deaths still respawn normally.
  * Lets a scene deep in the facility be checked without walking to it.
  */
@@ -792,10 +869,10 @@ function stepProjectiles(now: number): void {
         at = t;
       }
     }
-    // the safe room is a no-fire zone: a shot that reaches its line stops there
+    // the lift car is a no-fire zone: a shot that reaches it stops there
     const hx = p.x + p.dirX * at;
     const hz = p.z + p.dirZ * at;
-    if (isInYard(hx, hz)) {
+    if (inAnyCar(hx, hz)) {
       p.range = p.travelled;
       p.travelled = p.range;
       continue;
@@ -842,45 +919,36 @@ function wound(conn: Connection, now: number, by: string): boolean {
 }
 
 /**
- * Dying while the reactor's live is final for that attempt: you're out,
- * and watch your team from then on. Any other time (exploring, building,
- * shooting yourself in the foot) you're back in the safe room shortly.
+ * Coming down in the lift is joining the attempt, live or not yet: dying
+ * down there is final until it's over, and you watch your team from then
+ * on. Dying in the garden (practice gone wrong) you're back shortly.
  */
 function kill(conn: Connection, now: number): void {
-  conn.deadUntil = objective.active ? Infinity : now + DEATH_DURATION_MS;
+  conn.deadUntil = levelOf(conn.player.z) === "bottom" ? Infinity : now + DEATH_DURATION_MS;
   conn.dirty = true;
   dropHeld(conn.player);
 }
 
-/** the attempt's over: everyone who's out comes back to the safe room now */
-function reviveTheFallen(): void {
-  for (const conn of connections.values()) {
-    if (conn.deadUntil === Infinity) conn.deadUntil = 1;
-  }
-}
-
 /**
- * Everyone defending is dead: the attempt fails. "Defending" means through
- * the gate --- someone still in the safe room (just joined, or never went
- * in) isn't holding anything, and can't keep a lost attempt going.
+ * Everyone down in the facility is dead: the attempt fails (or, before the
+ * reactor was on, simply ends). Someone still up in the garden isn't
+ * holding anything, and can't keep a lost attempt going.
  */
 function checkWipe(): void {
-  if (!objective.active) return;
-  const inside = [...connections.values()].filter((c) => c.entered || c.deadUntil === Infinity);
-  if (inside.length > 0 && inside.every((c) => c.deadUntil === Infinity)) defence.fail("everyone's down");
+  const below = [...connections.values()].filter((c) => c.deadUntil === Infinity || (!isDead(c) && levelOf(c.player.z) === "bottom"));
+  if (below.length === 0 || !below.every((c) => c.deadUntil === Infinity)) return;
+  if (objective.active) {
+    defence.fail("everyone's down");
+  } else {
+    console.log(`everyone down in the facility died before the reactor was on (${below.map((c) => codename(c.player)).join(", ")})`);
+    carried.clear();
+    everyoneUp();
+  }
 }
 
 function processRespawns(now: number): void {
   for (const conn of connections.values()) {
-    if (conn.deadUntil !== 0 && now >= conn.deadUntil) {
-      respawn(conn.player);
-      conn.entered = false;
-      conn.wounds = 0;
-      conn.woundGraceUntil = 0;
-      conn.lastMoveAt = 0;
-      conn.deadUntil = 0;
-      conn.dirty = true;
-    }
+    if (conn.deadUntil !== 0 && conn.deadUntil !== Infinity && now >= conn.deadUntil) reviveAt(conn);
   }
 }
 
@@ -890,6 +958,7 @@ setInterval(() => {
   // respawn first: someone whose timer just ran out is back in the safe
   // room before enemies or shots get a turn at them
   processRespawns(now);
+  lift.step(now);
   defence.step(now, BROADCAST_INTERVAL_MS / 1000);
   stepProjectiles(now);
   checkWipe();
@@ -920,6 +989,7 @@ setInterval(() => {
     enemies: defence.snapshot(),
     defence: defence.state,
     announcements: pendingAnnouncements.length ? pendingAnnouncements : undefined,
+    lift: lift.state,
   };
   pendingAnnouncements = [];
   const withItems = JSON.stringify({ ...base, items: itemList } satisfies ServerMessage);

@@ -3,7 +3,7 @@ import {
   FACILITY_HALF,
   REACTOR,
   REACTOR_BODY,
-  YARD,
+  isSafe,
   isWalkable,
   overlapsAnyObstacle,
   type Breach,
@@ -136,8 +136,8 @@ export class FlowField {
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const [x, z] = centreOf(c, r);
-        // enemies stay in the facility, never the safe room
-        const inSafeRoom = z > YARD.minZ - 0.4;
+        // enemies stay in the facility, never the lift or the surface
+        const inSafeRoom = isSafe(x, z);
         this.open[r * COLS + c] = isWalkable(x, z) && !inSafeRoom && !overlapsAnyObstacle(x, z, ENEMY_RADIUS * 0.9, obstacles) ? 1 : 0;
       }
     }

@@ -610,8 +610,10 @@ function lampModel(lamp: Lamp, bins: Bins): void {
 function floorModel(zones: Record<Zone, Rect>, bins: Bins): void {
   const tiles: THREE.BufferGeometry[] = [];
   const marks: THREE.BufferGeometry[] = [];
-  const random = rng(77);
+  const zoneRandom = rng(77);
   for (const [name, r] of Object.entries(zones) as [Zone, Rect][]) {
+    // the two ends of the lift are the same car: same tiles, same litter
+    const random = name === "lift" || name === "liftTop" ? rng(41) : zoneRandom;
     const w = r.maxX - r.minX;
     const d = r.maxZ - r.minZ;
     const cx = (r.minX + r.maxX) / 2;

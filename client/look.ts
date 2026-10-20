@@ -9,6 +9,8 @@ import { FACING_DIR, LAMPS, LAMP_SPECS, lampSource, type Lamp } from "./world/dr
  */
 export const CAMERA_ALTITUDE = 16;
 export const CAMERA_FOV = 50;
+/** the facility's fill strength, for fading it against the surface's sun */
+export const FACILITY_AMBIENT = 0.55;
 
 /**
  * The lighting every view of the facility shares. Underground, so no sun:
@@ -21,9 +23,11 @@ export const CAMERA_FOV = 50;
  * outside the pool still read as lights.
  */
 const POOL = 8;
-const AMBIENT = 0.55;
+const AMBIENT = FACILITY_AMBIENT;
 
 export interface Lighting {
+  /** the facility's dim cold fill, faded out on the surface */
+  ambient: THREE.HemisphereLight;
   /** call every frame: which lamps light the scene, flicker, pulses, objective glow */
   update(viewX: number, viewZ: number, time: number, state: { reactorActive: boolean }, visible?: (lamp: Lamp) => boolean): void;
 }
@@ -37,7 +41,8 @@ const hash = (n: number): number => {
 /** `pool` overrides how many point lights are live at once (the overview lights every lamp) */
 export function setupLighting(scene: THREE.Scene, reactor?: { x: number; z: number }, pool = POOL): Lighting {
   scene.background = new THREE.Color(FAR);
-  scene.add(new THREE.HemisphereLight(AMBIENT_SKY, AMBIENT_GROUND, AMBIENT));
+  const ambient = new THREE.HemisphereLight(AMBIENT_SKY, AMBIENT_GROUND, AMBIENT);
+  scene.add(ambient);
 
   const lights = Array.from({ length: pool }, () => {
     const light = new THREE.PointLight(0xffffff, 0, 8, 1.6);
@@ -59,6 +64,7 @@ export function setupLighting(scene: THREE.Scene, reactor?: { x: number; z: numb
   }));
 
   return {
+    ambient,
     update(viewX, viewZ, time, state, visible) {
       const brightness = (l: (typeof lamps)[number]): number => {
         if (l.lamp.dead) return 0;

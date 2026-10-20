@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-10-19, Win condition and crit 10 identity
+Synced from the draft up to: 2026-10-20, Surface garden, floating UI and the lift
 
 ---
 
@@ -507,3 +507,34 @@ Suggested minimal topology: safe room, one main corridor (bottleneck), a fork in
 - ADR-010's per-session score stays as the room list above the board.
 
 **Why.** The developer described the objective as a long charge rather than a number of waves, and a reactor going down as a failed attempt, not a breakthrough. Resetting the charge to zero makes each attempt a real attempt, and the carried-over boxes are what make the next one go further.
+
+---
+
+## ADR-038: A garden on the surface, a lift down, and UI that floats on what you can use
+*2026-10-20 · Status: Accepted (direction and rules from the developer; layout, timings and look built by the agent, not yet played)*
+
+**Context.** The developer asked for three things. First, a tutorial area above ground: sunny and warm, with young grass and plants, against the cold facility. Second, minimal line-work sci-fi UI in the spirit of Rain World. It should float out when something can be used, stay stuck to that thing (for example at a gun's top-left whatever you do), and appear and disappear naturally. Third, a lift in place of the spawn room, joining the surface to the facility as seamlessly as possible (step in, doors shut, a short ride, doors open). It doubles as the ready-up: press the use key to shut it and go down, with a wait of a dozen seconds or so when there are other players. They later added a scoreboard screen in the garden that opens like a scoreboard when used, since it can't be read from overhead.
+
+**Decision.**
+- The developer's calls:
+  - The surface does **not** follow the art rules at all. It should look like a bright, soft impressionist painting.
+  - Firing is allowed in the garden.
+  - The UI is white, with grey for "not available".
+  - E is fine as the use key. The real rule behind "left hand only on Space/Q" is never to require holding Q or E while moving; a short tap is fine.
+  - For now, the lift brings people down at any time: it returns to the top after a ride, and late players can follow. "The lift only comes back when the attempt is over" stays open; the code is the same either way.
+  - Going down in the lift is joining the attempt, even before the reactor is on. Dying down there is final until the attempt ends. Before the reactor is switched on, a player can ride back up, which takes them out of the attempt, and they can then respawn in the garden. Once the reactor is on, nobody goes back up.
+- How the agent built it:
+  - The surface shares the facility's coordinates, 40 units south. The two ends of the car are identical, and a ride moves everyone inside by exactly that much. A warp counter lets the client jump with them and drop moves sent from the old spot.
+  - The lift is a server state machine (open, closing, moving, opening).
+    - Pressing E inside the car sends it. It waits 15 s if anyone else on that level isn't aboard, and 3 s once everyone is (the wait shortens if they arrive).
+    - Pressing E outside the door calls an empty car.
+    - An empty car at the bottom goes back up after 5 s.
+    - While an attempt is on, the bottom door is shut to anyone outside the car, and anyone still inside is stood back in the corridor.
+  - When an attempt ends (won, lost, or everyone below dead before the reactor came on), everyone below is revived in the garden and the car returns to the top.
+  - E uses the nearest usable thing: lift button, then item, then reactor, then scoreboard. Clicking an item or the reactor still works.
+  - Prompts are anchored to world points and drawn to their upper left: a dot, a 45° leader and a bracketed tag. They grow out dot, line, tag, retract in reverse, bob gently, and shake when refused. The whole HUD moved to the same white/grey line style.
+  - The surface has its own post-process ("paint"): Kuwahara brush strokes, a warm high-key grade, blue-violet shade and canvas grain. Out of sight is bare canvas instead of black. It has a sun with shadows and a sky fill, and no headlamp. The look cross-fades in the car.
+  - The scoreboard is a screen on the garden's north hedge. Using it opens a centred panel; walking away, E or Esc closes it. The always-on board in the corner is gone; the room list stays.
+
+**Why.** The developer wanted the arrival area to be the facility's opposite, and decided its look shouldn't be held to the underground's rules. Making the lift the ready-up gives one clear moment of joining an attempt. Letting people ride back up until the reactor is on means a player who goes down too early isn't punished for it. Prompts pinned to the object put the instruction where the eye already is.
+

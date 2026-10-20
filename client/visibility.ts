@@ -127,7 +127,8 @@ export class VisibilityMask {
   readonly camera: THREE.OrthographicCamera;
   private readonly scene = new THREE.Scene();
   private readonly geometry = new THREE.BufferGeometry();
-  readonly segs: Segment[];
+  segs: Segment[];
+  private readonly baseSegs: Segment[];
   private lastX = NaN;
   private lastZ = NaN;
   /** world-to-mask-UV: (x - centerX) / (2 extent) + 0.5 */
@@ -137,7 +138,8 @@ export class VisibilityMask {
 
   constructor(obstacles: Obstacle[], solids: Rect[], bounds: Rect, extent = 20, size = 512) {
     this.extent = extent;
-    this.segs = occluderSegments(obstacles, solids, bounds);
+    this.baseSegs = occluderSegments(obstacles, solids, bounds);
+    this.segs = this.baseSegs;
     this.target = new THREE.WebGLRenderTarget(size, size, {
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
@@ -149,6 +151,17 @@ export class VisibilityMask {
     fan.frustumCulled = false;
     this.scene.add(fan);
     this.scene.background = new THREE.Color(0x000000);
+  }
+
+  /** occluders that come and go (a lift door shut or open), on top of the fixed ones */
+  setExtra(obstacles: Obstacle[]): void {
+    this.segs = obstacles.length ? [...this.baseSegs, ...occluderSegments(obstacles, [])] : this.baseSegs;
+    this.invalidate();
+  }
+
+  /** force a redraw on the next update (after switching to this mask from another) */
+  invalidate(): void {
+    this.lastX = NaN;
   }
 
   /** recompute and redraw, only if the viewer has moved */

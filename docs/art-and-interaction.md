@@ -6,6 +6,14 @@ built that's beyond what can be made reliably in code.
 
 ## Art: low poly, built in code
 
+**The surface is exempt.** Everything in this section governs the
+underground facility and the lift car. The garden on the surface
+(`client/world/surface.ts`) deliberately follows none of it: it aims for a
+bright, soft impressionist painting --- its own colours, its own materials,
+a sun with shadows, and its own grade (the "paint" pass in
+`client/postprocess.ts`). Characters, items and the UI are shared by both
+levels and stay under these rules.
+
 **A few shared materials, flat shading, vertex colour.** Every model is
 coloured primitive parts merged into one geometry per finish, drawn with
 the shared materials in [`client/models/kit.ts`](../client/models/kit.ts):
@@ -26,7 +34,7 @@ hover highlight, the placement preview, and the floor guide decals.
 - *Emitters* --- lamps, indicator LEDs, screens, the reactor, a player's
   shoulder lamp --- are the only things allowed outside the gamut.
 - *Lights* are set by colour temperature, white-balanced to 4500K. Each
-  zone has one dominant temperature (intake: warm tungsten; corridor and
+  zone has one dominant temperature (lift car: warm tungsten; corridor and
   lab: cool fluorescent; server hall: cold LED; core: sodium by the
   reactor against cool tubes), so most of the scene's hue variety comes
   from the light, not the paint.
@@ -128,9 +136,14 @@ closer") --- silence reads as "not interactive".
 where firing isn't allowed: a visible reaction and, where it isn't obvious,
 a short reason. Never a click that does nothing.
 
-**Respect the hands.** The left hand is on WASD, so its only extra keys are
-the thumb's Space and an occasional Q. The right hand aims and clicks. A
-frequent action never goes on a key that pulls a finger off WASD.
+**Respect the hands.** The left hand is on WASD and the right hand aims and
+clicks. Never require holding a key while moving: Space, Q and E are taps,
+one press per action, so they work mid-stride.
+
+**Prompts float on the thing.** Whatever E would act on gets a prompt
+pinned to it (`client/ui/prompts.ts`): white when it'll work, grey with the
+reason when it won't, growing out of the object and folding back into it.
+All UI is the same thin white/grey line-work (`public/index.html`).
 
 **Trackpads are first-class.** Many players are on a laptop trackpad, so:
 no hold-to-act, no drag-to-act, and nothing that needs a right button.
@@ -141,9 +154,9 @@ right-click (not as a left click as well).
 your own character is easy to find (a ring at your feet, and your shoulder
 lamp in the dark), the controls for what you're holding are on screen, and
 new players learn from guides painted on the floor next to the thing
-they're about. One-way things say so before you commit: the gate into the
-facility is marked "one way" on the intake side, and shuts visibly behind
-you.
+they're about. One-way things say so before you commit: the lift's prompt says
+where it goes, and once an attempt is on, its prompt at the bottom says
+it's locked.
 
 **Before calling any mechanic done, check:** cursor, hover state, success
 feedback, failure feedback and reason, what happens at the edges (out of

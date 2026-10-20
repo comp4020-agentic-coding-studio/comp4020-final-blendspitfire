@@ -9,6 +9,9 @@ import type { Grade } from "./assets/grade.ts";
 // On top of that, two effects the game turns on: being dazed by a wound
 // (blur, a pulsing dark-red closing-in) and spectating (an old CRT: barrel
 // distortion, scanlines, colour fringing, noise and the odd rolling jolt).
+// And one for the surface: "paint", an impressionist look (Kuwahara brush
+// strokes, warm high-key grade, canvas grain) that fades in when the viewer
+// is up in the garden, in place of the facility's grade.
 //
 // Rendering into a target skips three.js's own tone mapping and sRGB
 // conversion (it only applies them when drawing to the canvas), so both
@@ -52,6 +55,7 @@ const fragment = /* glsl */ `
   uniform vec2 texel;
   uniform float daze;
   uniform float crt;
+  uniform float paint;
   uniform float time;
   varying vec2 vUv;
 
@@ -112,6 +116,36 @@ const fragment = /* glsl */ `
     return c / 9.0;
   }
 
+  // Kuwahara: of the four quadrants around this pixel, take the mean of the
+  // calmest. Flat regions stay flat, edges stay sharp, and texture breaks
+  // into blobs of single colour: a brush stroke rather than a pixel.
+  vec3 kuwahara(vec2 uv) {
+    vec3 m[4];
+    vec3 s[4];
+    for (int k = 0; k < 4; k++) { m[k] = vec3(0.0); s[k] = vec3(0.0); }
+    for (int j = 0; j <= 2; j++) {
+      for (int i = 0; i <= 2; i++) {
+        vec3 a = texture2D(tColor, uv + vec2(-float(i), -float(j)) * texel).rgb;
+        vec3 b = texture2D(tColor, uv + vec2(float(i), -float(j)) * texel).rgb;
+        vec3 c = texture2D(tColor, uv + vec2(-float(i), float(j)) * texel).rgb;
+        vec3 d = texture2D(tColor, uv + vec2(float(i), float(j)) * texel).rgb;
+        m[0] += a; s[0] += a * a;
+        m[1] += b; s[1] += b * b;
+        m[2] += c; s[2] += c * c;
+        m[3] += d; s[3] += d * d;
+      }
+    }
+    vec3 best = m[0] / 9.0;
+    float bestVar = 1e9;
+    for (int k = 0; k < 4; k++) {
+      vec3 mean = m[k] / 9.0;
+      vec3 v = abs(s[k] / 9.0 - mean * mean);
+      float total = v.r + v.g + v.b;
+      if (total < bestVar) { bestVar = total; best = mean; }
+    }
+    return best;
+  }
+
   void main() {
     vec2 uv = vUv;
     // CRT: bulge the picture as if on curved glass, and now and then a band rolls sideways
@@ -134,16 +168,36 @@ const fragment = /* glsl */ `
       // dazed: the picture swims in and out of focus
       c = sampleScene(uv, daze * (2.0 + 1.5 * sin(time * 2.2)));
     }
-    c *= exposure;
-    c = neutral(c);
+    vec3 under = c;
+    under *= exposure;
+    under = neutral(under);
     // grade, in linear light
-    float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
-    c = mix(vec3(luma), c, saturation);
+    float luma = dot(under, vec3(0.2126, 0.7152, 0.0722));
+    under = mix(vec3(luma), under, saturation);
     vec3 tint = mix(shadowTint * 4.0, highlightTint, smoothstep(0.0, 0.5, luma));
-    c = mix(c, c * tint, tintStrength);
-    c = toSrgb(clamp(c, 0.0, 1.0));
-    c = (c - 0.5) * contrast + 0.5;
-    c = blackLift + c * (1.0 - blackLift);
+    under = mix(under, under * tint, tintStrength);
+    under = toSrgb(clamp(under, 0.0, 1.0));
+    under = (under - 0.5) * contrast + 0.5;
+    under = blackLift + under * (1.0 - blackLift);
+    c = under;
+    if (paint > 0.0) {
+      // the surface: strokes, then a warm, bright, soft grade
+      vec3 p = kuwahara(uv) * 1.1;
+      p = neutral(p);
+      float pl = dot(p, vec3(0.2126, 0.7152, 0.0722));
+      p = mix(vec3(pl), p, 1.05);
+      // shade leans blue-violet, light leans to a warm cream
+      p = mix(p * vec3(0.82, 0.88, 1.12), p * vec3(1.08, 1.02, 0.9), smoothstep(0.05, 0.45, pl));
+      p = toSrgb(clamp(p, 0.0, 1.0));
+      // lifted blacks and gently pulled highlights: nothing harsh
+      p = 0.07 + p * 0.9;
+      // canvas: a faint woven grain and some slow, uneven pigment
+      vec2 fc = gl_FragCoord.xy;
+      float weave = sin(fc.x * 1.7) * sin(fc.y * 1.7) * 0.012;
+      float blot = (hash(floor(fc / 6.0)) - 0.5) * 0.03;
+      p += weave + blot;
+      c = mix(c, p, paint);
+    }
 
     // line of sight: rebuild the world position of this pixel from depth
     // and look it up in the mask; unseen goes to true black
@@ -160,11 +214,15 @@ const fragment = /* glsl */ `
       // face shows, its top is black, so walls read as cut-outs into dark
       seen *= 1.0 - smoothstep(topCutoff - 0.05, topCutoff, world.y);
       if (muv.x < 0.0 || muv.x > 1.0 || muv.y < 0.0 || muv.y > 1.0) seen = 0.0;
-      c *= seen;
+      // underground the unseen is black; on the surface it's bare canvas,
+      // the picture left unpainted where you can't see
+      c = mix(vec3(0.94, 0.9, 0.82) * paint, c, seen);
     }
 
     vec2 v = (vUv - 0.5) * aspect;
-    c *= 1.0 - vignette * smoothstep(0.35, 0.95, length(v));
+    // the surface gets a soft warm halo at the edges instead of a dark vignette
+    c *= 1.0 - vignette * (1.0 - paint) * smoothstep(0.35, 0.95, length(v));
+    c = mix(c, c * vec3(1.04, 1.0, 0.92) + vec3(0.03, 0.025, 0.0), paint * smoothstep(0.4, 1.0, length(v)));
     if (daze > 0.0) {
       // the edges close in, dark red, pulsing with the swim
       float edge = smoothstep(0.35, 0.9, length(v)) * daze * (0.8 + 0.2 * sin(time * 2.2));
@@ -193,8 +251,8 @@ export interface PostProcess {
    * wall tops).
    */
   setMask(mask: { texture: THREE.Texture; center: THREE.Vector2; extent: number; topCutoff: number } | null): void;
-  /** the game's screen effects, 0 (off) to 1 (full): dazed by a wound, and the spectator's CRT */
-  effects: { daze: number; crt: number };
+  /** the game's screen effects, 0 (off) to 1 (full): dazed by a wound, the spectator's CRT, the surface's paint */
+  effects: { daze: number; crt: number; paint: number };
 }
 
 /**
@@ -244,9 +302,10 @@ export function createPostProcess(renderer: THREE.WebGLRenderer, scale: number, 
     texel: { value: new THREE.Vector2(1, 1) },
     daze: { value: 0 },
     crt: { value: 0 },
+    paint: { value: 0 },
     time: { value: 0 },
   };
-  const effects = { daze: 0, crt: 0 };
+  const effects = { daze: 0, crt: 0, paint: 0 };
   const started = performance.now();
   const material = new THREE.RawShaderMaterial({
     vertexShader: vertex,
@@ -295,6 +354,7 @@ export function createPostProcess(renderer: THREE.WebGLRenderer, scale: number, 
       uniforms.ditherAmount.value = grade.dither;
       uniforms.daze.value = effects.daze;
       uniforms.crt.value = effects.crt;
+      uniforms.paint.value = effects.paint;
       uniforms.time.value = (performance.now() - started) / 1000;
       camera.updateMatrixWorld();
       uniforms.invViewProj.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();

@@ -16,6 +16,7 @@ export interface Net {
   primary: (x: number, z: number) => void;
   drop: () => void;
   activate: () => void;
+  lift: () => void;
 }
 
 const RECONNECT_BASE_MS = 500;
@@ -89,6 +90,9 @@ export function connect(handlers: NetHandlers): Net {
     },
     activate() {
       send({ type: "activate" });
+    },
+    lift() {
+      send({ type: "lift" });
     },
   };
 }

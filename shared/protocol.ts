@@ -12,8 +12,14 @@ export interface PlayerState {
   out?: true;
   /** wire-only: in-memory for the current connection, not persisted */
   score?: number;
-  /** wire-only: through the one-way gate since their last (re)spawn, so it's shut behind them */
+  /** wire-only: out of the lift into the facility since they came down; during an attempt the lift's shut to them */
   entered?: true;
+  /**
+   * wire-only: bumped every time the server moves them somewhere walking
+   * can't (a respawn, a lift ride). The client jumps there and stamps its
+   * moves with it, so a move sent from where they used to be is ignored
+   */
+  warp?: number;
   /** wire-only: wounds taken since their last (re)spawn, 0..MAX_WOUNDS-1 (absent = unhurt); see WOUNDS */
   wounds?: number;
   /** wire-only: what they're called on screen and in the server log (palette.ts codename) */
@@ -51,6 +57,7 @@ export interface StateMessage {
   defence: DefenceState;
   /** one-off lines to show everyone (a wave starting, the reactor going down) */
   announcements?: string[];
+  lift: LiftState;
 }
 
 /**
@@ -70,6 +77,8 @@ export interface MoveMessage {
   x: number;
   z: number;
   rotation: number;
+  /** the PlayerState.warp this move was made after; a stale one is dropped */
+  warp?: number;
 }
 
 export interface PickupMessage {
@@ -97,6 +106,11 @@ export interface ActivateMessage {
   type: "activate";
 }
 
+/** the lift button: inside the car it sends it (after a wait for the others), outside its door it calls it */
+export interface LiftMessage {
+  type: "lift";
+}
+
 /**
  * A shot, sent once rather than every tick: where it started, which way it
  * flies and when, and how far it gets before it stops (a wall, a box, or
@@ -119,7 +133,7 @@ export interface ProjectileState {
 }
 
 export type ServerMessage = WelcomeMessage | StateMessage | BoardMessage;
-export type ClientMessage = MoveMessage | PickupMessage | PrimaryMessage | DropMessage | ActivateMessage;
+export type ClientMessage = MoveMessage | PickupMessage | PrimaryMessage | DropMessage | ActivateMessage | LiftMessage;
 
 /**
  * Every pickup-able thing in the world is one of these: same shape, same
@@ -164,12 +178,14 @@ export const BROADCAST_INTERVAL_MS = 50;
 export const PERSIST_INTERVAL_MS = 1000;
 
 // --- World layout ----------------------------------------------------------
-// An underground facility, with a safe intake room off its south side
-// (screen-down, +Z). Every player spawns and respawns in the intake room,
-// where the floor teaches the controls and firing is off; a one-way gate
-// lets them into the facility's main corridor and not back. (What the
-// intake room *is* --- a lift, a decon chamber --- waits on the setting; in
-// code it keeps the name YARD.)
+// An underground facility, and a sunlit garden on the surface above it,
+// joined by one lift. Everyone spawns in the garden, where the tutorial is
+// (stations, targets, the scoreboard); the lift takes them down, and its
+// car opens onto the facility's main corridor off the south side
+// (screen-down, +Z). The two levels share one coordinate space: the
+// surface sits LIFT_DZ further south, out of sight of the facility, and a
+// ride moves everyone in the car by exactly that much, so the car looks
+// the same before and after.
 //
 //   z=-18  +------+======== ~~ ====+------+   ~~ breach: stuck elevator shaft
 //          |######|      CORE       |######|
@@ -180,8 +196,8 @@ export const PERSIST_INTERVAL_MS = 1000;
 //          |              |    |            |
 //          ~~    LAB      D  C |   HALL     ~~  ~~ breaches: vent (W), collapse (E)
 //          |              |  O D            |   D doorways off the corridor
-//   z=18   +--------------+-><-+------------+   >< the one-way gate
-//                        |INTAKE|
+//   z=18   +--------------+-><-+------------+   >< the lift door
+//                        |LIFT|
 //
 // The corridor branches into the lab and the server hall, each of which
 // reaches the core through its own narrow passage, so the core can be come
@@ -205,18 +221,36 @@ export const FACILITY: Rect = {
   maxZ: FACILITY_HALF,
 };
 const WALL_HALF = 0.3;
-/** the yard's open interior (inside its walls) */
-export const YARD: Rect = { minX: -7, maxX: 7, minZ: FACILITY_HALF + 2 * WALL_HALF, maxZ: 28 };
 export const DOOR_HALF_WIDTH = 2;
+/** walls run well over head height: everything is indoors */
+export const FACILITY_WALL_HALF_HEIGHT = 1.25;
+
+// --- The lift and the surface ------------------------------------------------
+
+/** how far south of its facility twin everything on the surface is */
+export const LIFT_DZ = 40;
+/** the lift car's floor at the bottom (inside its walls); the door is its north side */
+const CAR_BOTTOM: Rect = { minX: -3, maxX: 3, minZ: FACILITY_HALF + 2 * WALL_HALF, maxZ: FACILITY_HALF + 2 * WALL_HALF + 5.8 };
+const shiftRect = (r: Rect, dz: number): Rect => ({ ...r, minZ: r.minZ + dz, maxZ: r.maxZ + dz });
+export type LiftLevel = "top" | "bottom";
+export const LIFT_CARS: Record<LiftLevel, Rect> = { bottom: CAR_BOTTOM, top: shiftRect(CAR_BOTTOM, LIFT_DZ) };
+/** the garden on the surface: the car's door opens north into it */
+export const SURFACE: Rect = { minX: -13, maxX: 13, minZ: LIFT_CARS.top.minZ - 2 * WALL_HALF - 18, maxZ: LIFT_CARS.top.minZ - 2 * WALL_HALF };
+/** anything south of this is on the surface */
+export const LEVEL_SPLIT_Z = (CAR_BOTTOM.maxZ + SURFACE.minZ) / 2;
+export const levelOf = (z: number): LiftLevel => (z > LEVEL_SPLIT_Z ? "top" : "bottom");
+export const inCar = (level: LiftLevel, x: number, z: number, margin = 0): boolean => inRect(LIFT_CARS[level], x, z, margin);
+export const inAnyCar = (x: number, z: number): boolean => inCar("top", x, z) || inCar("bottom", x, z);
+
 /** everything anyone can stand in; movement is clamped to it before walls */
-export const PLAY_BOUNDS: Rect = { minX: FACILITY.minX, maxX: FACILITY.maxX, minZ: FACILITY.minZ, maxZ: YARD.maxZ };
-/** as far as sight reaches: a little past the outer walls, so a breach shows what's just beyond it and no further */
-export const SIGHT_BOUNDS: Rect = { minX: -FACILITY_HALF - 3, maxX: FACILITY_HALF + 3, minZ: -FACILITY_HALF - 3, maxZ: YARD.maxZ + 1 };
+export const PLAY_BOUNDS: Rect = { minX: FACILITY.minX, maxX: FACILITY.maxX, minZ: FACILITY.minZ, maxZ: LIFT_CARS.top.maxZ };
+/** as far as sight reaches in the facility: a little past the outer walls, so a breach shows what's just beyond it and no further */
+export const SIGHT_BOUNDS: Rect = { minX: -FACILITY_HALF - 3, maxX: FACILITY_HALF + 3, minZ: -FACILITY_HALF - 3, maxZ: CAR_BOTTOM.maxZ + 1 };
 
 export const inRect = (r: Rect, x: number, z: number, margin = 0): boolean =>
   x >= r.minX + margin && x <= r.maxX - margin && z >= r.minZ + margin && z <= r.maxZ - margin;
 
-/** the gap in the facility's south wall, out to the yard */
+/** the gap in the facility's south wall: the lift door at the bottom */
 export const DOOR: Rect = {
   minX: -DOOR_HALF_WIDTH,
   maxX: DOOR_HALF_WIDTH,
@@ -236,7 +270,13 @@ export const ROOMS = {
 } satisfies Record<string, Rect>;
 const ROOM_LIST: Rect[] = Object.values(ROOMS);
 
-/** the openings between rooms (and out to the yard), where a wall would otherwise be */
+/** the lift door's opening at the top, out into the garden */
+export const TOP_DOOR: Rect = shiftRect(
+  { minX: -DOOR_HALF_WIDTH, maxX: DOOR_HALF_WIDTH, minZ: FACILITY_HALF, maxZ: FACILITY_HALF + 2 * WALL_HALF },
+  LIFT_DZ,
+);
+
+/** the openings between rooms (and out to the lift), where a wall would otherwise be */
 export const DOORWAYS: Rect[] = [
   DOOR,
   { minX: -2.6, maxX: -2, minZ: 9, maxZ: 12 }, // corridor -> lab
@@ -287,38 +327,79 @@ export const SOLID: Rect[] = [
 ];
 
 /**
- * Somewhere a player can actually be: a room, the yard, or a doorway
- * between. Solid structure, and the play bounds' corners beside the yard,
+ * Somewhere a player can actually be: a room, the lift car, the garden, or
+ * a doorway between. Solid structure, and the gap between the two levels,
  * are not.
  */
 export const isWalkable = (x: number, z: number): boolean =>
-  ROOM_LIST.some((r) => inRect(r, x, z)) || inRect(YARD, x, z) || DOORWAYS.some((r) => inRect(r, x, z));
-
-/** the intake room, counted from the middle of the doorway so the door is a clean line */
-export const isInYard = (x: number, z: number): boolean =>
-  x > YARD.minX - WALL_HALF && x < YARD.maxX + WALL_HALF && z > FACILITY_HALF + WALL_HALF;
+  ROOM_LIST.some((r) => inRect(r, x, z)) ||
+  inAnyCar(x, z) ||
+  inRect(SURFACE, x, z) ||
+  inRect(TOP_DOOR, x, z) ||
+  DOORWAYS.some((r) => inRect(r, x, z));
 
 /**
- * Past the gate: once a player is this far into the corridor they've
- * entered, and the gate shuts behind them until they respawn. A little
- * inside the corridor rather than on the wall line, so standing in the
- * doorway doesn't count.
+ * Out of the facility: the lift car (at either end) and the whole surface.
+ * Enemies never go there; counted from the middle of the bottom doorway so
+ * the door is a clean line.
  */
-export const GATE_ENTERED_Z = FACILITY_HALF - 0.6;
-export const hasPassedGate = (z: number): boolean => z < GATE_ENTERED_Z;
+export const isSafe = (x: number, z: number): boolean => z > FACILITY_HALF + WALL_HALF;
+/** no firing in the lift car; the garden has a range to practise on */
+export const noFireAt = (x: number, z: number): boolean => inAnyCar(x, z) || inRect(DOOR, x, z) || inRect(TOP_DOOR, x, z);
 
-/** the shut gate, as an obstacle --- only for players who've entered */
-export const GATE: Obstacle = {
-  x: 0,
-  z: FACILITY_HALF + WALL_HALF,
-  halfX: DOOR_HALF_WIDTH,
-  halfZ: WALL_HALF,
-  halfHeight: 0.6,
+// The lift. One car, shared by everyone, run by the server: it waits open
+// at one end, counts down once someone presses its button, shuts, rides,
+// and opens at the other end. Whoever's inside when it shuts goes with it.
+export type LiftPhase = "open" | "closing" | "moving" | "opening";
+export interface LiftState {
+  at: LiftLevel;
+  phase: LiftPhase;
+  /** server time the current closing/moving/opening phase ends */
+  until?: number;
+  /** while open: server time it'll shut and leave (set once someone presses the button) */
+  departAt?: number;
+}
+export const LIFT_DOOR_MS = 900;
+export const LIFT_RIDE_MS = 2600;
+/** how long the car waits before leaving if there's anyone else on that level who might want to come */
+export const LIFT_WAIT_MS = 15000;
+/** ...and if everyone there is already aboard */
+export const LIFT_SHORT_WAIT_MS = 3000;
+/** an empty car left at the bottom goes back up after this, so newcomers can always come down */
+export const LIFT_RETURN_MS = 5000;
+
+/** the car's door at each end, as an obstacle (its centre line is the wall line) */
+export const LIFT_DOORS: Record<LiftLevel, Obstacle> = {
+  bottom: { x: 0, z: FACILITY_HALF + WALL_HALF, halfX: DOOR_HALF_WIDTH, halfZ: WALL_HALF, halfHeight: FACILITY_WALL_HALF_HEIGHT },
+  top: { x: 0, z: FACILITY_HALF + WALL_HALF + LIFT_DZ, halfX: DOOR_HALF_WIDTH, halfZ: WALL_HALF, halfHeight: FACILITY_WALL_HALF_HEIGHT },
 };
 
-/** what a given player collides with: the gate only exists for those who've come through it */
-export function obstaclesFor(entered: boolean, base: Obstacle[]): Obstacle[] {
-  return entered ? [...base, GATE] : base;
+/** how open a level's door is, 0..1, at server time `now` */
+export function liftDoorOpen(lift: LiftState, level: LiftLevel, now: number): number {
+  if (lift.at !== level) return 0;
+  if (lift.phase === "open") return 1;
+  if (lift.phase === "moving") return 0;
+  const left = Math.max(0, Math.min(1, ((lift.until ?? now) - now) / LIFT_DOOR_MS));
+  return lift.phase === "closing" ? left : 1 - left;
+}
+
+/**
+ * The lift doors that are shut, as obstacles: every door but the one the
+ * car is standing open at. `lockedOut` (someone in the facility while an
+ * attempt is on) has the bottom door shut to them regardless.
+ */
+export function liftDoorObstacles(lift: LiftState, lockedOut: boolean): Obstacle[] {
+  const shut: Obstacle[] = [];
+  for (const level of ["top", "bottom"] as const) {
+    const open = lift.at === level && lift.phase === "open" && !(level === "bottom" && lockedOut);
+    if (!open) shut.push(LIFT_DOORS[level]);
+  }
+  return shut;
+}
+
+/** what a given player collides with: the world, plus whichever lift doors are shut to them */
+export function obstaclesFor(lift: LiftState, lockedOut: boolean, base: Obstacle[]): Obstacle[] {
+  return [...base, ...liftDoorObstacles(lift, lockedOut)];
 }
 
 export interface Obstacle {
@@ -340,15 +421,13 @@ const wallBetween = (x1: number, z1: number, x2: number, z2: number, halfHeight:
   halfHeight,
 });
 
-/** walls run well over head height: everything is indoors */
-export const FACILITY_WALL_HALF_HEIGHT = 1.25;
 
 const facilityWall = (x1: number, z1: number, x2: number, z2: number) =>
   wallBetween(x1, z1, x2, z2, FACILITY_WALL_HALF_HEIGHT);
 
 // Wall centre lines. Segments overlap at corners so every room is closed.
 const O = FACILITY_HALF + WALL_HALF; // outer walls
-const Y = YARD.maxX + WALL_HALF; // yard side walls
+const C = CAR_BOTTOM.maxX + WALL_HALF; // the lift car's side walls
 const [ventFrom, ventTo] = breachGap(BREACHES[0]);
 const [collapseFrom, collapseTo] = breachGap(BREACHES[1]);
 const [shaftFrom, shaftTo] = breachGap(BREACHES[2]);
@@ -356,8 +435,12 @@ const [shaftFrom, shaftTo] = breachGap(BREACHES[2]);
 export const FACILITY_WALLS: Obstacle[] = [
   // outer: south (either side of the yard door), the lab's west, the
   // hall's east, the core's north --- each with its breach left open
-  facilityWall(-O - WALL_HALF, O, -DOOR_HALF_WIDTH, O),
-  facilityWall(DOOR_HALF_WIDTH, O, O + WALL_HALF, O),
+  // (the stretch either side of the lift door is its own piece, so its face
+  // inside the car is painted like the car's, exactly as at the top)
+  facilityWall(-O - WALL_HALF, O, -CAR_BOTTOM.maxX - 2 * WALL_HALF, O),
+  facilityWall(-CAR_BOTTOM.maxX - 2 * WALL_HALF, O, -DOOR_HALF_WIDTH, O),
+  facilityWall(DOOR_HALF_WIDTH, O, CAR_BOTTOM.maxX + 2 * WALL_HALF, O),
+  facilityWall(CAR_BOTTOM.maxX + 2 * WALL_HALF, O, O + WALL_HALF, O),
   facilityWall(-O, 1.7, -O, ventFrom),
   facilityWall(-O, ventTo, -O, O),
   facilityWall(O, 1.7, O, collapseFrom),
@@ -385,17 +468,41 @@ export const FACILITY_WALLS: Obstacle[] = [
   facilityWall(2, -4, 10.3, -4),
 ];
 
-export const YARD_WALLS: Obstacle[] = [
-  facilityWall(-Y, O + WALL_HALF, -Y, YARD.maxZ + 2 * WALL_HALF), // west
-  facilityWall(Y, O + WALL_HALF, Y, YARD.maxZ + 2 * WALL_HALF), // east
-  facilityWall(-Y - WALL_HALF, YARD.maxZ + WALL_HALF, Y + WALL_HALF, YARD.maxZ + WALL_HALF), // south
+/** the car's sides and back, at the bottom (its front is the facility's south wall) */
+export const LIFT_WALLS: Obstacle[] = [
+  facilityWall(-C, O, -C, CAR_BOTTOM.maxZ + 2 * WALL_HALF), // west
+  facilityWall(C, O, C, CAR_BOTTOM.maxZ + 2 * WALL_HALF), // east
+  facilityWall(-C - WALL_HALF, CAR_BOTTOM.maxZ + WALL_HALF, C + WALL_HALF, CAR_BOTTOM.maxZ + WALL_HALF), // back
 ];
 
-export const WALLS: Obstacle[] = [...FACILITY_WALLS, ...YARD_WALLS];
+/** the facility's walls, drawn and sight-blocking as the facility */
+export const WALLS: Obstacle[] = [...FACILITY_WALLS, ...LIFT_WALLS];
+
+const shiftObstacle = (o: Obstacle, dz: number): Obstacle => ({ ...o, z: o.z + dz });
+const S = SURFACE;
+const hedge = (x1: number, z1: number, x2: number, z2: number) => wallBetween(x1, z1, x2, z2, 0.55);
+/**
+ * The surface: the same car, LIFT_DZ further south, with its own front
+ * wall either side of the door (the lift house), and the garden's hedges.
+ */
+export const LIFT_HOUSE_WALLS: Obstacle[] = [
+  ...LIFT_WALLS.map((w) => shiftObstacle(w, LIFT_DZ)),
+  facilityWall(-CAR_BOTTOM.maxX - 2 * WALL_HALF, O + LIFT_DZ, -DOOR_HALF_WIDTH, O + LIFT_DZ),
+  facilityWall(DOOR_HALF_WIDTH, O + LIFT_DZ, CAR_BOTTOM.maxX + 2 * WALL_HALF, O + LIFT_DZ),
+];
+export const HEDGES: Obstacle[] = [
+  hedge(S.minX - WALL_HALF, S.minZ - 2 * WALL_HALF, S.minX - WALL_HALF, S.maxZ + 2 * WALL_HALF), // west
+  hedge(S.maxX + WALL_HALF, S.minZ - 2 * WALL_HALF, S.maxX + WALL_HALF, S.maxZ + 2 * WALL_HALF), // east
+  hedge(S.minX - 2 * WALL_HALF, S.minZ - WALL_HALF, S.maxX + 2 * WALL_HALF, S.minZ - WALL_HALF), // north
+  hedge(S.minX - 2 * WALL_HALF, S.maxZ + WALL_HALF, -C - WALL_HALF, S.maxZ + WALL_HALF), // south, either side of the lift house
+  hedge(C + WALL_HALF, S.maxZ + WALL_HALF, S.maxX + 2 * WALL_HALF, S.maxZ + WALL_HALF),
+];
 
 /** every wall, as the room it faces: so a wall's two faces can be painted for the rooms either side */
-export type Zone = keyof typeof ROOMS | "intake";
-export const ZONE_RECTS: Record<Zone, Rect> = { ...ROOMS, intake: YARD };
+export type Zone = keyof typeof ROOMS | "lift" | "liftTop";
+export const ZONE_RECTS: Record<Zone, Rect> = { ...ROOMS, lift: CAR_BOTTOM, liftTop: LIFT_CARS.top };
+/** everything built in the facility's style: its walls, and the lift car at the top too */
+export const BUILT_WALLS: Obstacle[] = [...WALLS, ...LIFT_HOUSE_WALLS];
 
 /**
  * The facility's fixed furniture and structure: everything solid a player
@@ -469,9 +576,6 @@ export const FIXTURES: Fixture[] = [
   fixture("cooler", 13.5, 17.45, 1.1, 0.55, 1, "north"),
   fixture("toppledRack", 15.2, 5.4, 1.1, 0.5, 0.3),
   fixture("rubble", 17.1, 9.3, 0.8, 0.7, 0.4),
-  // the intake room: lockers to suit up at, a briefing table
-  fixture("lockers", -6.55, 26, 0.45, 1.5, 1, "east"),
-  fixture("table", 5.6, 26.6, 0.8, 1.2, 0.38),
   // the core: the objective in the middle, its consoles, four pillars for
   // cover, and stores in a corner
   fixture("reactor", 0, -11.5, 2.2, 2.2, 0.9),
@@ -495,7 +599,43 @@ export const REACTOR = FIXTURES.find((f) => f.kind === "reactor")!;
  */
 export const REACTOR_BODY: Obstacle = { x: REACTOR.x, z: REACTOR.z, halfX: 1.5, halfZ: 1.5, halfHeight: REACTOR.halfHeight };
 
-export const OBSTACLES: Obstacle[] = [...WALLS, ...FIXTURES.map((f) => (f === REACTOR ? REACTOR_BODY : f))];
+/**
+ * The garden's furniture: not the facility's art (the surface has its own,
+ * see client/world/surface.ts), but solid all the same.
+ */
+export type SurfaceKind = "tree" | "target" | "scoreboard" | "bench" | "planter";
+export interface SurfaceFixture extends Obstacle {
+  kind: SurfaceKind;
+}
+const sf = (kind: SurfaceKind, x: number, z: number, halfX: number, halfZ: number, halfHeight: number): SurfaceFixture => ({ kind, x, z, halfX, halfZ, halfHeight });
+export const SURFACE_FIXTURES: SurfaceFixture[] = [
+  // the range, north-west: targets to shoot at from the gun station
+  sf("target", -11, S.minZ + 2.6, 0.45, 0.15, 0.8),
+  sf("target", -8.5, S.minZ + 1.8, 0.45, 0.15, 0.8),
+  sf("target", -6, S.minZ + 2.6, 0.45, 0.15, 0.8),
+  // the scoreboard on the north hedge
+  sf("scoreboard", 4, S.minZ + 0.45, 1.8, 0.3, 1.4),
+  // trees in the corners (only the trunk is solid)
+  sf("tree", -11.6, S.maxZ - 1.6, 0.3, 0.3, 1.5),
+  sf("tree", 11.4, S.maxZ - 1.8, 0.3, 0.3, 1.5),
+  sf("tree", 11.6, S.minZ + 1.5, 0.3, 0.3, 1.5),
+  sf("tree", -2.2, S.minZ + 1.2, 0.3, 0.3, 1.5),
+  // a bench by the east hedge, planters either side of the lift
+  sf("bench", S.maxX - 0.45, S.minZ + 10, 0.35, 1.2, 0.25),
+  sf("planter", -4.6, S.maxZ - 0.7, 0.9, 0.5, 0.35),
+  sf("planter", 4.6, S.maxZ - 0.7, 0.9, 0.5, 0.35),
+];
+export const SCOREBOARD = SURFACE_FIXTURES.find((f) => f.kind === "scoreboard")!;
+/** how close to stand to read the scoreboard */
+export const SCOREBOARD_RANGE = 2.8;
+
+export const OBSTACLES: Obstacle[] = [
+  ...WALLS,
+  ...LIFT_HOUSE_WALLS,
+  ...HEDGES,
+  ...FIXTURES.map((f) => (f === REACTOR ? REACTOR_BODY : f)),
+  ...SURFACE_FIXTURES,
+];
 
 /** how close (centre to centre) a player has to be to switch the reactor on */
 export const ACTIVATE_RANGE = REACTOR.halfX + PICKUP_RANGE;
@@ -514,33 +654,56 @@ export function activateVerdict(
   return "ok";
 }
 
+const SPAWN_Z = S.maxZ - 6;
+export type LiftVerdict = "send" | "call" | "too far" | "attempt on" | "busy" | "already leaving";
+/** how close to the lift door (outside the car) the call button is */
+export const LIFT_CALL_RANGE = 2.5;
+
 /**
- * Where boxes can't be put down: the yard door (so nobody can wall the
- * yard shut) and the spawn strip (so nobody spawns inside a box). Doorways
- * inside the facility are fair game --- holding a chokepoint is what
- * they're for.
+ * What the lift button does for this player right now. Shared, so the
+ * client's prompt says exactly what the server would decide.
+ */
+export function liftVerdict(player: { x: number; z: number }, lift: LiftState, objective: ObjectiveState): LiftVerdict {
+  const level = levelOf(player.z);
+  const door = LIFT_DOORS[level];
+  const aboard = inCar(level, player.x, player.z);
+  if (!aboard && Math.hypot(player.x - door.x, player.z - door.z) > LIFT_CALL_RANGE) return "too far";
+  if (level === "bottom" && objective.active) return "attempt on";
+  if (lift.phase !== "open") return "busy";
+  if (aboard && lift.at === level) return lift.departAt !== undefined ? "already leaving" : "send";
+  if (!aboard && lift.at !== level) return "call";
+  return "busy";
+}
+
+/**
+ * Where boxes can't be put down: the lift car and both its doors (so
+ * nobody can wall the lift shut) and the spawn strip (so nobody spawns
+ * inside a box). Doorways inside the facility are fair game --- holding a
+ * chokepoint is what they're for.
  */
 export const NO_BUILD: Rect[] = [
-  { minX: -DOOR_HALF_WIDTH - 0.5, maxX: DOOR_HALF_WIDTH + 0.5, minZ: FACILITY_HALF - 2, maxZ: FACILITY_HALF + 2.5 },
-  { minX: -3.5, maxX: 3.5, minZ: 25.5, maxZ: YARD.maxZ },
+  { minX: -CAR_BOTTOM.maxX - 0.5, maxX: CAR_BOTTOM.maxX + 0.5, minZ: FACILITY_HALF - 2, maxZ: CAR_BOTTOM.maxZ + 1 },
+  { minX: -CAR_BOTTOM.maxX - 0.5, maxX: CAR_BOTTOM.maxX + 0.5, minZ: FACILITY_HALF - 2.5 + LIFT_DZ, maxZ: LIFT_CARS.top.maxZ + 1 },
+  { minX: -3, maxX: 3, minZ: SPAWN_Z - 1.5, maxZ: SPAWN_Z + 1.5 },
 ];
 
+/** everyone (re)spawns in the garden, a few steps north of the lift */
 export const SPAWN_POINTS: { x: number; z: number }[] = [
-  { x: -2, z: 26.5 },
-  { x: 0, z: 26.5 },
-  { x: 2, z: 26.5 },
-  { x: -1, z: 27.3 },
-  { x: 1, z: 27.3 },
+  { x: -1.5, z: SPAWN_Z },
+  { x: 0, z: SPAWN_Z },
+  { x: 1.5, z: SPAWN_Z },
+  { x: -0.75, z: SPAWN_Z + 0.8 },
+  { x: 0.75, z: SPAWN_Z + 0.8 },
 ];
 
 /**
- * Tutorial stations in the yard: each keeps one item of its kind lying at
+ * Tutorial stations in the garden: each keeps one item of its kind lying at
  * its spot, restocking a while after it's taken (up to a world-wide cap,
  * so carrying them off can't flood the map).
  */
 export const STATIONS: { kind: ItemKind; x: number; z: number }[] = [
-  { kind: "gun", x: -4.5, z: 22 },
-  { kind: "box", x: 4.5, z: 22 },
+  { kind: "gun", x: -7, z: SPAWN_Z - 1 },
+  { kind: "box", x: 7, z: SPAWN_Z - 1 },
 ];
 export const STATION_RESTOCK_MS = 3000;
 /** boxes are capped higher than a single attempt needs: they're what carries over between attempts */
