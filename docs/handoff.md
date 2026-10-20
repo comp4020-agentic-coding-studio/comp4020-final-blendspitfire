@@ -2,60 +2,63 @@
 
 > **AI-recorded.** Written and kept current automatically by the coding agent (Claude Code) as its session-to-session handoff, not written by hand. Terse on purpose: it's for the next agent session to pick up from. Decision history lives in [adr.md](adr.md).
 
-Updated: 2026-10-21 (overnight autonomous round: waves, turret + quota, garden rework, door sight; all committed, NOT pushed)
+Updated: 2026-10-21 (first review round after the user playtested: 12 requests, all built and committed, NOT pushed)
 
 ## Where we are
 - Crit 10 shipped (tag `crit-10` on origin at de1932b). Final project due 2026-11-09 12:00.
-- Local main is ahead of origin by the overnight commits (7636137 waves, 982db86 turret/quota, 4fa2c53 garden, c7f3848 door sight, + docs). **Not pushed** — push deploys; wait for the user.
-- The user asked (2026-10-21, then went to sleep) for: waves (e) -> turret + economy -> queued a/b/c/d/f, options listed but agent picks and builds the best, user reviews later. All done. Every agent default is in docs/adr.md ADR-040..043, marked "awaiting review".
+- Local main is ahead of origin by the overnight commits and this round's (c7cfe69 .. latest). **Not pushed**: a push deploys, so wait for the user.
+- This round (user's list, 2026-10-21): endings, bullet impact, shop by the reactor, gore, rifle, difficulty², fallen-town surface, retro screen, spectate (was already built), heal = bandage, more UI text, pixel UI. All in ADR-044..048, marked "awaiting review". The open choice the user left: whether the lift works in the blackout (the agent picked no).
 - Branch `surface` is merged into main; still present locally (ask before deleting).
 - Commit finished+verified work without asking (CLAUDE.md). Never push unasked.
 
 ## Game (current)
 - Persistent multiplayer PVE. Spawn in the surface garden -> one lift -> underground facility (corridor, lab, server hall, core). Surface = same coords +40 Z (LIFT_DZ); identical car at both ends.
-- Lift (server/lift.ts, rules in shared/protocol.ts liftVerdict/obstaclesFor): E in car = send (wait 15 s if someone on that level isn't aboard, 3 s if all are); E at door outside = call empty car; empty car at bottom returns up after 5 s. Ride shifts everyone/items in the car by LIFT_DZ and bumps `warp`. No firing in the car. Sight through the doors follows each leaf (main.ts updateSightDoors, ADR-043).
-- Attempt membership (ADR-038): being below = in the attempt. Death below = out (spectate). Before the reactor's on you may ride up (leaves the attempt). Reactor on: bottom door shut to anyone outside the car, car won't carry anyone up. Attempt end -> everyoneUp().
-- Objective (ADR-040): E at reactor (any hands) starts the attempt -> 10 s break -> waves. Wave n = 4+22·n/10 enemies; cleared when all spawned and none alive -> 30 s break (WAVE_BREAK_MS) -> next. E at reactor during a break = send the next wave now (anyone). Clear wave WAVES_TO_WIN=10 = run WON (board, facility reset, quota reset). Fail (reactor HP 0 / all crew out) -> wave count to 0, boxes/turrets/quota kept. DefenceState {reactorHealth, wave, phase "spawning"|"break", nextWaveAt}. MAX_ENEMIES 40.
-- Quota (ADR-041): shared crew balance `funds` (world key "funds", in StateMessage.funds). Wave clear pays waveReward = 15 + seconds under par (2.5 s/enemy). Spent at the supply terminal (corridor x1.55 z6.5, fixture "supplyTerminal", where the vending machine was): E = buy turret, 40 quota, cap 8 (buyVerdict).
-- Turret item (ADR-041): ItemKind "turret", BLOCKING_KINDS {box, turret} — placed/snapped/blocking/chewed like a box (10 hits vs box 6). Placed turrets (Defence.fireTurrets) fire every 0.6 s at nearest visible enemy ≤7 via World.turretFire -> real projectile owned by the turret id; turret shots skip players; kills credit nobody. `aim` field on ItemState swings the model's head.
-- Identity (ADR-036): cookie UUID; codename = colour + id[0:4]. Second tab replaces the first. Wounds/out carried across reconnect within an attempt.
-- Logs: `[Codename] verb ...` via act(); refusals via refuse() (1/kind/3 s/player); `[attempt N] wave K cleared in Ns: quota +X -> Y`; `[attempt N] failed/WON ...`.
-- Board: SQLite stats + runs + world key "run" {attempts, best = most waves cleared}. Garden screen; E opens #board panel.
-- Interaction: E = nearest usable (lift button > item > supply terminal > reactor > scoreboard), tap only. Click on reactor activates only empty-handed (with an item, click = the item's action). Prompts pinned to world points, white/grey.
-- Enemy targeting (defence.ts chooseTarget): AGGRO 6 with clear line, leash 10, search 2 s, REACTOR_COMMIT 2.5; isSafe players never targeted.
-- Players: MAX_WOUNDS 3; grace 1 s. Death below = out -> CRT spectate; death in the garden = 3 s respawn.
-- Items: gun (click/hold full auto 150 ms), box + turret (primary = place, secondary = grid snap, Q = place). Stations restock gun/box.
-- Server-authoritative 20 Hz; SQLite persists items/objective/defence/run/board/funds.
-- Look underground: OKLCH greyed gamut, emitters vivid; 8-light pool + headlamp; LOS mask; pixel post. Rules in docs/art-and-interaction.md.
-- Surface (ADR-042, exempt from art rules): garden 34×24 (SURFACE), chain-link FENCES (collide, don't block sight), sight reaches SURFACE_VIEW_MARGIN=6 past the fence onto outside ruins (surface.ts outsideRuins, visual only). Inside: ruin pillars/lintel + corp supply crates/field tent (SURFACE_FIXTURES); keep anything inside under 0.95 half-height or it casts black wedges on the lawn. Paint post pass; out of sight = black.
+- Lift (server/lift.ts, rules in shared/protocol.ts liftVerdict(player, lift, objective, phase)/obstaclesFor): E in car = send (15 s wait / 3 s if all aboard); E at door outside = call; empty car at bottom returns after 5 s. No firing in the car. Server `attemptLocked()` = active && phase !== "won".
+- Attempt membership (ADR-038): below = in it. Death below = out (spectate teammate, CRT, click = next). Before reactor on you may ride up.
+- Objective (ADR-040/044): E at reactor starts -> 10 s break -> waves. waveSize(w) = 6+3w+0.45w² (shared/enemies.ts), spawnInterval(w), enemySpeed(w). Wave cleared -> 30 s break; E at reactor in a break = send now. DefenceState.phase: spawning | break | won | blackout (+blackoutAt).
+  - won (last wave cleared): lights full (client powerNow -> look.ts LightState power "full"), fallen revived to garden, rest evacuate by lift; tick calls resetAfterWin() once nobody is below (items/funds/gore/run reset).
+  - blackout (reactor HP 0): lights/halos/reactor off, ambient 0.04; endless spawns blackoutSpawnInterval (600 ms -> x0.9 per 5 s -> 150); enemies hunt via Defence.hunt FlowField (goal = a living player, rebuilt 1 s); turrets off; lift locked; ends on wipe.
+  - wipe (everyone below dead): ended() report -> bringUpAt = now + WIPE_HOLD_MS (4.5 s) -> everyoneUp(); client freezes view, fades black (.ui-wipe), fades in on garden.
+  - Restart mid-ending: boot finishes it (won -> reset, blackout -> fail). db.loadDefence keeps won/blackout.
+- Reports (StateMessage.reports, Report type): wave {size, clearMs, parMs, base, bonus, total}; attempt {outcome, reason, waves, blackoutMs, crew[name,kills,out]}. Client queueReport -> .ui-report panel (wave shows 3.5 s before an attempt report behind it).
+- Quota/shop (ADR-041/046): shared `funds`. Wave pay = 15 + seconds under par (2.5 s/enemy). Shop = comms desk fixture "supplyTerminal" at (0,-16.8) north of reactor; corridor has the "vending" fixture back. E opens #shop panel; 1 turret 40 (cap 8, hands empty), 2 field dressing 20 (needs a wound). BuyMessage {item}. buyVerdict(item, player, {holding, wounds}, funds, turrets).
+- Dressing: conn.bandaged = wounds at heal time, wounds -> 0; next hit sets wounds = bandaged (wire PlayerState.bandaged; dotted pip).
+- Turret: BLOCKING_KINDS {box, turret}; fires 450 ms, range 7, real projectiles that skip players.
+- Rifle: FIRE_COOLDOWN_MS 100, AIM_SPREAD 0.05 (+0.12 arm wound), decided client-side and sent as the aim. ENEMY_HIT_POINTS 5. PROJECTILE_SPEED 90. MAX_ENEMIES 50.
+- Shots: ProjectileState.hit (wall|enemy|player); client stepTracers -> Impacts (client/world/gore.ts) sparks/splash at landing.
+- Gore (ADR-045): GoreMark {n, kind blood|corpse, who player|enemy, x,z,r,size,color}; server leaveGore() on hits/deaths (facility only), saved in world key "gore", capGore (900/300), StateMessage.gore increments + goreReset for new clients/clean. Client Gore class: instanced blood decals, corpses = darkened live models (crawler on back, crew face-down). Colours BLOOD_HUMAN/BLOOD_CRAWLER in palette.ts.
+- Identity (ADR-036): cookie UUID; codename = colour + id[0:4]. Second tab replaces first. Wounds/bandage/out carried across reconnect within an attempt.
+- Logs: `[Codename] verb` via act(); refuse(); `[attempt N] wave K cleared...`, `... blackout`, `... failed/WON`, `crew evacuated`.
+- Players: MAX_WOUNDS 3; grace 1 s. Death in garden = 3 s respawn.
+- Look underground: OKLCH greyed gamut (blood exempt), emitters vivid; 8-light pool + headlamp; LOS mask; retro post (PIXEL_SCALE 0.25, grade.levels 12, scanlines, grain; ?pixel=0.x). Rules: docs/art-and-interaction.md.
+- Surface (ADR-042/048, exempt from art rules): garden 34×24, chain-link FENCES, SURFACE_VIEW_MARGIN 16. Fallen town: surface.ts outsideRuins (roads, crane jib, cars, containers, pipes, pylon, building shells, rubble), ruinPillar = sheared concrete column, ruinLintel = cracked slab. Keep anything inside the fence under 0.95 half-height.
+- UI (ADR-048): public/index.html "company terminal": VT323 (Google Fonts link), --ui #f2ead6, 2 px frames with stepped clip-path corners, segmented bars; client/ui/prompts.ts leader = pixel staircase.
 
 ## Key files
-- shared/protocol.ts (contract, map, verdicts incl. buyVerdict/waveReward, shot maths), shared/enemies.ts (balance + FlowField + turret numbers), shared/palette.ts
-- server/index.ts (connections, tick, projectiles, buy, funds), server/defence.ts (waves, turrets), server/db.ts
-- client/main.ts, client/net.ts, client/postprocess.ts, client/visibility.ts, client/models/index.ts (sentryTurret), client/models/facility.ts (supplyTerminal), client/world/surface.ts
-- Tests: spec/*.test.ts (129). defence.test.ts = targeting, chewing, waves/breaks/skip/win/fail, turrets, payout (fake World). economy.test.ts = waveReward + buyVerdict. Decisions: docs/adr.md (synced to 2026-10-21 from .claude/notes/adr-draft.md).
+- shared/protocol.ts (contract, map, verdicts, Report, GoreMark, SHOP), shared/enemies.ts (waves, blackout, FlowField goal), shared/palette.ts
+- server/index.ts (connections, tick, projectiles, shop, gore, endings), server/defence.ts (waves, won/blackout, hunt, turrets), server/db.ts
+- client/main.ts, client/look.ts (LightState power), client/postprocess.ts (retro), client/world/gore.ts, client/world/surface.ts, client/models/facility.ts (supplyTerminal = comms desk)
+- Tests: spec/*.test.ts (133). defence.test.ts covers won/blackout/hunt; lift.test.ts the won/blackout lift; economy.test.ts shop + dressing + gore caps.
 
 ## Next work (ordered)
-1. User reviews the overnight round (ADR-040..043): play a full attempt; judge turret model (small/dark from overhead, only its amber light reads — likely needs a brighter top or a range ring), supply terminal, garden ruins/kit layout, door sight. Open choices listed in those ADRs: skip = anyone vs all-ready vote; shared vs per-player quota; which extra score parts (no-damage/no-death/streak/per-kill); turret cost/cap/rate; WAVES_TO_WIN.
-2. Tune: one turret alone doesn't clear wave 1 (by design?); reward/cost pace untested past wave 1. DEV_WAVES=N shortens a run. Numbers: shared/enemies.ts (waveSize, TURRET_*), shared/protocol.ts (TURRET_COST, WAVE_BASE_REWARD, PAR_MS_PER_ENEMY).
-3. Shop has one item; more buildables/items when the user picks them.
-4. Still pending playtest from 2026-10-14: wound effects, CRT/daze strength, aggro 6, grace 1 s, rate of fire.
-5. Lighting option C (overhead fixtures + halos; fewer, wider lamps).
-6. Garden tutorial could gate on using a mechanic.
-- Older candidates: no sound; second enemy type; server-side visibility; no in-world wave/break indicator on the reactor (HUD only).
-- Open user decisions: lift-return rule; overall grade/brightness; hall racks claustrophobic; hide /gallery.html in prod?; slider grade UI.
+1. User reviews this round in play (ADR-044..048). Likely tuning: difficulty curve past wave 3 (untested by a human), blackout ramp, gore amount, retro strength (grade.ts levels/scanlines/grain; PIXEL_SCALE), VT323 size on small screens.
+2. Open user decisions: blackout lift (agent: locked); skip = anyone vs vote; shared vs per-player quota; extra score parts; turret cost/cap; WAVES_TO_WIN.
+3. Shop has two lines; more buildables when the user picks them.
+4. Still pending playtest from 2026-10-14: wound effects, CRT/daze strength, aggro 6, grace 1 s.
+5. Lighting option C (overhead fixtures + halos). Garden tutorial gating. No sound. Second enemy type.
+- Open user decisions (older): lift-return rule; overall grade/brightness; hall racks claustrophobic; hide /gallery.html in prod?
 - Docs: README "good" section unfinished (user writes). Authorship rule: skeleton only unless user dictated.
 
 ## Verify recipes / gotchas
-- Dev: `DB_PATH=/tmp/blendspitfire-dev.db pnpm dev` (8080). DEV_SPAWN / DEV_JOIN="x,z" = local spawn override. `pnpm check` needs a running server started WITHOUT DEV_SPAWN.
-- Client edits: rerun `node scripts/build-client.ts` (dev doesn't watch). Server/protocol edits: restart server.
+- Dev: `DB_PATH=/tmp/blendspitfire-dev.db pnpm dev` (8080, the user's). Client edits: rerun `node scripts/build-client.ts`. Server edits: restart.
+- `pnpm check` against a throwaway server so 8080 is untouched: start `PORT=8090 DB_PATH=/tmp/check.db node server/index.ts` (no DEV_SPAWN), then `APP_URL=http://localhost:8090 pnpm check`.
+- Dev env (local only, never in fly.toml): DEV_SPAWN/DEV_JOIN="x,z", DEV_WAVES=N, DEV_ARMED=1 (join with a rifle), DEV_REACTOR=0.02 (reactor HP at activation, reaches blackout fast). Reactor activation range 4.4 from (0,-11.5): DEV_JOIN=1.5,-7.6 is in range. Comms desk: DEV_JOIN=0,-15.2.
+- Seed quota: insert world row ("funds","100") before starting. Seed gore: world key "gore" (JSON GoreMark[]).
+- Bots: ws client with cookie `playerId=<uuid>`; send {type:"activate"} twice (start + skip break); {type:"primary",x,z} at enemies to fight. Walking core -> corridor: the blast door at z=2 is sealed; go via the west passage (-12, z) and the lab.
+- Browser: headless Chrome via CDP (--remote-debugging-port, --use-angle=metal). Kill it after (pkill -f user-data-dir=...) or it stays as a ghost player.
+- Gallery: /gallery.html (model sheet), ?facility, &x=&z=, &live, &pixel=0, &nomask. Game URL flags: ?daze=, ?crt=, ?pixel=.
+- Port 8080 may show a QQ process in lsof (unrelated). macOS sed has no \b or \|: use perl -pi.
 - Node strip-only TS: no parameter properties.
-- Quick attempt: DB_PATH=/tmp/x.db DEV_JOIN="0,-7.6" DEV_WAVES=2 node server/index.ts (joins in reactor range). Seed quota: insert world row ("funds","100") into the db before starting. Join at the terminal: DEV_JOIN="0.2,6.2".
-- Scripted ws clients: /tmp/wavecheck/{live,econ,fire}.mjs (activate/skip, buy+place, turret fire). /tmp is not durable; shapes are in shared/protocol.ts ClientMessage.
-- Driving a real browser: /tmp/drive/cdp.mjs <port> <script.mjs> + /tmp/drive/chrome.sh <port> <profile> <url>; kill the Chrome after (pkill -f user-data-dir=/tmp/drive/<profile>) or it stays as a ghost player.
-- Gallery: /gallery.html (model sheet incl. sentry turret + supply terminal), ?facility, &x=&z=, &live, &pixel=0, &nomask. Game URL flags: ?daze=, ?crt=.
-- Port 8080 may show a QQ process in lsof (unrelated). macOS sed has no \b: use perl -pi.
-- Lift timing for scripts: short wait 3 s + door 0.9 + ride 2.6 + door 0.9. Moves must carry `warp` from the latest state.
 
 ## User prefs
 - Chinese conversation. Chained doc requests: one step at a time, drafts in Chinese until approved.

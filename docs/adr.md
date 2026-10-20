@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-10-21, Sight through the lift doors follows the leaves
+Synced from the draft up to: 2026-10-21, first review round: endings, gore, shop, difficulty, fallen town, retro screen, terminal UI
 
 ---
 
@@ -607,3 +607,58 @@ Suggested minimal topology: safe room, one main corridor (bottleneck), a fork in
 **Decision.** Each door leaf is its own sight blocker, placed where it's drawn and sized by how open the door is, so the view through the doorway narrows and widens with the gap. Before, the door blocked sight all at once the moment it began to close.
 
 **Why.** The developer wanted the door animation and what you can see to agree.
+
+## ADR-044: Attempts end in the facility: lights up, blackout, or a cut to black
+*2026-10-21 · Status: Accepted (direction from the developer after playtesting; mechanics by the agent, awaiting review)*
+
+**Context.** Every ending, won or lost, snapped everyone straight back to the garden, which the developer found abrupt. They asked for three endings. A win should light the whole facility up "as if it has only just been properly powered", and the crew leaves by lift. A wipe should hold the camera where everyone fell, then cut away (to black, say). A dead reactor should black the facility out completely, torches only, with enemies that never stop coming. The developer hadn't decided whether the lift should still work in the blackout; fighting on until the end was one option they gave, but only if the pressure is high enough that nobody can sit it out.
+
+**Decision.**
+- *Won.* The defence gains a `won` phase. Every lamp comes on (the dead ones too, each catching at its own moment with a stutter), the red emergency lamps go off, and the ambient brightens and whitens. Fallen crew are back in the garden. The lift carries the rest up, and the facility resets only once nobody is left below.
+- *Wipe.* The server holds for 4.5 s before moving everyone up. The client freezes the view where it was and fades to black over the last 1.3 s, moves behind the black, then fades up on the garden.
+- *Blackout* (agent's choice on the open question: no way out). A `blackout` phase: no lamps, halos or reactor light, near-zero ambient, torches only. Waves stop counting. Every breach spawns without end, starting 600 ms apart and tightening by a tenth every 5 s down to 150 ms. Enemies ignore the dead reactor and hunt the crew along a flow field rebuilt every second toward a living player. Turrets are unpowered. The lift stays locked until everyone is dead.
+- A restart mid-ending finishes it: a won run resets, a blackout counts as failed.
+
+**Why.** The developer's reasons: the change of state should be felt in the facility itself, and a blackout you can't leave is only interesting if it ends quickly.
+
+## ADR-045: Shots land hard, and fights leave blood and bodies
+*2026-10-21 · Status: Accepted (the developer's request; colours and amounts by the agent)*
+
+**Context.** The developer wanted shots with more impact (a faster round, sparks where it hits) and a facility that remembers its fights: bodies and blood that stay until the run is won. Humans bleed red and crawlers green; the agent picked the shades.
+
+**Decision.**
+- Rounds fly at 90 instead of 45, with longer, thicker tracers. The server marks what stopped each shot (wall, enemy or player), and clients burst sparks off walls and boxes, or a splash off whatever bleeds.
+- Gore is server-decided, saved, and sent to clients as increments. Crew blood is a dark arterial red (#8a1a16; the first try, #6b1714, vanished under sodium light), crawler blood an acid green (#74b81a). A crawler that's hit leaves a drop half the time. A dead crawler leaves a large pool and its body on its back, darkened, eyes out. A wounded crewmate drips red; one who dies below leaves a body face down in their colour. Caps are 900 blood marks and 300 bodies, oldest first. Nothing stays on the surface.
+- The art rules gain one exception: blood is the only surface colour allowed outside the gamut.
+
+**Why.** The developer's reason: immersion. A floor that keeps the mess shows how the attempt has gone without a word of UI.
+
+## ADR-046: The shop moves beside the reactor and sells field dressings
+*2026-10-21 · Status: Accepted (the developer's request; heal rule from the developer, layout by the agent)*
+
+**Context.** The developer judged the corridor terminal badly placed. They asked for a comms-desk kind of thing next to the reactor to act as the shop, and for the original vending machine to be restored. They also asked for a medical option that isn't an item: buy it and you heal. Their rule for it: the heal is a bandage. Healed from one hit away from death, you're back to full with every debuff cleared, but the next hit puts you straight back to where you were.
+
+**Decision.** The vending machine is back in the corridor. A corp comms desk (a radio stack, a screen, a whip antenna) stands just north of the reactor. E opens a supply panel: 1 for a turret (40), 2 for a field dressing (20), or click a line; it closes when you walk away. A dressing clears every wound and remembers how many there were, and the next hit restores exactly that many, not one more. It needs a wound to buy and works with full hands. A dressed wound shows as a dotted pip.
+
+**Why.** The developer's reasons: the shop belongs where the fight is, and a heal that only buys time keeps wounds meaningful.
+
+## ADR-047: Harder waves and a looser rifle
+*2026-10-21 · Status: Accepted (direction from the developer; numbers by the agent, awaiting tuning)*
+
+**Context.** The developer cleared all ten waves on a first try and asked for the difficulty curve to be "squared at least once more". They also wanted a rifle with random spread, a higher rate of fire and lower damage per round.
+
+**Decision.** Wave size is 6 + 3w + 0.45w² (9, 32 and 81 at waves 1, 5 and 10). The spawn gap shrinks 50 ms per wave from 700 to a floor of 250. Enemies move 0.08 faster each wave, and up to 50 can be alive at once. The rifle fires every 100 ms instead of 150, every shot strays up to ±0.05 rad (an arm wound still adds its own 0.12), and a crawler takes five rounds instead of three. Turrets fire every 450 ms instead of 600 to keep pace.
+
+**Why.** The developer's reason: one clear on a first try means the curve is too flat. Their spec for the rifle makes it fire more and hit less.
+
+## ADR-048: A fallen town on the surface, a harder retro screen, a terminal UI
+*2026-10-21 · Status: Accepted (direction from the developer; look by the agent, awaiting review)*
+
+**Context.** Three look requests from the developer. The surface ruins were too sparse, and should be mechanical and architectural wreckage, not stone; a laptop could still see the black edge. The pixel filter didn't have enough flavour, maybe because the resolution was still too high, and the agent could look for other ways to add atmosphere. And the UI text and leader lines looked too modern: make them more pixel-styled, after Lethal Company.
+
+**Decision.**
+- *Surface.* The colonnade becomes a fallen town: sheared concrete columns and slabs with rebar, asphalt streets outside the fence, burnt-out cars, a crane jib down across the north road, containers, pipe stacks, a toppled pylon, gutted building shells and rubble everywhere. Sight past the fence goes from 6 to 16 units.
+- *Screen.* The internal resolution drops from 0.42 to 0.25 of the window. Underground, every frame is crushed to 12 levels a channel, with an ordered dither fixed to the big pixels, a scanline per pixel row and slight crawling grain. The surface keeps its painted grade.
+- *UI.* Everything is an old company terminal: the VT323 pixel face in warm phosphor white with a faint glow, two-pixel frames with stepped corners, segmented bars, and prompt leaders drawn as pixel steps from a square dot. A report panel itemises each wave's pay (time against par, base, speed bonus, total) and sums up each attempt (outcome, waves, time held in the dark, kills per player). Wave banners give the enemy count and the size of the next wave.
+
+**Why.** The developer's reasons: a denser, man-made wreck for the setting, more retro atmosphere, and UI that matches the pixel screen.
