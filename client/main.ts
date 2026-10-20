@@ -8,6 +8,7 @@ import { buildYardGuides } from "./floorGuides.ts";
 import { Prompts, type Prompt } from "./ui/prompts.ts";
 import { buildSurface, createSunlight, scoreboardScreen } from "./world/surface.ts";
 import { LiftDoors, liftPanelAt } from "./world/lift.ts";
+import { Gore, Impacts } from "./world/gore.ts";
 import {
   GUN_REST_HEIGHT,
   HELD_GUN_OFFSET,
@@ -91,6 +92,7 @@ import {
   type BoardMessage,
   type PlayerState,
   type ProjectileState,
+  PROJECTILE_SPEED,
 } from "../shared/protocol.ts";
 
 function showFatalError(message: string): void {
@@ -181,6 +183,10 @@ scene.add(buildSurface());
 const sunlight = createSunlight(scene);
 const liftDoors = new LiftDoors();
 scene.add(liftDoors.group);
+const gore = new Gore();
+scene.add(gore.group);
+const impacts = new Impacts();
+scene.add(impacts.group);
 let lift: LiftState = { at: "top", phase: "open" };
 
 // The reactor's core window glows dim red on standby and blue once live.
@@ -928,6 +934,8 @@ function renderControls(): void {
 
 const tracerMaterial = new THREE.MeshBasicMaterial({ color: EMIT_TRACER });
 const tracers = new Map<string, Tracer>();
+/** shots whose landing has been drawn (sparks or a splash), so each lands once */
+const landed = new Set<string>();
 
 /** shots fired here and not yet confirmed: same line as the server's, drawn straight away */
 interface PendingShot {
@@ -996,7 +1004,7 @@ const net = connect({
         myOut = !!p.out;
         const wounds = p.wounds ?? 0;
         if (wounds > myWounds) onWounded(wounds, myBandaged > 0);
-        else if (wounds < myWounds) showBanner("patched up — the next hit tears it open");
+        else if (wounds < myWounds && (p.bandaged ?? 0) > 0) showBanner("patched up — the next hit tears it open");
         myWounds = wounds;
         myBandaged = p.bandaged ?? 0;
         // the server moved us (a respawn, a lift ride): jump there now, and
@@ -1026,6 +1034,7 @@ const net = connect({
       }
     }
     updateProjectiles(state.projectiles);
+    gore.apply(state.gore, !!state.goreReset);
     // items only come when they've changed; otherwise keep what we have
     if (state.items) updateItems(state.items);
     updateEnemies(state.enemies, t);
@@ -1056,9 +1065,16 @@ function updateProjectiles(incoming: ProjectileState[]): void {
 function stepTracers(): void {
   const t = serverClock.now();
   for (const [id, tracer] of tracers) {
+    const s = tracer.state;
+    // the head's reached where it stops: sparks off a wall, a splash off a body
+    if (!landed.has(id) && s.hit && s.range > 0.05 && ((t - s.firedAt) / 1000) * PROJECTILE_SPEED >= s.range) {
+      landed.add(id);
+      impacts.hit(s.hit, s.x + s.dirX * s.range, s.z + s.dirZ * s.range, s.dirX, s.dirZ);
+    }
     if (!tracer.update(t)) {
       scene.remove(tracer.mesh);
       tracers.delete(id);
+      landed.delete(id);
     }
   }
   const now = performance.now();
@@ -1429,6 +1445,7 @@ function animate(): void {
   stepWounds(dt);
   stepDust();
   stepTracers();
+  impacts.step(dt);
   stepMuzzleFlash();
   stepItemVisuals(time);
   renderPointerFeedback();

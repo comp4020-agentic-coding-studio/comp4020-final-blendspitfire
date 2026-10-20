@@ -61,6 +61,10 @@ export interface StateMessage {
   funds: number;
   /** one-off lines to show everyone (a wave starting, the reactor going down) */
   announcements?: string[];
+  /** blood and bodies left since the last message (all of them, after goreReset) */
+  gore?: GoreMark[];
+  /** drop every mark held before adding `gore`: a client's first message, or the facility cleaned after a won run */
+  goreReset?: true;
   lift: LiftState;
 }
 
@@ -140,6 +144,42 @@ export interface ProjectileState {
   firedAt: number;
   /** distance it travels before stopping */
   range: number;
+  /** what stopped it, once known: drawn as sparks, a green splash or a red one where it lands */
+  hit?: ShotHit;
+}
+export type ShotHit = "wall" | "enemy" | "player";
+
+/**
+ * What a fight leaves on the facility floor: blood where someone or
+ * something was hit, and the bodies of whatever died. Server-decided (so
+ * every client sees the same mess), kept until the run is won, and capped
+ * oldest-first per kind so a long run can't grow it without bound.
+ */
+export interface GoreMark {
+  /** increasing, so a client applies the caps in the same order the server did */
+  n: number;
+  kind: "blood" | "corpse";
+  /** whose: red for the crew, green for the crawlers */
+  who: "player" | "enemy";
+  x: number;
+  z: number;
+  /** heading, radians */
+  r: number;
+  /** blood: the splash's radius */
+  size?: number;
+  /** a crew corpse: their colour */
+  color?: string;
+}
+export const GORE_CAPS: Record<GoreMark["kind"], number> = { blood: 900, corpse: 300 };
+/** marks at or past `n` survive the caps: shared, so the client drops exactly what the server dropped */
+export function capGore(marks: GoreMark[]): GoreMark[] {
+  const keep: GoreMark[] = [];
+  const count: Record<GoreMark["kind"], number> = { blood: 0, corpse: 0 };
+  for (let i = marks.length - 1; i >= 0; i--) {
+    const m = marks[i];
+    if (count[m.kind]++ < GORE_CAPS[m.kind]) keep.push(m);
+  }
+  return keep.reverse();
 }
 
 /**

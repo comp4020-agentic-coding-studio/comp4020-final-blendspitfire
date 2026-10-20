@@ -20,7 +20,10 @@ the shared materials in [`client/models/kit.ts`](../client/models/kit.ts):
 `matte` (paint, concrete, fabric), `tile` (sealed floors), `glossy` (bare
 metal) and `emissive` (lamps, LEDs, screens --- unlit). No textures, no
 per-model materials. Other exceptions, and only these: projectiles, the
-hover highlight, the placement preview, and the floor guide decals.
+hover highlight, the placement preview, the floor guide decals, and gore
+(`client/world/gore.ts`): blood decals and hit splashes in the two blood
+colours in the palette, the one surface colour allowed past the gamut so
+it stands out on a grey floor. Bodies are the live models, darkened.
 
 **Colour comes from the palette, in three kinds.**
 [`shared/palette.ts`](../shared/palette.ts) is the single source.

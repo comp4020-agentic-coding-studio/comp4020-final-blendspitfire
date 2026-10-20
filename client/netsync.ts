@@ -94,8 +94,8 @@ export class SnapshotBuffer {
 }
 
 /** a bullet's streak: a thin bright line from just behind its head, so speed reads as a tracer */
-const TRACER_LENGTH = 1.6;
-const tracerGeometry = new THREE.BoxGeometry(0.06, 0.06, 1).translate(0, 0, -0.5);
+const TRACER_LENGTH = 2.6;
+const tracerGeometry = new THREE.BoxGeometry(0.08, 0.08, 1).translate(0, 0, -0.5);
 
 export class Tracer {
   readonly mesh: THREE.Mesh;

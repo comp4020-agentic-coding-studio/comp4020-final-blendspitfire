@@ -9,6 +9,9 @@ import {
   WAVE_BASE_REWARD,
   buyVerdict,
   waveReward,
+  GORE_CAPS,
+  capGore,
+  type GoreMark,
 } from "../shared/protocol.ts";
 
 // The quota: what clearing a wave pays, and what the supply terminal will
@@ -40,5 +43,17 @@ describe("buying at the supply terminal", () => {
     expect(buyVerdict("heal", atTerminal, { holding: true, wounds: 2 }, HEAL_COST, 0)).toBe("ok");
     expect(buyVerdict("heal", atTerminal, empty, 999, 0)).toBe("unhurt");
     expect(buyVerdict("heal", atTerminal, { holding: false, wounds: 1 }, HEAL_COST - 1, 0)).toBe("can't afford");
+  });
+});
+
+describe("gore", () => {
+  it("keeps the newest marks of each kind up to its cap, in order", () => {
+    const marks: GoreMark[] = [];
+    for (let n = 0; n < GORE_CAPS.blood + 20; n++) marks.push({ n, kind: "blood", who: "enemy", x: 0, z: 0, r: 0 });
+    marks.push({ n: 9999, kind: "corpse", who: "player", x: 0, z: 0, r: 0 });
+    const kept = capGore(marks);
+    expect(kept.filter((m) => m.kind === "blood").length).toBe(GORE_CAPS.blood);
+    expect(kept[0].n).toBe(20);
+    expect(kept.some((m) => m.kind === "corpse")).toBe(true);
   });
 });

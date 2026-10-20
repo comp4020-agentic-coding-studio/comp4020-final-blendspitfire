@@ -13,6 +13,8 @@ import {
   loadRun,
   loadFunds,
   saveFunds,
+  loadGore,
+  saveGore,
   recentRuns,
   recordRun,
   saveRun,
@@ -67,6 +69,8 @@ import {
   SHOP,
   buyVerdict,
   waveReward,
+  capGore,
+  type GoreMark,
   type ClientMessage,
   type ObjectiveState,
   type ItemKind,
@@ -333,6 +337,30 @@ const defence = new Defence(
 /** the crew's shared quota (see SUPPLY_TERMINAL in shared/protocol.ts) */
 let funds = loadFunds();
 
+// Blood and bodies (GoreMark in shared/protocol.ts): left on the facility
+// floor until the run is won. Only the new ones go out with each broadcast;
+// a client joining, or everyone after a clean-up, gets the lot.
+let gore = loadGore();
+let goreSeq = gore.length ? gore[gore.length - 1].n + 1 : 0;
+let goreNew: GoreMark[] = [];
+let goreReset = false;
+let goreDirty = false;
+function leaveGore(mark: Omit<GoreMark, "n" | "r"> & { r?: number }): void {
+  // the garden is practice: nothing stays on the lawn
+  if (levelOf(mark.z) !== "bottom") return;
+  const m: GoreMark = { ...mark, n: goreSeq++, x: Math.round(mark.x * 100) / 100, z: Math.round(mark.z * 100) / 100, r: Math.round((mark.r ?? Math.random() * Math.PI * 2) * 100) / 100 };
+  gore.push(m);
+  goreNew.push(m);
+  if (gore.length > 1400) gore = capGore(gore);
+  goreDirty = true;
+}
+function cleanGore(): void {
+  gore = [];
+  goreNew = [];
+  goreReset = true;
+  goreDirty = true;
+}
+
 // The run: attempts at charging the reactor, failed ones and all, until one
 // gets it to full. Every attempt is logged and counted; a win goes on the
 // board and the facility starts over.
@@ -367,6 +395,7 @@ function winRun(): void {
   items.clear();
   clearItems();
   for (const it of [...INITIAL_ITEMS, ...STATIONS]) spawnItem(it.kind, it.x, it.z);
+  cleanGore();
   everyoneUp();
   boardDirty = true;
 }
@@ -883,7 +912,7 @@ function spawnProjectile(owner: { id: string; x: number; z: number }, aimX: numb
   // the shooter's own tile (a turret) doesn't stop its shot
   const range = shotRange(x, z, dirX, dirZ, worldObstacles([...items.values()].filter((i) => i.id !== owner.id)));
   const id = randomUUID();
-  projectiles.set(id, { id, ownerId: owner.id, x, z, dirX, dirZ, firedAt: now, range, travelled: 0 });
+  projectiles.set(id, { id, ownerId: owner.id, x, z, dirX, dirZ, firedAt: now, range, travelled: 0, hit: "wall" });
 }
 
 /** a turret's muzzle sits just past its own tile */
@@ -946,6 +975,7 @@ function stepProjectiles(now: number): void {
     if (inAnyCar(hx, hz)) {
       p.range = p.travelled;
       p.travelled = p.range;
+      p.hit = "wall";
       continue;
     }
     // an enemy nearer along the line than any player takes the shot instead
@@ -953,7 +983,17 @@ function stepProjectiles(now: number): void {
     p.travelled = enemyHit ? enemyHit.at : at;
     if (enemyHit) {
       p.range = enemyHit.at;
-      if (defence.damage(enemyHit.id)) {
+      p.hit = "enemy";
+      const ex = p.x + p.dirX * enemyHit.at;
+      const ez = p.z + p.dirZ * enemyHit.at;
+      const killed = defence.damage(enemyHit.id);
+      // a drip where it was hit, carried a little on along the shot; a body and a pool where it drops
+      if (Math.random() < 0.5) leaveGore({ kind: "blood", who: "enemy", x: ex + p.dirX * 0.5, z: ez + p.dirZ * 0.5, size: 0.18 + Math.random() * 0.12 });
+      if (killed) {
+        leaveGore({ kind: "blood", who: "enemy", x: ex + p.dirX * 0.3, z: ez + p.dirZ * 0.3, size: 0.85 + Math.random() * 0.3 });
+        leaveGore({ kind: "corpse", who: "enemy", x: ex + p.dirX * 0.3, z: ez + p.dirZ * 0.3, r: Math.atan2(p.dirX, p.dirZ) + (Math.random() - 0.5) });
+      }
+      if (killed) {
         const ownerConn = connections.get(p.ownerId);
         if (ownerConn) {
           ownerConn.score += 1;
@@ -964,6 +1004,7 @@ function stepProjectiles(now: number): void {
       }
     } else if (victim) {
       p.range = at;
+      p.hit = "player";
       const ownerConn = connections.get(p.ownerId);
       const by = ownerConn ? (victim === ownerConn ? "their own shot" : codename(ownerConn.player)) : "a stray shot";
       // friendly fire only counts against the score when it kills
@@ -988,12 +1029,14 @@ function wound(conn: Connection, now: number, by: string): boolean {
     conn.bandaged = 0;
     conn.woundGraceUntil = now + WOUND_GRACE_MS;
     conn.dirty = true;
+    leaveGore({ kind: "blood", who: "player", x: conn.player.x, z: conn.player.z, size: 0.35 });
     act(conn.player, `wounded by ${by}: dressing torn, back to ${conn.wounds}/${MAX_WOUNDS}`);
     return false;
   }
   conn.wounds += 1;
   conn.woundGraceUntil = now + WOUND_GRACE_MS;
   conn.dirty = true;
+  leaveGore({ kind: "blood", who: "player", x: conn.player.x + (Math.random() - 0.5) * 0.4, z: conn.player.z + (Math.random() - 0.5) * 0.4, size: 0.22 + Math.random() * 0.1 });
   act(conn.player, `wounded by ${by} (${conn.wounds}/${MAX_WOUNDS})`);
   return false;
 }
@@ -1007,6 +1050,8 @@ function kill(conn: Connection, now: number): void {
   conn.deadUntil = levelOf(conn.player.z) === "bottom" ? Infinity : now + DEATH_DURATION_MS;
   conn.dirty = true;
   dropHeld(conn.player);
+  leaveGore({ kind: "blood", who: "player", x: conn.player.x, z: conn.player.z, size: 0.75 });
+  leaveGore({ kind: "corpse", who: "player", x: conn.player.x, z: conn.player.z, r: conn.player.rotation, color: conn.player.color });
 }
 
 /**
@@ -1053,6 +1098,7 @@ setInterval(() => {
     dirZ: p.dirZ,
     firedAt: p.firedAt,
     range: p.range,
+    hit: p.hit,
   }));
   // items go out only when they've changed since the last tick, or to a
   // client that hasn't had them yet (see StateMessage.items)
@@ -1073,16 +1119,26 @@ setInterval(() => {
     lift: lift.state,
   };
   pendingAnnouncements = [];
-  const withItems = JSON.stringify({ ...base, items: itemList } satisfies ServerMessage);
-  const withoutItems = itemsChanged ? withItems : JSON.stringify(base satisfies ServerMessage);
+  // a client that's never had the items, or the gore, gets them all; everyone else just what changed
+  const newGore = goreReset ? { gore, goreReset: true as const } : goreNew.length ? { gore: goreNew } : {};
+  const allGore = { gore, goreReset: true as const };
+  goreNew = [];
+  goreReset = false;
+  const forNew = JSON.stringify({ ...base, items: itemList, ...allGore } satisfies ServerMessage);
+  const forKnown = JSON.stringify({ ...base, ...(itemsChanged ? { items: itemList } : {}), ...newGore } satisfies ServerMessage);
   for (const conn of connections.values()) {
     if (conn.socket.readyState !== conn.socket.OPEN) continue;
-    conn.socket.send(conn.hasItems ? withoutItems : withItems);
+    conn.socket.send(conn.hasItems ? forKnown : forNew);
     conn.hasItems = true;
   }
 }, BROADCAST_INTERVAL_MS);
 
 function flushWorld(): void {
+  if (goreDirty) {
+    goreDirty = false;
+    gore = capGore(gore);
+    saveGore(gore);
+  }
   if (!worldDirty) return;
   worldDirty = false;
   saveWorld(items.values(), objective, defence.state, (id) => connections.get(id)?.player);

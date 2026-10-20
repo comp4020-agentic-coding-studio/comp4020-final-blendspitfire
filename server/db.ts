@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { ItemState, ObjectiveState, PlayerState } from "../shared/protocol.ts";
+import type { GoreMark, ItemState, ObjectiveState, PlayerState } from "../shared/protocol.ts";
 import type { DefenceState } from "../shared/enemies.ts";
 import { PLAYER_COLORS } from "../shared/palette.ts";
 
@@ -185,6 +185,18 @@ export function loadFunds(): number {
 }
 export function saveFunds(funds: number): void {
   setWorldStmt.run("funds", JSON.stringify(funds));
+}
+
+export function loadGore(): GoreMark[] {
+  const row = getWorldStmt.get("gore") as { value: string } | undefined;
+  try {
+    return row ? (JSON.parse(row.value) as GoreMark[]) : [];
+  } catch {
+    return [];
+  }
+}
+export function saveGore(marks: GoreMark[]): void {
+  setWorldStmt.run("gore", JSON.stringify(marks));
 }
 
 /** a won run: the world goes back to how a fresh volume starts it */

@@ -178,6 +178,18 @@ export const EMIT_REACTOR = 0x5aa8ff;
 /** a round in flight: hot, warm white, so it reads as a tracer and not as a UI signal */
 export const EMIT_TRACER = 0xffd9a0;
 
+/** sparks off a wall or a box where a round lands */
+export const EMIT_SPARK = 0xffe08a;
+
+// --- 2b. Gore (an exception to the gamut, like the floor guides) -------------
+// Blood is the one surface colour allowed past the gamut's chroma: it's
+// meant to stand out on a grey floor. Kept dark so it reads as a stain under
+// lamp light and never as a UI signal.
+/** the crew's: a dark arterial red */
+export const BLOOD_HUMAN = 0x8a1a16;
+/** the crawlers': a sour, acid green */
+export const BLOOD_CRAWLER = 0x74b81a;
+
 // --- 3. Lights (by colour temperature) ---------------------------------------
 
 export const LIGHT_FLUORO_COOL = kelvin(5200);
