@@ -572,6 +572,10 @@ wss.on("connection", (socket, req) => {
   respawn(player, true);
   // (not counting this same player's older tab, which is about to be replaced)
   const taken = [...connections.values()].filter((c) => c.player.id !== playerId).map((c) => c.player.color);
+  // a tab still open for this player keeps its colour: the database copy may
+  // not have caught up with a colour picked when that tab joined
+  const live = connections.get(playerId);
+  if (live) player.color = live.player.color;
   if (!PLAYER_COLORS.includes(player.color as (typeof PLAYER_COLORS)[number]) || taken.includes(player.color)) {
     player.color = leastUsedColor(taken);
   }
