@@ -204,11 +204,12 @@ export function glow(color: number, size: number, opacity = 1): THREE.Sprite {
 }
 
 /**
- * A crawler's eyes as light: a hot core and a wide red bloom spilling round
- * it, both swelling the nearer the crawler is to the viewer and trembling
- * a little, so the pack reads in the dark by its eyes before its shape.
- * The core is pushed past 1 into the HDR target, so the tone map burns its
- * middle toward white the way an overexposed light does.
+ * A crawler's eyes as a light caught by a lens: a hot core, a soft bloom,
+ * and a four-point star whose arms stretch and shiver on their own. The
+ * nearer the crawler, the brighter and longer the star and the harder it
+ * trembles; close in, a lens halo rings it and a flat streak cuts across,
+ * so the pack reads in the dark by its eyes before its shape. The core is
+ * pushed past 1 into the HDR target, so the tone map burns it to white.
  */
 export interface CrawlerEyes {
   group: THREE.Group;
@@ -218,20 +219,82 @@ export interface CrawlerEyes {
 
 const EYE_RED = new THREE.Color(EMIT_RED);
 
+const flareTextures = new Map<string, THREE.CanvasTexture>();
+/** a cached white-on-black canvas texture, drawn once per kind */
+function flareTexture(kind: "star" | "ring" | "streak"): THREE.CanvasTexture {
+  let t = flareTextures.get(kind);
+  if (t) return t;
+  const S = 128;
+  const c = document.createElement("canvas");
+  c.width = c.height = S;
+  const ctx = c.getContext("2d")!;
+  const img = ctx.createImageData(S, S);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const u = (x + 0.5) / S - 0.5;
+      const v = (y + 0.5) / S - 0.5;
+      const r = Math.hypot(u, v) * 2;
+      let a: number;
+      if (kind === "star") {
+        // two thin arms tapering to nothing at the edge, brightest at the crossing
+        const arm = (along: number, across: number): number => Math.exp(-((across / 0.012) ** 2)) * Math.max(0, 1 - Math.abs(along) * 2) ** 2;
+        a = Math.min(1, arm(u, v) + arm(v, u));
+      } else if (kind === "ring") {
+        a = 0.6 * Math.exp(-(((r - 0.78) / 0.05) ** 2)) + 0.12 * Math.exp(-(((r - 0.5) / 0.12) ** 2));
+      } else {
+        a = Math.exp(-((v / 0.03) ** 2)) * Math.max(0, 1 - Math.abs(u) * 2) ** 1.5;
+      }
+      const i = (y * S + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = 255;
+      img.data[i + 3] = Math.round(255 * a);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  t = new THREE.CanvasTexture(c);
+  flareTextures.set(kind, t);
+  return t;
+}
+
+function flareSprite(kind: "star" | "ring" | "streak"): THREE.Sprite {
+  return new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: flareTexture(kind), color: EMIT_RED, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }),
+  );
+}
+
 export function crawlerEyes(seed: number): CrawlerEyes {
   const group = new THREE.Group();
   const bloom = glow(EMIT_RED, 2, 0.4);
   const core = glow(EMIT_RED, 0.55, 1);
-  group.add(bloom, core);
+  const star = flareSprite("star");
+  const ring = flareSprite("ring");
+  const streak = flareSprite("streak");
+  group.add(bloom, ring, streak, star, core);
+  // a little noise from a few unrelated sines: no two crawlers shiver together
+  const wobble = (time: number, k: number): number =>
+    Math.sin(time * (17 + k) + seed * (2.3 + k)) * 0.5 + Math.sin(time * (43 + 2 * k) + seed * (5.1 + k)) * 0.3 + Math.sin(time * (71 + 3 * k) + seed * 1.7) * 0.2;
   return {
     group,
     step(distance, time) {
       const near = 1 - THREE.MathUtils.smoothstep(distance, 1.5, 11);
-      const tremble = 0.88 + 0.07 * Math.sin(time * 19 + seed * 2.3) + 0.05 * Math.sin(time * 47 + seed * 5.1);
-      bloom.scale.setScalar((1.1 + 0.9 * near) * (0.96 + 0.04 * tremble));
-      bloom.material.opacity = (0.22 + 0.38 * near) * tremble;
-      core.scale.setScalar(0.5 + 0.25 * near);
-      core.material.color.copy(EYE_RED).multiplyScalar((1.6 + 2.6 * near) * tremble);
+      // the tremble grows as it closes in: barely a shimmer far off, a real flutter up close
+      const amp = 0.04 + 0.16 * near * near;
+      const flicker = 1 + amp * wobble(time, 0);
+      bloom.scale.setScalar((1.1 + 0.9 * near) * (1 + 0.3 * amp * wobble(time, 1)));
+      bloom.material.opacity = (0.2 + 0.35 * near) * flicker;
+      core.scale.setScalar(0.45 + 0.25 * near);
+      core.material.color.copy(EYE_RED).multiplyScalar((1.6 + 2.6 * near) * flicker);
+      // each arm of the star stretches on its own, so its edges shiver rather than the whole thing pulsing
+      const arm = 1.4 + 2.2 * near;
+      star.scale.set(arm * (1 + 1.5 * amp * wobble(time, 2)), arm * (1 + 1.5 * amp * wobble(time, 3)), 1);
+      star.material.rotation = 0.04 * amp * wobble(time, 4);
+      star.material.color.copy(EYE_RED).multiplyScalar((0.9 + 1.8 * near) * flicker);
+      // right up close the lens itself starts to show: a halo round the light, a flat streak across it
+      const close = THREE.MathUtils.smoothstep(near, 0.6, 0.95);
+      ring.visible = streak.visible = close > 0;
+      ring.scale.setScalar(2 + 0.5 * close);
+      ring.material.opacity = 0.38 * close * flicker;
+      streak.scale.set((4 + 3 * close) * (1 + amp * wobble(time, 5)), 0.5, 1);
+      streak.material.color.copy(EYE_RED).multiplyScalar(1.2 * close * flicker);
     },
   };
 }
