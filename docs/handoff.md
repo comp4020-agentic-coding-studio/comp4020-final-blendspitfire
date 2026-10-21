@@ -7,7 +7,8 @@ Updated: 2026-10-21 (second playtest round, with a teammate: lift pop-in, crawle
 ## Where we are
 - Crit 10 shipped (tag `crit-10` on origin at de1932b). Final project due 2026-11-09 12:00.
 - Local main is ahead of origin by the overnight commits and this round's (c7cfe69 .. latest). **Not pushed**: a push deploys, so wait for the user.
-- Second round (ADR-049): lift pop-in fixed (top door now gets the same doorFrame as the bottom: main.ts/gallery.ts pass DOORWAYS.concat(TOP_DOOR) to buildFacility); crawler eyes = look.ts crawlerEyes() (HDR core + red bloom, brighter by distance to viewPoint, tremble), stepped in stepEnemies; FRIENDLY_FIRE=false in protocol.ts (server skips players in stepProjectiles).
+- Third round (in progress, user's list 2026-10-21): lift pop-in REAL cause fixed = surface group (buildSurface, ruins reach z≈14, a building shell sat inside the bottom car) now hidden underground (`surface.visible = up` in stepLevel). Remaining: blood above tile tops (tiles top y=0.02, blood 0.012), flat corpses, lens-flare crawler eyes, minimap; then tutorial/guidance discussion.
+- Second round (ADR-049): top door gets the same doorFrame as the bottom (main.ts/gallery.ts pass DOORWAYS.concat(TOP_DOOR)); crawler eyes = look.ts crawlerEyes() (HDR core + red bloom, brighter by distance to viewPoint, tremble), stepped in stepEnemies; FRIENDLY_FIRE=false in protocol.ts (server skips players in stepProjectiles).
 - First round (user's list, 2026-10-21): endings, bullet impact, shop by the reactor, gore, rifle, difficulty², fallen-town surface, retro screen, spectate (was already built), heal = bandage, more UI text, pixel UI. All in ADR-044..048, marked "awaiting review". The open choice the user left: whether the lift works in the blackout (the agent picked no).
 - Branch `surface` is merged into main; still present locally (ask before deleting).
 - Commit finished+verified work without asking (CLAUDE.md). Never push unasked.
@@ -55,6 +56,7 @@ Updated: 2026-10-21 (second playtest round, with a teammate: lift pop-in, crawle
 - Dev: `DB_PATH=/tmp/blendspitfire-dev.db pnpm dev` (8080, the user's). Client edits: rerun `node scripts/build-client.ts`. Server edits: restart.
 - `pnpm check` against a throwaway server so 8080 is untouched: start `PORT=8090 DB_PATH=/tmp/check.db node server/index.ts` (no DEV_SPAWN), then `APP_URL=http://localhost:8090 pnpm check`.
 - Dev env (local only, never in fly.toml): DEV_SPAWN/DEV_JOIN="x,z", DEV_WAVES=N, DEV_ARMED=1 (join with a rifle), DEV_REACTOR=0.02 (reactor HP at activation, reaches blackout fast). Reactor activation range 4.4 from (0,-11.5): DEV_JOIN=1.5,-7.6 is in range. Comms desk: DEV_JOIN=0,-15.2.
+- Lift pop-in probe: expose `{scene,camera,THREE}` on window temporarily, raycast screen px via CDP Runtime.evaluate, list scene.children bounds; anything from another level overlapping a car is the culprit.
 - Lift-car parity check: build the facility in Node and diff triangle centroids inside LIFT_CARS.bottom vs .top shifted by LIFT_DZ (was a scratch script; both cars must match per material).
 - Seed quota: insert world row ("funds","100") before starting. Seed gore: world key "gore" (JSON GoreMark[]).
 - Bots: ws client with cookie `playerId=<uuid>`; send {type:"activate"} twice (start + skip break); {type:"primary",x,z} at enemies to fight. Walking core -> corridor: the blast door at z=2 is sealed; go via the west passage (-12, z) and the lab.

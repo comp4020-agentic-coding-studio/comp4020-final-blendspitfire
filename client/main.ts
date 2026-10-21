@@ -195,7 +195,9 @@ scene.add(
 const halos = lampHalos();
 scene.add(halos);
 scene.add(buildYardGuides());
-scene.add(buildSurface());
+// hidden underground: its ruins run north over the bottom car's footprint, and nothing else keeps them out of the car
+const surface = buildSurface();
+scene.add(surface);
 const sunlight = createSunlight(scene);
 const liftDoors = new LiftDoors();
 scene.add(liftDoors.group);
@@ -1507,6 +1509,7 @@ function stepLevel(x: number, z: number, dt: number): void {
     post.setMask(activeVisibility.postMask(level === "top" ? 50 : FACILITY_WALL_HALF_HEIGHT * 2 - 0.05));
   }
   const up = level === "top";
+  surface.visible = up;
   // in the car the light is the car's own bulbs whichever end it's at; the
   // sun and the paint only once you step out (or, riding, as you arrive)
   const inside = inAnyCar(x, z);
