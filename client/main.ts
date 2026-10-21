@@ -17,6 +17,7 @@ import { GRADE } from "./assets/grade.ts";
 import { VisibilityMask, canSee, sightBlockers } from "./visibility.ts";
 import { buildYardGuides } from "./floorGuides.ts";
 import { Prompts, type Prompt } from "./ui/prompts.ts";
+import { Minimap } from "./ui/minimap.ts";
 import { buildSurface, createSunlight, scoreboardScreen } from "./world/surface.ts";
 import { LiftDoors, liftPanelAt } from "./world/lift.ts";
 import { Gore, Impacts } from "./world/gore.ts";
@@ -237,6 +238,8 @@ const surfaceVisibility = new VisibilityMask(
 );
 let activeVisibility = visibility;
 let viewLevel: "top" | "bottom" = "bottom";
+const minimap = new Minimap();
+let myColor = "#ffffff";
 post.setMask(activeVisibility.postMask(FACILITY_WALL_HALF_HEIGHT * 2 - 0.05));
 let lastDoorKey = "";
 /**
@@ -286,6 +289,8 @@ interface RemotePlayer {
   drawn: { x: number; z: number; rotation: number };
   /** alive and down in the facility: someone a spectator can watch */
   watchable: boolean;
+  color: string;
+  alive: boolean;
 }
 
 let myId: string | undefined;
@@ -998,6 +1003,7 @@ const net = connect({
     myWounds = you.wounds ?? 0;
     myBandaged = you.bandaged ?? 0;
     myWarp = you.warp ?? 0;
+    myColor = you.color;
     localMesh = makeCharacter(you.color, true);
     localMesh.position.set(you.x, 0, you.z);
     for (const p of players) {
@@ -1289,7 +1295,7 @@ window.addEventListener("keydown", (e) => {
 function addOrUpdateRemote(p: PlayerState, t: number): void {
   let remote = remotes.get(p.id);
   if (!remote) {
-    remote = { mesh: makeCharacter(p.color, false), snaps: new SnapshotBuffer(), drawn: { x: p.x, z: p.z, rotation: p.rotation }, watchable: false };
+    remote = { mesh: makeCharacter(p.color, false), snaps: new SnapshotBuffer(), drawn: { x: p.x, z: p.z, rotation: p.rotation }, watchable: false, color: p.color, alive: true };
     remote.mesh.position.set(p.x, 0, p.z);
     remotes.set(p.id, remote);
   }
@@ -1297,6 +1303,7 @@ function addOrUpdateRemote(p: PlayerState, t: number): void {
   // the server only sends respawnAt / out while someone's dead
   const alive = p.respawnAt === undefined && !p.out;
   remote.mesh.visible = alive;
+  remote.alive = alive;
   remote.watchable = alive && !!p.entered;
 }
 
@@ -1450,6 +1457,9 @@ function animate(): void {
     stepLevel(eye.x, eye.z, dt);
     activeVisibility.update(renderer, eye.x, eye.z);
     viewPoint.set(eye.x, 0, eye.z);
+    const crew = [...remotes.values()].filter((r) => r.alive && levelOf(r.drawn.z) === viewLevel).map((r) => ({ x: r.drawn.x, z: r.drawn.z, color: r.color }));
+    const me = dead ? undefined : { x: localMesh.position.x, z: localMesh.position.z, rotation: localMesh.rotation.y, color: myColor };
+    minimap.render({ level: viewLevel, self: me, crew, reactorActive: objective.active, time: clock.elapsedTime });
   }
   renderSpectating(dt);
 
