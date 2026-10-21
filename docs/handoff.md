@@ -2,11 +2,12 @@
 
 > **AI-recorded.** Written and kept current automatically by the coding agent (Claude Code) as its session-to-session handoff, not written by hand. Terse on purpose: it's for the next agent session to pick up from. Decision history lives in [adr.md](adr.md).
 
-Updated: 2026-10-21 (third playtest round done: lift, gore, eyes, minimap; committed, NOT pushed; tutorial discussion next)
+Updated: 2026-10-21 (fourth round: wild ruins, debris impacts, minimap bottom-left, version label, turret rework, spitters, grenades, tougher crawlers; committed, NOT pushed; dev server on 8080 needs a restart to run the new server code)
 
 ## Where we are
 - Crit 10 shipped (tag `crit-10` on origin at de1932b). Final project due 2026-11-09 12:00.
 - Local main is ahead of origin by the overnight commits and this round's (c7cfe69 .. latest). **Not pushed**: a push deploys, so wait for the user.
+- Fourth round (user's 6-item list 2026-10-21; in ADR draft, not yet in docs/adr.md): surface.ts weedTuft/mossPatch/vineHang + C.wildLeaf/mossDark over every ruin; gore.ts Impacts wall hits = debris chips (pooled meshes, CONCRETE ramp) + small sparks; minimap left:14 bottom:150; version label `#version` bottom right = package.json version + short sha (server VERSION, GIT_SHA env baked by CI --build-arg, else git rev-parse). Turret/spitter/grenade/HP: see Game below. All "agent's numbers, awaiting playtest".
 - Third round (ADR-050 playtest observation, ADR-051 fixes; user's list 2026-10-21): lift pop-in REAL cause fixed = surface group (buildSurface, ruins reach z≈14, a building shell sat inside the bottom car) now hidden underground (`surface.visible = up` in stepLevel). Gore: blood at BLOOD_Y 0.03 (floor tile tops are y=0.02, marks ~0.026), corpses flatten()ed to 4 cm at y 0.045 (gore.ts). Crawler eyes = lens flare (look.ts crawlerEyes: core+bloom+4-point star with independently wobbling arms; halo ring + horizontal streak fade in when near>0.6; tremble amp grows with near²). Judge in /gallery.html?facility&live&x=5&z=-9. Minimap = client/ui/minimap.ts (per-level plan drawn once at 2px/unit, x2 pixelated, bottom right; crew dots, you + facing tick, lift car outline, reactor diamond blinking red until live, supply terminal/stations amber; no enemies). Next: tutorial/guidance discussion with the user.
 - Second round (ADR-049): top door gets the same doorFrame as the bottom (main.ts/gallery.ts pass DOORWAYS.concat(TOP_DOOR)); crawler eyes = look.ts crawlerEyes() (HDR core + red bloom, brighter by distance to viewPoint, tremble), stepped in stepEnemies; FRIENDLY_FIRE=false in protocol.ts (server skips players in stepProjectiles).
 - First round (user's list, 2026-10-21): endings, bullet impact, shop by the reactor, gore, rifle, difficulty², fallen-town surface, retro screen, spectate (was already built), heal = bandage, more UI text, pixel UI. All in ADR-044..048, marked "awaiting review". The open choice the user left: whether the lift works in the blackout (the agent picked no).
@@ -23,9 +24,11 @@ Updated: 2026-10-21 (third playtest round done: lift, gore, eyes, minimap; commi
   - wipe (everyone below dead): ended() report -> bringUpAt = now + WIPE_HOLD_MS (4.5 s) -> everyoneUp(); client freezes view, fades black (.ui-wipe), fades in on garden.
   - Restart mid-ending: boot finishes it (won -> reset, blackout -> fail). db.loadDefence keeps won/blackout.
 - Reports (StateMessage.reports, Report type): wave {size, clearMs, parMs, base, bonus, total}; attempt {outcome, reason, waves, blackoutMs, crew[name,kills,out]}. Client queueReport -> .ui-report panel (wave shows 3.5 s before an attempt report behind it).
-- Quota/shop (ADR-041/046): shared `funds`. Wave pay = 15 + seconds under par (2.5 s/enemy). Shop = comms desk fixture "supplyTerminal" at (0,-16.8) north of reactor; corridor has the "vending" fixture back. E opens #shop panel; 1 turret 40 (cap 8, hands empty), 2 field dressing 20 (needs a wound). BuyMessage {item}. buyVerdict(item, player, {holding, wounds}, funds, turrets).
+- Quota/shop (ADR-041/046): shared `funds`. Wave pay = 15 + seconds under par (2.5 s/enemy). Shop = comms desk fixture "supplyTerminal" at (0,-16.8) north of reactor; corridor has the "vending" fixture back. E opens #shop panel; 1 turret 40 (cap 8), 2 field dressing 20 (needs a wound), 3 frag grenade 15 (hands empty). BuyMessage {item} handles heal + grenade only. buyVerdict(item, player, {wounds, holding?}, funds, turrets).
 - Dressing: conn.bandaged = wounds at heal time, wounds -> 0; next hit sets wounds = bandaged (wire PlayerState.bandaged; dotted pip).
-- Turret: BLOCKING_KINDS {box, turret}; fires 450 ms, range 7, real projectiles that skip players.
+- Turret: never held. Shop "1" -> client `placingTurret` (preview = sentryTurret tinted OK/DANGER, boxTarget(), grid snap on Space) -> click sends BuildTurretMessage {x,z}; server buildTurretVerdict (funds, cap, placementVerdict) then pays + spawns. Q/Esc cancels free. Pickup of kind turret refused; eTarget "scrap" -> ScrapMessage {itemId}, scrapVerdict (in PICKUP_RANGE), anyone, no refund. Model: EMIT_GREEN light on head + 1.6 laser; client idles (sweep 0.6 rad/s) when no new `aim` for 1.5 s (ClientItem.lastAimAt). Fires 450 ms, range 7, projectiles skip players.
+- Enemies: EnemyState.kind crawler | spitter. Spitter (shared/enemies.ts SPIT_*): from wave 3, spitterShare 0.1 -> 0.33 of each wave (spitterDebt in Defence), same waveSize. 3 HP, 0.8x speed; player in sight within 6.5 -> holds (backs off < 3), SpitState glob every 2.2 s at 9 u/s to the target's spot, splash 0.7 wounds (hurtPlayer(id, now, by)). Players only, not the reactor. Client: spitter() model with EMIT_ACID sac; glob arc + landing ring (StateMessage.spits). Crawler HP = crawlerHitPoints(wave): 5, +1 every 2 waves from wave 4 (8 at 10); Enemy.maxHp for the bar.
+- Grenade: ItemKind "grenade" (cap 20). Click throws: grenadeLanding (range 8, stops at walls) -> server `grenades` map, flight 500 ms + fuse 700 ms -> defence.blast(r 2.6, 3 dmg), creditKill(), StateMessage.grenades / blasts. Client: throwRing preview while held, arcing model, red reach ring pulsing faster, flash light + spark burst + ring.
 - Friendly fire: off (FRIENDLY_FIRE). Flip to true to bring back player hits (ShotHit "player" path still there). Verified by bot: off = 0 wounds, on = 3.
 - Rifle: FIRE_COOLDOWN_MS 100, AIM_SPREAD 0.05 (+0.12 arm wound), decided client-side and sent as the aim. ENEMY_HIT_POINTS 5. PROJECTILE_SPEED 90. MAX_ENEMIES 50.
 - Shots: ProjectileState.hit (wall|enemy|player); client stepTracers -> Impacts (client/world/gore.ts) sparks/splash at landing.
@@ -41,14 +44,15 @@ Updated: 2026-10-21 (third playtest round done: lift, gore, eyes, minimap; commi
 - shared/protocol.ts (contract, map, verdicts, Report, GoreMark, SHOP), shared/enemies.ts (waves, blackout, FlowField goal), shared/palette.ts
 - server/index.ts (connections, tick, projectiles, shop, gore, endings), server/defence.ts (waves, won/blackout, hunt, turrets), server/db.ts
 - client/main.ts, client/look.ts (LightState power), client/postprocess.ts (retro), client/world/gore.ts, client/world/surface.ts, client/models/facility.ts (supplyTerminal = comms desk)
-- Tests: spec/*.test.ts (133). defence.test.ts covers won/blackout/hunt; lift.test.ts the won/blackout lift; economy.test.ts shop + dressing + gore caps.
+- Tests: spec/*.test.ts (148). defence.test.ts covers won/blackout/hunt; lift.test.ts the won/blackout lift; economy.test.ts shop + dressing + gore caps.
 
 ## Next work (ordered)
+0. User restarts dev server (`DB_PATH=/tmp/blendspitfire-dev.db pnpm dev`), then plays the fourth round: turret order/build/scrap, spitters (DEV_WAVES helps reach wave 3), grenades, wild ruins, debris impacts, version label. Then sync the ADR draft's fourth-round entries into docs/adr.md (ADR-052+). Open choices the agent made: anyone can scrap any turret; spitters don't hit the reactor; all new numbers.
 1. Discuss tutorial + visual guidance with the user (ADR-050: nobody found the lift down, the reactor, or the supply terminal unprompted). Then user reviews in play: ADR-051 (flare look, minimap; crawlers on the minimap?), ADR-049 (eye glow strength: crawlerEyes numbers in look.ts; lift ride looks seamless now?) and ADR-044..048. Likely tuning: difficulty curve past wave 3 (untested by a human), blackout ramp, gore amount, retro strength (grade.ts levels/scanlines/grain; PIXEL_SCALE), VT323 size on small screens.
 2. Open user decisions: teammate markers so friendly fire can come back (or leave it off); blackout lift (agent: locked); skip = anyone vs vote; shared vs per-player quota; extra score parts; turret cost/cap; WAVES_TO_WIN.
-3. Shop has two lines; more buildables when the user picks them.
+3. Shop has three lines; more buildables when the user picks them.
 4. Still pending playtest from 2026-10-14: wound effects, CRT/daze strength, aggro 6, grace 1 s.
-5. Lighting option C (overhead fixtures + halos). Garden tutorial gating. No sound. Second enemy type.
+5. Lighting option C (overhead fixtures + halos). Garden tutorial gating. No sound.
 - Open user decisions (older): lift-return rule; overall grade/brightness; hall racks claustrophobic; hide /gallery.html in prod?
 - Docs: README "good" section unfinished (user writes). Authorship rule: skeleton only unless user dictated.
 
@@ -68,4 +72,5 @@ Updated: 2026-10-21 (third playtest round done: lift, gore, eyes, minimap; commi
 ## User prefs
 - Chinese conversation. Chained doc requests: one step at a time, drafts in Chinese until approved.
 - Fix bugs without trading away intended effects (e.g. keep shadows, move the light).
-- Cost-conscious: cheap subagents for mechanical work; suggest fresh session over resuming long ones.
+- Cost-conscious: cheap subagents for mechanical work; suggest fresh session over resuming long ones. Don't spawn research subagents for lookups in known files: read them directly (user objected to long-running research forks 2026-10-21).
+- Agent can't kill/restart the user's dev server (permission denied): ask the user to restart it after server edits.
