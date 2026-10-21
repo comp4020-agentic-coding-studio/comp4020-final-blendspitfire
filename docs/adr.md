@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-10-21, second playtest: lift door frame, crawler eyes, friendly fire off
+Synced from the draft up to: 2026-10-21, third playtest round: lift (surface hidden underground), flat gore, lens-flare eyes, minimap
 
 ---
 
@@ -674,3 +674,26 @@ Suggested minimal topology: safe room, one main corridor (bottleneck), a fork in
 - *Friendly fire* is off (`FRIENDLY_FIRE` in shared/protocol.ts): players' shots pass through every player, as turret shots already did.
 
 **Why.** The developer's reasons: the lift should be invisible as a cut; enemies should be found by their light in the dark, which suits the setting better than an outline; and with no way to tell teammates apart mid-fight, being shot by them is just noise for now.
+
+## ADR-050: What the group playtest showed — tutorial and visual guidance come next
+*2026-10-21 · Status: Accepted (the developer's observation, recorded late)*
+
+**Context.** The developer ran a round of play with the group and drew conclusions from watching what they did. Two players never realised they could take the lift down, took the surface room for a PvP arena and started fighting each other. Underground, mistaking teammates for enemies was severe: people fired at anyone they saw. The crawlers were hard to see, and one player suggested outlining them. Without the developer's prompting, nobody realised the reactor had to be started. A teammate never found that the comms desk sells things, even after being told.
+
+**Decision.** In the developer's words, all of these point at two problems: not enough tutorial, and not enough visual guidance. That's understandable, since no effort had gone that way yet, and it becomes the main direction for the work that follows. Part of this was already addressed before it was written up (friendly fire off and the crawler eyes, ADR-049); the tutorial itself is to be discussed separately.
+
+**Why.** The observation is the developer's own; this entry records it after the fact, as the playtest happened before the fixes it prompted.
+
+## ADR-051: Third playtest round — the real lift cause, flat gore, lens-flare eyes, a minimap
+*2026-10-21 · Status: Accepted (from the developer's list; minimap details awaiting review)*
+
+**Context.** After ADR-049 the developer reported that the lift pop-in still looked unfixed; that blood in the upper half of the reactor room only showed in the floor joints, probably at the wrong height; that corpses sometimes covered live enemies; that the eye glow was the right idea but not pretty enough, and should look like light scattering in front of a camera lens (a cross-shaped star, brightness and edges trembling, more so the closer it is, with a lens halo or streak when very close); and asked for a minimap.
+
+**Decision.**
+- *Lift.* The cause wasn't the door frame. The surface's ruins reach north far enough that a ruined building shell stood inside the bottom car's footprint, and underground only the line-of-sight mask kept it hidden; inside the car it showed. The whole surface set is now hidden while the viewer is underground. The ruins stay where they are, as the surface side is fine.
+- *Blood* sat at y 0.012, under the floor tiles' tops at 0.02, so it only showed in the joints. It now sits at 0.03, above the tiles and their painted marks.
+- *Corpses*, at the developer's call, go flat once down: the same darkened models pressed to 4 cm on the floor, with the same outline from above, so a live crawler always draws over them.
+- *Crawler eyes* keep the hot core and bloom and add a four-point star whose two arms stretch independently, so its edges shiver rather than the whole thing pulsing. The tremble grows with closeness; close in, a lens ring and a horizontal streak fade in. All additive sprites, no full-screen bloom pass.
+- *Minimap* (the agent's design, awaiting review): bottom right in the terminal style, the plan of the current level with the crew in their colours, the player with a facing tick, the lift car, the reactor (blinking red until started, blue once live), and the supply terminal and surface stations. No crawlers: a plan, not a radar.
+
+**Why.** The developer's list. The minimap markers were chosen to point at what the group playtest (ADR-050) showed people missing: the way down, the reactor, the terminal. Leaving crawlers off it is the agent's choice, to keep the dark tense, and is open for the developer to reverse.
