@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { BLOOD_CRAWLER, BLOOD_HUMAN, EMIT_SPARK } from "../../shared/palette.ts";
+import { BLOOD_CRAWLER, BLOOD_HUMAN, CONCRETE, EMIT_SPARK } from "../../shared/palette.ts";
 import { capGore, type GoreMark, type ShotHit } from "../../shared/protocol.ts";
 import { character, crawler } from "../models/index.ts";
 import { glow } from "../look.ts";
@@ -157,13 +157,30 @@ interface Bit {
   size: number;
 }
 
+/** a chip of debris kicked off a wall or box: a tumbling little chunk, not a glow */
+interface Chip {
+  mesh: THREE.Mesh;
+  vx: number;
+  vy: number;
+  vz: number;
+  spin: THREE.Vector3;
+  born: number;
+  life: number;
+  size: number;
+}
+
 const IMPACT_COLOUR: Record<ShotHit, number> = { wall: EMIT_SPARK, enemy: BLOOD_CRAWLER, player: BLOOD_HUMAN };
+/** debris chips off a wall or box: concrete, not an emitter, so it reads as matter rather than light */
+const DEBRIS_COLOURS = [CONCRETE.base, CONCRETE.shade, CONCRETE.light];
+const chipGeometry = new THREE.BoxGeometry(1, 1, 1);
 
 export class Impacts {
   readonly group = new THREE.Group();
   private readonly free: THREE.Sprite[] = [];
   private readonly freeDroplets: THREE.Sprite[] = [];
+  private readonly freeChips: THREE.Mesh[] = [];
   private readonly live: Bit[] = [];
+  private readonly liveChips: Chip[] = [];
   private readonly flashes: { sprite: THREE.Sprite; born: number }[] = [];
 
   /** a lit spark (additive), or a droplet: blood is dark, and dark can't be added on */
@@ -179,25 +196,60 @@ export class Impacts {
     return s;
   }
 
+  private takeChip(): THREE.Mesh {
+    const m =
+      this.freeChips.pop() ??
+      new THREE.Mesh(
+        chipGeometry,
+        new THREE.MeshStandardMaterial({ vertexColors: false, flatShading: true, roughness: 0.95, metalness: 0, transparent: true }),
+      );
+    m.visible = true;
+    this.group.add(m);
+    return m;
+  }
+
   /** a round landed at (x, z) flying along (dirX, dirZ) */
   hit(kind: ShotHit, x: number, z: number, dirX: number, dirZ: number): void {
     const now = performance.now();
     const colour = IMPACT_COLOUR[kind];
-    const n = kind === "wall" ? 7 : 6;
+    const n = kind === "wall" ? 5 : 6;
     for (let i = 0; i < n; i++) {
       // off a wall the bits kick back toward the shooter; off a body they spray on through
       const back = kind === "wall" ? -1 : 1;
-      const a = Math.atan2(dirX * back, dirZ * back) + (Math.random() - 0.5) * (kind === "wall" ? 2.4 : 1.4);
-      const speed = (kind === "wall" ? 5 : 3) * (0.5 + Math.random());
-      const size = kind === "wall" ? 0.12 + Math.random() * 0.1 : 0.2 + Math.random() * 0.15;
+      const a = Math.atan2(dirX * back, dirZ * back) + (Math.random() - 0.5) * (kind === "wall" ? 2.0 : 1.4);
+      const speed = (kind === "wall" ? 7 : 3) * (0.5 + Math.random());
+      const size = kind === "wall" ? 0.05 + Math.random() * 0.05 : 0.2 + Math.random() * 0.15;
       const sprite = this.take(colour, size, 1, kind !== "wall");
       sprite.scale.setScalar(size);
       sprite.position.set(x, 0.9 + (Math.random() - 0.5) * 0.3, z);
-      this.live.push({ sprite, vx: Math.sin(a) * speed, vy: 1 + Math.random() * 2, vz: Math.cos(a) * speed, born: now, life: kind === "wall" ? 180 + Math.random() * 120 : 260 + Math.random() * 160, size });
+      this.live.push({ sprite, vx: Math.sin(a) * speed, vy: 1 + Math.random() * 2, vz: Math.cos(a) * speed, born: now, life: kind === "wall" ? 90 + Math.random() * 70 : 260 + Math.random() * 160, size });
     }
-    // a flash at the point of impact: bright off metal, a dark puff off flesh
-    const flash = this.take(kind === "wall" ? EMIT_SPARK : colour, kind === "wall" ? 0.9 : 0.45, kind === "wall" ? 0.95 : 0.9, kind !== "wall");
-    flash.scale.setScalar(kind === "wall" ? 0.9 : 0.45);
+    if (kind === "wall") {
+      // chunks of the wall itself, kicked out and tumbling, heavier and slower than the sparks
+      for (let i = 0; i < 6; i++) {
+        const a = Math.atan2(-dirX, -dirZ) + (Math.random() - 0.5) * 2.6;
+        const speed = 1.5 + Math.random() * 2.5;
+        const size = 0.035 + Math.random() * 0.05;
+        const mesh = this.takeChip();
+        (mesh.material as THREE.MeshStandardMaterial).color.setHex(DEBRIS_COLOURS[Math.floor(Math.random() * DEBRIS_COLOURS.length)]);
+        mesh.scale.set(size, size * (0.6 + Math.random() * 0.6), size);
+        mesh.position.set(x, 0.9 + (Math.random() - 0.5) * 0.3, z);
+        mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+        this.liveChips.push({
+          mesh,
+          vx: Math.sin(a) * speed,
+          vy: 1.5 + Math.random() * 2,
+          vz: Math.cos(a) * speed,
+          spin: new THREE.Vector3((Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12),
+          born: now,
+          life: 500 + Math.random() * 400,
+          size,
+        });
+      }
+    }
+    // a small hot flash at the point of impact: bright off metal, a dark puff off flesh
+    const flash = this.take(kind === "wall" ? EMIT_SPARK : colour, kind === "wall" ? 0.35 : 0.45, kind === "wall" ? 0.95 : 0.9, kind !== "wall");
+    flash.scale.setScalar(kind === "wall" ? 0.35 : 0.45);
     flash.position.set(x, 0.95, z);
     this.flashes.push({ sprite: flash, born: now });
   }
@@ -219,6 +271,31 @@ export class Impacts {
       b.sprite.material.opacity = 1 - k;
       b.sprite.scale.setScalar(b.size * (1 - k * 0.5));
     }
+    for (let i = this.liveChips.length - 1; i >= 0; i--) {
+      const c = this.liveChips[i];
+      const k = (now - c.born) / c.life;
+      if (k >= 1) {
+        this.releaseChip(c.mesh);
+        this.liveChips.splice(i, 1);
+        continue;
+      }
+      c.vy -= 14 * dt;
+      c.mesh.position.x += c.vx * dt;
+      c.mesh.position.y += c.vy * dt;
+      c.mesh.position.z += c.vz * dt;
+      if (c.mesh.position.y <= 0.03) {
+        // settled on the floor: stop falling, keep tumbling a touch slower till it fades
+        c.mesh.position.y = 0.03;
+        c.vx *= 0.7;
+        c.vz *= 0.7;
+        c.vy = 0;
+        c.spin.multiplyScalar(0.8);
+      }
+      c.mesh.rotation.x += c.spin.x * dt;
+      c.mesh.rotation.y += c.spin.y * dt;
+      c.mesh.rotation.z += c.spin.z * dt;
+      if (k > 0.7) (c.mesh.material as THREE.MeshStandardMaterial).opacity = 1 - (k - 0.7) / 0.3;
+    }
     for (let i = this.flashes.length - 1; i >= 0; i--) {
       const f = this.flashes[i];
       const k = (now - f.born) / 90;
@@ -235,5 +312,12 @@ export class Impacts {
     s.visible = false;
     this.group.remove(s);
     (s.userData.droplet ? this.freeDroplets : this.free).push(s);
+  }
+
+  private releaseChip(m: THREE.Mesh): void {
+    m.visible = false;
+    (m.material as THREE.MeshStandardMaterial).opacity = 1;
+    this.group.remove(m);
+    this.freeChips.push(m);
   }
 }
