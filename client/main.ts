@@ -1,6 +1,17 @@
 import * as THREE from "three";
 import { connect } from "./net.ts";
-import { CAMERA_ALTITUDE, CAMERA_FOV, FACILITY_AMBIENT, configureRenderer, createTorch, glow, lampHalos, setupLighting } from "./look.ts";
+import {
+  CAMERA_ALTITUDE,
+  CAMERA_FOV,
+  FACILITY_AMBIENT,
+  configureRenderer,
+  createTorch,
+  crawlerEyes,
+  glow,
+  lampHalos,
+  setupLighting,
+  type CrawlerEyes,
+} from "./look.ts";
 import { createPostProcess } from "./postprocess.ts";
 import { GRADE } from "./assets/grade.ts";
 import { VisibilityMask, canSee, sightBlockers } from "./visibility.ts";
@@ -23,13 +34,14 @@ import {
 import { REACTOR_LIVE, REACTOR_STANDBY, buildFacility, reactorCore } from "./models/facility.ts";
 import { mesh } from "./models/kit.ts";
 import { LAMPS, LAMP_SPECS, lampSource } from "./world/dressing.ts";
-import { STENCIL, DANGER, OK, EMIT_RED, EMIT_TRACER, AMBIENT_SKY } from "../shared/palette.ts";
+import { STENCIL, DANGER, OK, EMIT_TRACER, AMBIENT_SKY } from "../shared/palette.ts";
 import { INTERP_DELAY_MS, ServerClock, SnapshotBuffer, Tracer } from "./netsync.ts";
 import { ENEMY_RADIUS, WAVES_TO_WIN, waveSize, type DefenceState, type EnemyState } from "../shared/enemies.ts";
 import {
   BOX_HALF_EXTENT,
   BREACHES,
   DOORWAYS,
+  TOP_DOOR,
   FACILITY_HALF,
   FACILITY_WALL_HALF_HEIGHT,
   FIXTURES,
@@ -41,7 +53,6 @@ import {
   SCOREBOARD,
   SCOREBOARD_RANGE,
   LIFT_CARS,
-  TOP_DOOR,
   LIFT_DOORS,
   LIFT_RIDE_MS,
   inAnyCar,
@@ -1294,6 +1305,7 @@ function addOrUpdateRemote(p: PlayerState, t: number): void {
 
 interface ClientEnemy {
   mesh: THREE.Object3D;
+  eyes: CrawlerEyes;
   snaps: SnapshotBuffer;
   drawn: { x: number; z: number; rotation: number };
   health: number;
@@ -1314,10 +1326,9 @@ function updateEnemies(incoming: EnemyState[], t: number): void {
     let ce = enemies.get(e.id);
     if (!ce) {
       const mesh = crawler();
-      // a faint red glow at the eyes: in the dark, the pack is seen by its eyes first
-      const eyes = glow(EMIT_RED, 0.55, 0.55);
-      eyes.position.set(0, 0.48, 0.66);
-      mesh.add(eyes);
+      const eyes = crawlerEyes(restingAngle(e.id));
+      eyes.group.position.set(0, 0.48, 0.66);
+      mesh.add(eyes.group);
       const bar = new THREE.Mesh(enemyBarGeometry, new THREE.MeshBasicMaterial({ color: DANGER, depthTest: false }));
       bar.position.set(0, 1.0, 0);
       bar.renderOrder = 10;
@@ -1325,7 +1336,7 @@ function updateEnemies(incoming: EnemyState[], t: number): void {
       mesh.add(bar);
       mesh.position.set(e.x, 0, e.z);
       scene.add(mesh);
-      ce = { mesh, snaps: new SnapshotBuffer(), drawn: { x: e.x, z: e.z, rotation: e.rotation }, health: e.health, bar, hitUntil: 0 };
+      ce = { mesh, eyes, snaps: new SnapshotBuffer(), drawn: { x: e.x, z: e.z, rotation: e.rotation }, health: e.health, bar, hitUntil: 0 };
       enemies.set(e.id, ce);
     }
     if (e.health < ce.health) ce.hitUntil = performance.now() + 120;
@@ -1349,6 +1360,7 @@ function stepEnemies(time: number): void {
     const bob = Math.sin(time * 14 + ce.drawn.x * 3) * 0.03;
     ce.mesh.position.set(ce.drawn.x, bob, ce.drawn.z);
     ce.mesh.rotation.y = ce.drawn.rotation;
+    ce.eyes.step(Math.hypot(ce.drawn.x - viewPoint.x, ce.drawn.z - viewPoint.z), time);
     ce.bar.visible = ce.health < 1;
     ce.bar.scale.x = Math.max(0.02, ce.health);
     // flash on a hit: brief scale pop

@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { CAMERA_ALTITUDE, CAMERA_FOV, configureRenderer, glow, lampHalos, setupLighting } from "./look.ts";
+import { CAMERA_ALTITUDE, CAMERA_FOV, configureRenderer, crawlerEyes, lampHalos, setupLighting } from "./look.ts";
 import { character, crawler, floorSlab } from "./models/index.ts";
 import { ASSETS } from "./models/registry.ts";
 import { REACTOR_LIVE, REACTOR_STANDBY, buildFacility, reactorCore } from "./models/facility.ts";
@@ -8,7 +8,7 @@ import { GRADE } from "./assets/grade.ts";
 import { VisibilityMask, sightBlockers } from "./visibility.ts";
 import { buildYardGuides } from "./floorGuides.ts";
 import { LAMPS } from "./world/dressing.ts";
-import { AMBIENT_GROUND, AMBIENT_SKY, EMIT_RED, PLAYER_COLORS } from "../shared/palette.ts";
+import { AMBIENT_GROUND, AMBIENT_SKY, PLAYER_COLORS } from "../shared/palette.ts";
 import {
   BREACHES,
   DOORWAYS,
@@ -99,9 +99,10 @@ function facilityView(): void {
     ];
     for (const [x, z] of crawlers) {
       const c = crawler();
-      const eyes = glow(EMIT_RED, 0.55, 0.55);
-      eyes.position.set(0, 0.48, 0.66);
-      c.add(eyes);
+      const eyes = crawlerEyes(x * 7 + z);
+      eyes.group.position.set(0, 0.48, 0.66);
+      eyes.step(Math.hypot(x - (fx === null ? 0 : Number(fx)), z - (fz === null ? 5 : Number(fz))), 0);
+      c.add(eyes.group);
       c.position.set(x, 0, z);
       c.rotation.y = Math.atan2(REACTOR.x - x, REACTOR.z - z);
       scene.add(c);

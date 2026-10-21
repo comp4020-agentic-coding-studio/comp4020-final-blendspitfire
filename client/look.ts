@@ -204,6 +204,39 @@ export function glow(color: number, size: number, opacity = 1): THREE.Sprite {
 }
 
 /**
+ * A crawler's eyes as light: a hot core and a wide red bloom spilling round
+ * it, both swelling the nearer the crawler is to the viewer and trembling
+ * a little, so the pack reads in the dark by its eyes before its shape.
+ * The core is pushed past 1 into the HDR target, so the tone map burns its
+ * middle toward white the way an overexposed light does.
+ */
+export interface CrawlerEyes {
+  group: THREE.Group;
+  /** `distance` from the viewer in world units; `time` in seconds */
+  step(distance: number, time: number): void;
+}
+
+const EYE_RED = new THREE.Color(EMIT_RED);
+
+export function crawlerEyes(seed: number): CrawlerEyes {
+  const group = new THREE.Group();
+  const bloom = glow(EMIT_RED, 2, 0.4);
+  const core = glow(EMIT_RED, 0.55, 1);
+  group.add(bloom, core);
+  return {
+    group,
+    step(distance, time) {
+      const near = 1 - THREE.MathUtils.smoothstep(distance, 1.5, 11);
+      const tremble = 0.88 + 0.07 * Math.sin(time * 19 + seed * 2.3) + 0.05 * Math.sin(time * 47 + seed * 5.1);
+      bloom.scale.setScalar((1.1 + 0.9 * near) * (0.96 + 0.04 * tremble));
+      bloom.material.opacity = (0.22 + 0.38 * near) * tremble;
+      core.scale.setScalar(0.5 + 0.25 * near);
+      core.material.color.copy(EYE_RED).multiplyScalar((1.6 + 2.6 * near) * tremble);
+    },
+  };
+}
+
+/**
  * A halo for every live lamp, as one group. A wall lamp's sits on its
  * fixture. A ceiling lamp's fixture isn't drawn (it's above the camera's
  * cut), so its halo is a faint wide pool on the floor beneath it --- the
