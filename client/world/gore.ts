@@ -7,10 +7,26 @@ import { glow } from "../look.ts";
 // What a fight leaves behind (GoreMark in shared/protocol.ts), and the
 // sparks and splashes as a round lands. Blood is a flat decal on the floor,
 // one instanced mesh per colour so a long run of it is two draw calls.
-// Bodies are the live models laid on their side and darkened, the crew's in
-// their own colour: a body is something you recognise, not a new asset.
+// Bodies are the live models laid down, darkened and pressed nearly flat, the
+// crew's in their own colour: a body is something you recognise, not a new
+// asset, and flat it can never stand over a live crawler.
 
 const MAX_BLOOD = 900;
+/** floor tiles' tops are at 0.02 and their painted marks at ~0.026: blood goes over both */
+const BLOOD_Y = 0.03;
+/** bodies lie over the blood, a few centimetres thick */
+const BODY_Y = 0.045;
+const BODY_THICKNESS = 0.04;
+
+/** press a laid-down model flat onto the floor, keeping its outline from above */
+function flatten(obj: THREE.Object3D): THREE.Object3D {
+  const box = new THREE.Box3().setFromObject(obj);
+  const k = BODY_THICKNESS / (box.max.y - box.min.y);
+  const outer = new THREE.Group().add(obj);
+  outer.scale.y = k;
+  outer.position.y = BODY_Y - box.min.y * k;
+  return new THREE.Group().add(outer);
+}
 
 /** a ragged splash: a disc with a seeded, lumpy rim, flat on the floor */
 function splashGeometry(): THREE.BufferGeometry {
@@ -70,10 +86,8 @@ export class Gore {
     });
     dim(this.enemyBody, 0.5);
     // dead bug: on its back, legs in the air
-    const inner = this.enemyBody;
-    inner.rotation.z = Math.PI;
-    inner.position.y = 0.8;
-    this.enemyBody = new THREE.Group().add(inner);
+    this.enemyBody.rotation.z = Math.PI;
+    this.enemyBody = flatten(this.enemyBody);
   }
 
   /** apply a broadcast's marks: all of them after a reset, otherwise just the new ones */
@@ -95,7 +109,7 @@ export class Gore {
         if (counts[g.who] >= MAX_BLOOD) continue;
         const s = g.size ?? 0.3;
         // each splash a touch higher than the last, so overlapping ones don't fight
-        m.compose(new THREE.Vector3(g.x, 0.012 + (g.n % 50) * 0.0002, g.z), q.setFromAxisAngle(up, g.r), new THREE.Vector3(s, 1, s * 0.8));
+        m.compose(new THREE.Vector3(g.x, BLOOD_Y + (g.n % 50) * 0.0002, g.z), q.setFromAxisAngle(up, g.r), new THREE.Vector3(s, 1, s * 0.8));
         mesh.setMatrixAt(counts[g.who]++, m);
         continue;
       }
@@ -120,13 +134,11 @@ export class Gore {
 
   /** a crewmate who fell: their own model, face down, darkened */
   private crewBody(color: string): THREE.Object3D {
-    const outer = new THREE.Group();
     const body = character(color);
     dim(body, 0.55);
     body.rotation.x = Math.PI / 2;
-    body.position.set(0, 0.16, -0.55);
-    outer.add(body);
-    return outer;
+    body.position.z = -0.55;
+    return flatten(new THREE.Group().add(body));
   }
 }
 
