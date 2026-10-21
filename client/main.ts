@@ -41,6 +41,7 @@ import {
   SCOREBOARD,
   SCOREBOARD_RANGE,
   LIFT_CARS,
+  TOP_DOOR,
   LIFT_DOORS,
   LIFT_RIDE_MS,
   inAnyCar,
@@ -172,7 +173,7 @@ scene.add(
   buildFacility({
     zones: ZONE_RECTS,
     walls: BUILT_WALLS,
-    doorways: DOORWAYS,
+    doorways: DOORWAYS.concat(TOP_DOOR),
     solids: SOLID,
     fixtures: FIXTURES,
     breaches: BREACHES,

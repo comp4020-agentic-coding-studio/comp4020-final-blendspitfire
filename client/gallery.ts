@@ -12,6 +12,7 @@ import { AMBIENT_GROUND, AMBIENT_SKY, EMIT_RED, PLAYER_COLORS } from "../shared/
 import {
   BREACHES,
   DOORWAYS,
+  TOP_DOOR,
   FACILITY_WALL_HALF_HEIGHT,
   FIXTURES,
   REACTOR,
@@ -55,7 +56,7 @@ function facilityView(): void {
     buildFacility({
       zones: ZONE_RECTS,
       walls: WALLS,
-      doorways: DOORWAYS,
+      doorways: DOORWAYS.concat(TOP_DOOR),
       solids: SOLID,
       fixtures: FIXTURES,
       breaches: BREACHES,
