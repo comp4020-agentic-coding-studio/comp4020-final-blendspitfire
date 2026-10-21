@@ -14,18 +14,19 @@ import {
 } from "../../shared/protocol.ts";
 import { EMIT_REACTOR, EMIT_RED } from "../../shared/palette.ts";
 
-// The minimap: the level you're on as a terminal readout, bottom right. The
+// The minimap: the level you're on as a terminal readout, bottom left. The
 // floor plan is drawn once per level at two pixels a unit and scaled up
 // pixelated, so it has the same chunky steps as the rest of the UI. Over it,
 // each frame: the crew in their colours, you with a tick for where you face,
 // the lift car, and what there is to find (reactor, supply terminal, the
 // gun and box stations up top). No crawlers: it's a plan, not a radar.
+// Sits above the hint line and the wound pips, which also anchor bottom left.
 
 const PX_PER_UNIT = 2;
 const SCALE = 2;
 
 const STYLE = `
-.ui-map { right: 14px; bottom: 14px; padding: 6px 8px 8px; }
+.ui-map { left: 14px; bottom: 150px; padding: 6px 8px 8px; }
 .ui-map .title { font-size: 16px; color: var(--ui-dim); margin-bottom: 4px; }
 .ui-map canvas { display: block; image-rendering: pixelated; }
 `;
