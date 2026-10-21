@@ -2,12 +2,13 @@
 
 > **AI-recorded.** Written and kept current automatically by the coding agent (Claude Code) as its session-to-session handoff, not written by hand. Terse on purpose: it's for the next agent session to pick up from. Decision history lives in [adr.md](adr.md).
 
-Updated: 2026-10-21 (first review round after the user playtested: 12 requests, all built and committed, NOT pushed)
+Updated: 2026-10-21 (second playtest round, with a teammate: lift pop-in, crawler visibility, friendly fire off; committed, NOT pushed)
 
 ## Where we are
 - Crit 10 shipped (tag `crit-10` on origin at de1932b). Final project due 2026-11-09 12:00.
 - Local main is ahead of origin by the overnight commits and this round's (c7cfe69 .. latest). **Not pushed**: a push deploys, so wait for the user.
-- This round (user's list, 2026-10-21): endings, bullet impact, shop by the reactor, gore, rifle, difficulty², fallen-town surface, retro screen, spectate (was already built), heal = bandage, more UI text, pixel UI. All in ADR-044..048, marked "awaiting review". The open choice the user left: whether the lift works in the blackout (the agent picked no).
+- Second round (ADR-049): lift pop-in fixed (top door now gets the same doorFrame as the bottom: main.ts/gallery.ts pass DOORWAYS.concat(TOP_DOOR) to buildFacility); crawler eyes = look.ts crawlerEyes() (HDR core + red bloom, brighter by distance to viewPoint, tremble), stepped in stepEnemies; FRIENDLY_FIRE=false in protocol.ts (server skips players in stepProjectiles).
+- First round (user's list, 2026-10-21): endings, bullet impact, shop by the reactor, gore, rifle, difficulty², fallen-town surface, retro screen, spectate (was already built), heal = bandage, more UI text, pixel UI. All in ADR-044..048, marked "awaiting review". The open choice the user left: whether the lift works in the blackout (the agent picked no).
 - Branch `surface` is merged into main; still present locally (ask before deleting).
 - Commit finished+verified work without asking (CLAUDE.md). Never push unasked.
 
@@ -24,6 +25,7 @@ Updated: 2026-10-21 (first review round after the user playtested: 12 requests, 
 - Quota/shop (ADR-041/046): shared `funds`. Wave pay = 15 + seconds under par (2.5 s/enemy). Shop = comms desk fixture "supplyTerminal" at (0,-16.8) north of reactor; corridor has the "vending" fixture back. E opens #shop panel; 1 turret 40 (cap 8, hands empty), 2 field dressing 20 (needs a wound). BuyMessage {item}. buyVerdict(item, player, {holding, wounds}, funds, turrets).
 - Dressing: conn.bandaged = wounds at heal time, wounds -> 0; next hit sets wounds = bandaged (wire PlayerState.bandaged; dotted pip).
 - Turret: BLOCKING_KINDS {box, turret}; fires 450 ms, range 7, real projectiles that skip players.
+- Friendly fire: off (FRIENDLY_FIRE). Flip to true to bring back player hits (ShotHit "player" path still there). Verified by bot: off = 0 wounds, on = 3.
 - Rifle: FIRE_COOLDOWN_MS 100, AIM_SPREAD 0.05 (+0.12 arm wound), decided client-side and sent as the aim. ENEMY_HIT_POINTS 5. PROJECTILE_SPEED 90. MAX_ENEMIES 50.
 - Shots: ProjectileState.hit (wall|enemy|player); client stepTracers -> Impacts (client/world/gore.ts) sparks/splash at landing.
 - Gore (ADR-045): GoreMark {n, kind blood|corpse, who player|enemy, x,z,r,size,color}; server leaveGore() on hits/deaths (facility only), saved in world key "gore", capGore (900/300), StateMessage.gore increments + goreReset for new clients/clean. Client Gore class: instanced blood decals, corpses = darkened live models (crawler on back, crew face-down). Colours BLOOD_HUMAN/BLOOD_CRAWLER in palette.ts.
@@ -41,8 +43,8 @@ Updated: 2026-10-21 (first review round after the user playtested: 12 requests, 
 - Tests: spec/*.test.ts (133). defence.test.ts covers won/blackout/hunt; lift.test.ts the won/blackout lift; economy.test.ts shop + dressing + gore caps.
 
 ## Next work (ordered)
-1. User reviews this round in play (ADR-044..048). Likely tuning: difficulty curve past wave 3 (untested by a human), blackout ramp, gore amount, retro strength (grade.ts levels/scanlines/grain; PIXEL_SCALE), VT323 size on small screens.
-2. Open user decisions: blackout lift (agent: locked); skip = anyone vs vote; shared vs per-player quota; extra score parts; turret cost/cap; WAVES_TO_WIN.
+1. User reviews in play: ADR-049 (eye glow strength: crawlerEyes numbers in look.ts; lift ride looks seamless now?) and ADR-044..048. Likely tuning: difficulty curve past wave 3 (untested by a human), blackout ramp, gore amount, retro strength (grade.ts levels/scanlines/grain; PIXEL_SCALE), VT323 size on small screens.
+2. Open user decisions: teammate markers so friendly fire can come back (or leave it off); blackout lift (agent: locked); skip = anyone vs vote; shared vs per-player quota; extra score parts; turret cost/cap; WAVES_TO_WIN.
 3. Shop has two lines; more buildables when the user picks them.
 4. Still pending playtest from 2026-10-14: wound effects, CRT/daze strength, aggro 6, grace 1 s.
 5. Lighting option C (overhead fixtures + halos). Garden tutorial gating. No sound. Second enemy type.
@@ -53,6 +55,7 @@ Updated: 2026-10-21 (first review round after the user playtested: 12 requests, 
 - Dev: `DB_PATH=/tmp/blendspitfire-dev.db pnpm dev` (8080, the user's). Client edits: rerun `node scripts/build-client.ts`. Server edits: restart.
 - `pnpm check` against a throwaway server so 8080 is untouched: start `PORT=8090 DB_PATH=/tmp/check.db node server/index.ts` (no DEV_SPAWN), then `APP_URL=http://localhost:8090 pnpm check`.
 - Dev env (local only, never in fly.toml): DEV_SPAWN/DEV_JOIN="x,z", DEV_WAVES=N, DEV_ARMED=1 (join with a rifle), DEV_REACTOR=0.02 (reactor HP at activation, reaches blackout fast). Reactor activation range 4.4 from (0,-11.5): DEV_JOIN=1.5,-7.6 is in range. Comms desk: DEV_JOIN=0,-15.2.
+- Lift-car parity check: build the facility in Node and diff triangle centroids inside LIFT_CARS.bottom vs .top shifted by LIFT_DZ (was a scratch script; both cars must match per material).
 - Seed quota: insert world row ("funds","100") before starting. Seed gore: world key "gore" (JSON GoreMark[]).
 - Bots: ws client with cookie `playerId=<uuid>`; send {type:"activate"} twice (start + skip break); {type:"primary",x,z} at enemies to fight. Walking core -> corridor: the blast door at z=2 is sealed; go via the west passage (-12, z) and the lab.
 - Browser: headless Chrome via CDP (--remote-debugging-port, --use-angle=metal). Kill it after (pkill -f user-data-dir=...) or it stays as a ghost player.

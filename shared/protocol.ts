@@ -972,6 +972,8 @@ export const PROJECTILE_RADIUS = 0.05;
 /** the furthest a shot flies if nothing stops it */
 export const PROJECTILE_MAX_RANGE = 40;
 export const HIT_RADIUS = PLAYER_RADIUS + PROJECTILE_RADIUS;
+/** off for now: teammates aren't marked well enough to tell apart in a fight, so shots pass through the crew */
+export const FRIENDLY_FIRE = false;
 /** how far in front of the shooter a shot starts: past their own body, so it can't hit them */
 export const MUZZLE_OFFSET = 0.8;
 

@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-10-21, first review round: endings, gore, shop, difficulty, fallen town, retro screen, terminal UI
+Synced from the draft up to: 2026-10-21, second playtest: lift door frame, crawler eyes, friendly fire off
 
 ---
 
@@ -662,3 +662,15 @@ Suggested minimal topology: safe room, one main corridor (bottleneck), a fork in
 - *UI.* Everything is an old company terminal: the VT323 pixel face in warm phosphor white with a faint glow, two-pixel frames with stepped corners, segmented bars, and prompt leaders drawn as pixel steps from a square dot. A report panel itemises each wave's pay (time against par, base, speed bonus, total) and sums up each attempt (outcome, waves, time held in the dark, kills per player). Wave banners give the enemy count and the size of the next wave.
 
 **Why.** The developer's reasons: a denser, man-made wreck for the setting, more retro atmosphere, and UI that matches the pixel screen.
+
+## ADR-049: Matching lift ends, burning eyes, no friendly fire
+*2026-10-21 · Status: Accepted (from the developer's second playtest, with a teammate)*
+
+**Context.** Three things from playing together. Riding down, some models in the lift car appeared out of nowhere. The crawlers were almost impossible to see, while teammates stood out well enough; the developer chose brighter red light over a red outline, wanting it to bloom, grow brighter the closer it is, and flicker slightly. And teammates carry no clear marker, so they get shot by mistake.
+
+**Decision.**
+- *Lift.* The bottom door was drawn with a door frame (steel jambs and a row of hazard stripes) and the top one wasn't, so the two "identical" cars differed and the frame popped in as the doors opened. The top door now gets the same frame. This is rendering only; walkable space is unchanged.
+- *Crawler eyes.* Each crawler's eyes are an overexposed hot core plus a short red bloom round it. Both get brighter and larger as the crawler comes closer to the viewer (from 11 units in to 1.5), with a slight two-frequency tremble. The bloom is kept small enough that the body still shows.
+- *Friendly fire* is off (`FRIENDLY_FIRE` in shared/protocol.ts): players' shots pass through every player, as turret shots already did.
+
+**Why.** The developer's reasons: the lift should be invisible as a cut; enemies should be found by their light in the dark, which suits the setting better than an outline; and with no way to tell teammates apart mid-fight, being shot by them is just noise for now.

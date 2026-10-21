@@ -30,6 +30,7 @@ import {
   DEATH_DURATION_MS,
   FIRE_COOLDOWN_MS,
   HIT_RADIUS,
+  FRIENDLY_FIRE,
   MUZZLE_OFFSET,
   shotRange,
   segmentHitsCircle,
@@ -1020,7 +1021,7 @@ function stepProjectiles(now: number): void {
     // a turret's shots pass through the crew: it's their defence, not a hazard to them
     const fromTurret = items.get(p.ownerId)?.kind === "turret";
     for (const conn of connections.values()) {
-      if (isDead(conn) || fromTurret) continue;
+      if (isDead(conn) || fromTurret || !FRIENDLY_FIRE) continue;
       const t = segmentHitsCircle(p.x, p.z, p.dirX, p.dirZ, p.travelled, at, conn.player.x, conn.player.z, HIT_RADIUS);
       if (t !== undefined && t <= at) {
         victim = conn;
