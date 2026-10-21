@@ -58,6 +58,11 @@ const C = {
   ruinShade: 0x7a766e,
   soot: [0x5a5652, 0x6a645e, 0x4c4844],
   moss: 0x8aa868,
+  // what's grown over the ruins since the town fell: darker, shaggier,
+  // muddier than the garden's trimmed, sun-bright greens --- these never
+  // get cut back
+  wildLeaf: [0x4f6e42, 0x3f5c38, 0x5a7a4a, 0x46633c, 0x567048],
+  mossDark: [0x6a7a52, 0x5a6c46, 0x7a8a5c, 0x4f5e42],
   rust: [0xb0704a, 0x9a5e40, 0xc08058, 0x8a5238],
   faded: [0x8aa0a8, 0xb89a6a, 0x9a7a72, 0x7f9a80, 0xc4b07a],
   // the corp's kit: olive drab, khaki canvas, fresh hazard yellow, galvanised steel
@@ -186,6 +191,45 @@ function fenceModel(h: Obstacle, parts: THREE.BufferGeometry[], random: () => nu
   for (const y of [0.45, 0.9, 1.35]) place(0, y, run(len, 0.02), C.steelDark);
 }
 
+/** a ragged clump of tall weeds: darker and shaggier than the lawn's trimmed tufts, grown wild over the ruins */
+function weedTuft(parts: THREE.BufferGeometry[], random: () => number, x: number, z: number, scale = 1): void {
+  const n = 3 + Math.floor(random() * 4);
+  for (let i = 0; i < n; i++) {
+    const h = (0.3 + random() * 0.35) * scale;
+    const blade = new THREE.ConeGeometry(0.05 * scale, h, 4);
+    blade.translate(0, h / 2, 0);
+    blade.rotateZ((random() - 0.5) * 0.5);
+    blade.rotateX((random() - 0.5) * 0.3);
+    parts.push(tint(at(blade, x + (random() - 0.5) * 0.3 * scale, 0, z + (random() - 0.5) * 0.3 * scale, random() * PI), pick(C.wildLeaf, random)));
+  }
+}
+
+/** a low mat of moss, flattened and dark, grown over whatever it sits on */
+function mossPatch(parts: THREE.BufferGeometry[], random: () => number, x: number, y: number, z: number, r: number): void {
+  const n = 3 + Math.floor(random() * 3);
+  for (let i = 0; i < n; i++) {
+    parts.push(at(puff(r * (0.4 + random() * 0.5), pick(C.mossDark, random), random, 0.35), x + (random() - 0.5) * r, y, z + (random() - 0.5) * r));
+  }
+}
+
+/** a trail of vine climbing (or hanging down) a vertical face: a few drooping strands of leaf clumps */
+function vineHang(parts: THREE.BufferGeometry[], random: () => number, x: number, topY: number, z: number, dropLen: number): void {
+  const strands = 2 + Math.floor(random() * 2);
+  for (let s = 0; s < strands; s++) {
+    const sx = x + (random() - 0.5) * 0.5;
+    const sz = z + (random() - 0.5) * 0.3;
+    const len = dropLen * (0.6 + random() * 0.5);
+    const stem = new THREE.CylinderGeometry(0.015, 0.02, len, 4);
+    stem.translate(0, -len / 2, 0);
+    parts.push(tint(at(stem, sx, topY, sz), pick(C.wildLeaf, random)));
+    const leaves = 2 + Math.floor(random() * 3);
+    for (let i = 0; i < leaves; i++) {
+      const t = (i + 0.5) / leaves;
+      parts.push(at(puff(0.1 + random() * 0.08, pick(C.wildLeaf, random), random, 0.6), sx + (random() - 0.5) * 0.15, topY - len * t, sz + (random() - 0.5) * 0.15));
+    }
+  }
+}
+
 /** rebar bristling out of a broken edge: a few thin rusty rods at odd angles */
 function rebar(parts: THREE.BufferGeometry[], random: () => number, x: number, y: number, z: number, n = 4, len = 0.6): void {
   for (let i = 0; i < n; i++) {
@@ -206,6 +250,10 @@ function ruinPillar(f: SurfaceFixture, parts: THREE.BufferGeometry[], random: ()
   rebar(parts, random, f.x, h, f.z, 5, 0.5);
   parts.push(tint(at(box(f.halfX * 2.4, 0.06, f.halfZ * 2.4), f.x, 0.03, f.z), C.ruinShade));
   for (let i = 0; i < 5; i++) parts.push(tint(at(new THREE.DodecahedronGeometry(0.08 + random() * 0.1, 0), f.x + (random() - 0.5) * 1.8, 0.06, f.z + (random() - 0.5) * 1.8), pick(C.ruin, random)));
+  // grown over: moss up the shady side, weeds at the foot, a vine hanging off the broken cap
+  mossPatch(parts, random, f.x - f.halfX * 0.4, h * 0.3, f.z, f.halfZ * 1.3);
+  for (let i = 0; i < 3; i++) weedTuft(parts, random, f.x + (random() - 0.5) * 1.8, f.z + (random() - 0.5) * 1.8);
+  vineHang(parts, random, f.x + f.halfX * 0.5, h, f.z, h * 0.7);
 }
 
 /** a floor slab come down whole and cracked across, rebar out of the break */
@@ -216,6 +264,9 @@ function ruinLintel(f: SurfaceFixture, parts: THREE.BufferGeometry[], random: ()
   parts.push(tint(at(box(len * 0.42, h * 0.9, f.halfZ * 1.9), f.x + len * 0.3, h * 0.45, f.z + 0.05, -0.12), pick(C.ruin, random)));
   rebar(parts, random, f.x + len * 0.06, h * 0.6, f.z, 6, 0.45);
   parts.push(tint(at(box(len * 0.3, 0.02, f.halfZ * 1.4), f.x - len * 0.25, h + 0.01, f.z), pick(C.soot, random)));
+  weedTuft(parts, random, f.x - len * 0.3, f.z, 0.7);
+  weedTuft(parts, random, f.x + len * 0.25, f.z - f.halfZ, 0.7);
+  mossPatch(parts, random, f.x, h * 0.6, f.z, f.halfZ * 1.2);
 }
 
 // --- The fallen town: wreck builders (outside the fence, and low ones inside) ---
@@ -237,6 +288,9 @@ function wreckCar(parts: THREE.BufferGeometry[], random: () => number, x: number
     w.rotateZ(PI / 2);
     parts.push(tint(g(w, sx, 0.22, sz), C.soot[2]));
   }
+  // weeds grown up through the undercarriage and round the wheels
+  weedTuft(parts, random, x, z, 0.7);
+  if (random() < 0.5) mossPatch(parts, random, x, 0.42, z, 1);
 }
 
 /** a shipping container, dented, door hanging, faded paint and rust streaks */
@@ -252,6 +306,7 @@ function container(parts: THREE.BufferGeometry[], random: () => number, x: numbe
   for (let i = -2; i <= 2; i++) parts.push(tint(g(box(2.44, 2.3, 0.08), 0, 1.25, i * 1.15), C.ruinShade));
   parts.push(tint(g(box(2.46, 0.08, 6.04), 0, 2.5, 0), pick(C.rust, random)));
   parts.push(tint(g(box(1.1, 2.3, 0.06), 1.4, 1.2, 3.3), c));
+  weedTuft(parts, random, x, z, 0.7);
 }
 
 /** a fallen tower-crane jib: a long lattice boom lying across the ground, its cab crushed at one end */
@@ -349,6 +404,10 @@ function buildingShell(parts: THREE.BufferGeometry[], random: () => number, x: n
   // scorch and rubble at its foot
   parts.push(tint(g(box(w * 0.7, 0.02, d * 0.8), 0, 0.01, d * 0.5), pick(C.soot, random)));
   for (let i = 0; i < 7; i++) parts.push(tint(g(new THREE.DodecahedronGeometry(0.15 + random() * 0.3, 0), (random() - 0.5) * w, 0.12, random() * d), pick(C.ruin, random)));
+  // reclaimed: weeds thick along the foot, moss up the walls, vines spilling off the slab --- this is the wild stage, long since left to the green
+  for (let i = 0; i < 6; i++) weedTuft(parts, random, x + (random() - 0.5) * w * 1.4, z + (random() - 0.5) * d * 1.4, 0.8 + random() * 0.6);
+  mossPatch(parts, random, x - w * 0.2, h * 0.15, z, Math.min(w, d) * 0.5);
+  vineHang(parts, random, x - w * 0.15, h * 0.42, z + d * 0.45, h * 0.4);
 }
 
 /** broken slabs and loose concrete with rebar sticking out */
@@ -359,6 +418,8 @@ function rubbleHeap(parts: THREE.BufferGeometry[], random: () => number, x: numb
     s.rotateZ((random() - 0.5) * 0.5);
     parts.push(tint(at(s, x + (random() - 0.5) * spread, 0.15, z + (random() - 0.5) * spread, random() * PI), pick(C.ruin, random)));
   }
+  weedTuft(parts, random, x + (random() - 0.5) * spread, z + (random() - 0.5) * spread, 0.7 + random() * 0.5);
+  if (random() < 0.6) mossPatch(parts, random, x, 0.1, z, spread * 0.4);
   for (let j = 0; j < 7; j++) parts.push(tint(at(new THREE.DodecahedronGeometry(0.08 + random() * 0.14, 0), x + (random() - 0.5) * spread * 1.3, 0.06, z + (random() - 0.5) * spread * 1.3), pick(random() < 0.3 ? C.soot : C.ruin, random)));
   rebar(parts, random, x, 0.2, z, 3, 0.5);
 }
@@ -370,7 +431,7 @@ function roadPatch(parts: THREE.BufferGeometry[], random: () => number, x: numbe
     const along = w > d;
     parts.push(tint(at(box(along ? 1.1 : 0.12, 0.005, along ? 0.12 : 1.1), x + (along ? -w / 2 + 1.2 + i * 2.5 : 0), 0.03, z + (along ? 0 : -d / 2 + 1.2 + i * 2.5)), 0xd8d0b8));
   }
-  for (let i = 0; i < 4; i++) parts.push(at(puff(0.3, pick(C.leaf, random), random, 0.5), x + (random() - 0.5) * w, 0.05, z + (random() - 0.5) * d));
+  for (let i = 0; i < 4; i++) weedTuft(parts, random, x + (random() - 0.5) * w, z + (random() - 0.5) * d, 0.6);
 }
 
 /** a stack of drop crates, olive drab with stencilled lids, strapped on a pallet */
@@ -461,8 +522,9 @@ function outsideRuins(parts: THREE.BufferGeometry[], random: () => number): void
     const x = side * (5 + random() * (S.maxX + m - 5));
     rubbleHeap(parts, random, x, S.maxZ + 1.5 + random() * 9, 0.8 + random());
   }
-  // and rubble, scrap and grass filling everything between
-  for (let i = 0; i < 120; i++) {
+  // and rubble, scrap and weeds filling everything between --- dense enough
+  // that this reads as the wild, overgrown stage: nothing left bare
+  for (let i = 0; i < 190; i++) {
     const side = Math.floor(random() * 3);
     const k = random();
     const o = 1 + random() * (m - 1);
@@ -472,18 +534,31 @@ function outsideRuins(parts: THREE.BufferGeometry[], random: () => number): void
     else if (side === 1) [x, z] = [S.maxX + o, S.minZ - m + k * (S.maxZ - S.minZ + m * 1.5)];
     else [x, z] = [S.minX - m + k * (S.maxX - S.minX + 2 * m), S.minZ - o];
     const r = random();
-    if (r < 0.55) rubbleHeap(parts, random, x, z, 0.8 + random() * 1.4);
-    else if (r < 0.7) {
+    if (r < 0.4) rubbleHeap(parts, random, x, z, 0.8 + random() * 1.4);
+    else if (r < 0.52) {
       // a twisted beam
       const b = box(0.2, 0.25, 2 + random() * 3);
       b.rotateX((random() - 0.5) * 0.4);
       parts.push(tint(at(b, x, 0.2, z, random() * PI), pick(C.rust, random)));
-    } else if (r < 0.8) {
+    } else if (r < 0.62) {
       // an oil drum, some tipped over
       const d = new THREE.CylinderGeometry(0.3, 0.3, 0.85, 8);
       if (random() < 0.5) d.rotateZ(PI / 2);
       parts.push(tint(at(d, x, random() < 0.5 ? 0.3 : 0.43, z, random() * PI), pick([...C.rust, ...C.faded], random)));
-    } else parts.push(at(puff(0.4 + random() * 0.4, pick(C.leaf, random), random, 0.6), x, 0.2, z));
+    } else if (r < 0.85) weedTuft(parts, random, x, z, 0.8 + random() * 0.7);
+    else mossPatch(parts, random, x, 0.08, z, 0.8 + random() * 0.6);
+  }
+  // a second, denser weed pass right along the fence line, where the crew's
+  // mowing stops and the wild growth presses right up against the wire
+  for (let i = 0; i < 70; i++) {
+    const side = Math.floor(random() * 4);
+    let x: number;
+    let z: number;
+    if (side === 0) [x, z] = [S.minX - 0.5 - random() * 2.5, S.minZ + random() * (S.maxZ - S.minZ)];
+    else if (side === 1) [x, z] = [S.maxX + 0.5 + random() * 2.5, S.minZ + random() * (S.maxZ - S.minZ)];
+    else if (side === 2) [x, z] = [S.minX + random() * (S.maxX - S.minX), S.minZ - 0.5 - random() * 2.5];
+    else [x, z] = [S.minX + random() * (S.maxX - S.minX), S.maxZ + 0.5 + random() * 2.5];
+    weedTuft(parts, random, x, z, 0.6 + random() * 0.8);
   }
 }
 
