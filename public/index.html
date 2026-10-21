@@ -111,6 +111,11 @@
       }
       #fatal-error div { max-width: 440px; }
       #connection-lost { left: 50%; top: 14px; transform: translateX(-50%); display: none; }
+      #version {
+        position: fixed; right: 6px; bottom: 3px; color: var(--ui-dim); font: var(--ui-font);
+        font-size: 12px; letter-spacing: 0.04em; opacity: 0.45; pointer-events: none;
+        text-shadow: 0 1px 0 #000; -webkit-font-smoothing: none;
+      }
     </style>
   </head>
   <body>
@@ -120,6 +125,7 @@
     <div id="leaderboard"></div>
     <div id="connection-lost">reconnecting&hellip;</div>
     <div id="fatal-error"><div></div></div>
+    <div id="version"></div>
     <script type="module" src="/bundle.js"></script>
   </body>
 </html>

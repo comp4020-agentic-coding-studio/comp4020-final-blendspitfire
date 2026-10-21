@@ -40,6 +40,8 @@ export interface WelcomeMessage {
   t: number;
   you: PlayerState;
   players: PlayerState[];
+  /** package.json's version plus the running commit's short hash (e.g. "0.1.0-0e8b853"), so a deploy is checkable at a glance */
+  version: string;
 }
 
 export interface StateMessage {

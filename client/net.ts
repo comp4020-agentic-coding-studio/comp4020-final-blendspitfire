@@ -1,7 +1,7 @@
 import type { BoardMessage, MoveMessage, PlayerState, ServerMessage, ShopItem, StateMessage } from "../shared/protocol.ts";
 
 export interface NetHandlers {
-  onWelcome: (you: PlayerState, players: PlayerState[], t: number) => void;
+  onWelcome: (you: PlayerState, players: PlayerState[], t: number, version: string) => void;
   onState: (state: StateMessage) => void;
   onBoard: (board: BoardMessage) => void;
   /** the server closed this tab because the same player opened another */
@@ -48,7 +48,7 @@ export function connect(handlers: NetHandlers): Net {
 
     ws.addEventListener("message", (event) => {
       const msg: ServerMessage = JSON.parse(event.data);
-      if (msg.type === "welcome") handlers.onWelcome(msg.you, msg.players, msg.t);
+      if (msg.type === "welcome") handlers.onWelcome(msg.you, msg.players, msg.t, msg.version);
       else if (msg.type === "state") handlers.onState(msg);
       else if (msg.type === "board") handlers.onBoard(msg);
       else if (msg.type === "replaced") {

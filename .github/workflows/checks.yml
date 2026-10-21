@@ -88,8 +88,10 @@ jobs:
       - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
       - name: Deploy
         # --remote-only builds the Dockerfile on Fly's builders; --ha=false
-        # keeps the app at one machine and one volume.
-        run: flyctl deploy --remote-only --ha=false -a ${{ github.event.repository.name }}
+        # keeps the app at one machine and one volume. --build-arg bakes in
+        # the commit being deployed, so the running app's version string
+        # (bottom corner of the UI) says whether this deploy actually landed.
+        run: flyctl deploy --remote-only --ha=false --build-arg GIT_SHA=$(git rev-parse --short HEAD) -a ${{ github.event.repository.name }}
       - name: Verify the deployed site is online
         run: |
           for i in 1 2 3 4 5; do

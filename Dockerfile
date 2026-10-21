@@ -25,6 +25,13 @@ COPY shared ./shared
 COPY README.md ./README.md
 COPY --from=build /app/public ./public
 
+# The build context has no .git (.dockerignore excludes it), so the commit
+# the version string shows has to come in from outside: CI passes it as a
+# build arg (the commit it's deploying), baked in as an env var the server
+# reads at startup. Unset locally, where the server falls back to running
+# `git rev-parse` straight from the working tree.
+ARG GIT_SHA=""
+ENV GIT_SHA=$GIT_SHA
 ENV NODE_ENV=production
 EXPOSE 8080
 CMD ["node", "server/index.ts"]

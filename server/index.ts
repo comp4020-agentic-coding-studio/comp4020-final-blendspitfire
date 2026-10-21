@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { readFile, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
@@ -97,6 +98,24 @@ const MIME: Record<string, string> = {
 
 const escapeHtml = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/**
+ * package.json's version plus the running commit's short hash, so the UI can
+ * show at a glance whether a deploy actually picked up the latest code.
+ * Falls back to just the package version if there's no .git (the built
+ * Docker image doesn't carry one: baked in at build time instead, below).
+ */
+const VERSION: string = (() => {
+  const pkgVersion = JSON.parse(readFileSync(join(import.meta.dirname, "..", "package.json"), "utf8")).version as string;
+  const bakedSha = process.env.GIT_SHA;
+  if (bakedSha) return `${pkgVersion}-${bakedSha}`;
+  try {
+    const sha = execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: import.meta.dirname, encoding: "utf8" }).trim();
+    return `${pkgVersion}-${sha}`;
+  } catch {
+    return pkgVersion;
+  }
+})();
 
 const readmePage = (): string => {
   const body = escapeHtml(readFileSync(join(import.meta.dirname, "..", "README.md"), "utf8"));
@@ -739,6 +758,7 @@ wss.on("connection", (socket, req) => {
     t: now,
     you: netPlayer(conn, now),
     players: [...connections.values()].map((c) => netPlayer(c, now)),
+    version: VERSION,
   };
   socket.send(JSON.stringify(welcome));
   socket.send(boardMessage());

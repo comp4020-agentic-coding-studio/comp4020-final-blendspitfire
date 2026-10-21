@@ -313,6 +313,7 @@ const leaderboardEl = document.getElementById("leaderboard")!;
 const connectionLostEl = document.getElementById("connection-lost")!;
 const controlsEl = document.getElementById("controls")!;
 const tipEl = document.getElementById("tip")!;
+const versionEl = document.getElementById("version")!;
 
 /**
  * Dead for as long as the server says so --- not until this machine's own
@@ -992,11 +993,12 @@ const net = connect({
   onConnectionChange(connected) {
     connectionLostEl.style.display = connected ? "none" : "block";
   },
-  onWelcome(you, players, t) {
+  onWelcome(you, players, t, version) {
     // also fires on every reconnect, so start from a clean scene rather
     // than piling a new set of meshes on top of the last session's
     clearSceneState();
     serverClock.observe(t);
+    versionEl.textContent = version;
     myId = you.id;
     myRespawnAt = you.respawnAt ?? 0;
     myOut = !!you.out;
