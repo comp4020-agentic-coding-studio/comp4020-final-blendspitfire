@@ -20,13 +20,33 @@ import {
 // grid, so what players build really does reroute them --- and when a
 // box seals a route completely, enemies stuck against it chew through it.
 
+/**
+ * "crawler": the original --- melee, straight at whatever it's after.
+ * "spitter": keeps its distance and lobs an acid glob instead of closing
+ * in; slower and squishier, so it's a threat from range rather than a
+ * tougher wall to shoot through.
+ */
+export type EnemyKind = "crawler" | "spitter";
+
 export interface EnemyState {
   id: string;
+  kind: EnemyKind;
   x: number;
   z: number;
   rotation: number;
   /** 0..1, for a health bar */
   health: number;
+}
+
+/** an acid glob in flight: client draws it travelling from (x, z) to (tx, tz) over (firedAt, arriveAt), then a splash */
+export interface SpitState {
+  id: string;
+  x: number;
+  z: number;
+  tx: number;
+  tz: number;
+  firedAt: number;
+  arriveAt: number;
 }
 
 /** what the reactor has left, which wave is on, and whether it's fighting or between waves; broadcast with the objective */
@@ -129,6 +149,34 @@ export const blackoutSpawnInterval = (sinceMs: number): number =>
   Math.max(BLACKOUT_SPAWN_MIN_MS, BLACKOUT_SPAWN_MS * Math.pow(0.9, Math.floor(sinceMs / BLACKOUT_RAMP_MS)));
 /** gap between spawns within a wave: tighter as the waves climb */
 export const spawnInterval = (wave: number): number => Math.max(250, 700 - 50 * (Math.min(wave, WAVES_TO_WIN) - 1));
+
+// --- The spitter ---------------------------------------------------------------
+// Same breaches, same flow field, but it stops short: once a player is in
+// sight within SPIT_RANGE it holds there and lobs acid. The glob travels
+// (SPIT_SPEED), so stepping aside dodges it; it lands where the target
+// stood when it was thrown. Waves keep their size: from SPITTER_FROM_WAVE a
+// growing share of each wave are spitters instead of crawlers.
+
+export const SPITTER_HIT_POINTS = 3;
+export const SPITTER_SPEED_FACTOR = 0.8;
+export const SPIT_RANGE = 6.5;
+/** it won't spit from closer than this: it backs off instead, so it never just melees */
+export const SPIT_MIN_RANGE = 3;
+export const SPIT_INTERVAL_MS = 2200;
+export const SPIT_SPEED = 9;
+/** a glob landing within this of a player wounds them */
+export const SPIT_SPLASH = 0.7;
+export const SPITTER_FROM_WAVE = 3;
+/** share of a wave that's spitters: none before SPITTER_FROM_WAVE, then climbing to a third */
+export const spitterShare = (wave: number): number =>
+  wave < SPITTER_FROM_WAVE ? 0 : Math.min(0.33, 0.1 + 0.04 * (Math.min(wave, WAVES_TO_WIN) - SPITTER_FROM_WAVE));
+/**
+ * Harder without more of them: from wave 4 a crawler takes one more round
+ * to drop every two waves (5, 6 at wave 4, 7 at 6 ... 8 at wave 10). Wave
+ * sizes stay as they are; the late waves just hold the line longer.
+ */
+export const crawlerHitPoints = (wave: number): number => ENEMY_HIT_POINTS + Math.max(0, Math.floor((Math.min(wave, WAVES_TO_WIN) - 2) / 2));
+export const hitPointsOf = (kind: EnemyKind, wave = 1): number => (kind === "spitter" ? SPITTER_HIT_POINTS : crawlerHitPoints(wave));
 
 /** where enemies come in: just inside each breach */
 export function breachSpawn(b: Breach): { x: number; z: number } {

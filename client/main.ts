@@ -28,16 +28,18 @@ import {
   character,
   crawler,
   equipmentCase,
+  grenade,
   gun,
   heldGun,
   sentryTurret,
+  spitter,
 } from "./models/index.ts";
 import { REACTOR_LIVE, REACTOR_STANDBY, buildFacility, reactorCore } from "./models/facility.ts";
 import { mesh } from "./models/kit.ts";
 import { LAMPS, LAMP_SPECS, lampSource } from "./world/dressing.ts";
-import { STENCIL, DANGER, OK, EMIT_TRACER, AMBIENT_SKY } from "../shared/palette.ts";
+import { STENCIL, DANGER, OK, EMIT_TRACER, EMIT_ACID, EMIT_SPARK, AMBIENT_SKY } from "../shared/palette.ts";
 import { INTERP_DELAY_MS, ServerClock, SnapshotBuffer, Tracer } from "./netsync.ts";
-import { ENEMY_RADIUS, WAVES_TO_WIN, waveSize, type DefenceState, type EnemyState } from "../shared/enemies.ts";
+import { ENEMY_RADIUS, SPIT_SPLASH, WAVES_TO_WIN, waveSize, type DefenceState, type EnemyState, type SpitState } from "../shared/enemies.ts";
 import {
   BOX_HALF_EXTENT,
   BREACHES,
@@ -75,8 +77,16 @@ import {
   BLOCKING_KINDS,
   SUPPLY_TERMINAL,
   SHOP,
+  TURRET_COST,
+  GRENADE_RADIUS,
+  GRENADE_FLIGHT_MS,
+  grenadeLanding,
+  type GrenadeState,
   atTerminal,
   buyVerdict,
+  buildTurretVerdict,
+  type BuildTurretVerdict,
+  scrapVerdict,
   type BuyVerdict,
   type ShopItem,
   type ItemKind,
@@ -421,7 +431,13 @@ interface ClientItem {
   outline: THREE.Mesh;
   /** a box: shudders until this (performance.now()) after a bite */
   bittenUntil: number;
+  /** a turret: performance.now() it last got a fresh aim --- idles (slow sweep) once this goes stale */
+  lastAimAt: number;
 }
+
+/** idle, a turret sweeps on its own rather than sitting dead still, like a sentry scanning its lane */
+const TURRET_IDLE_AFTER_MS = 1500;
+const TURRET_IDLE_SPEED = 0.6;
 
 const items = new Map<string, ClientItem>();
 /** walls, rocks, and boxes on the ground, as of the last state broadcast */
@@ -455,6 +471,12 @@ function makeItem(state: ItemState): ClientItem {
     lying.rotation.y = restingAngle(state.id);
     held = heldGun();
     held.position.set(HELD_GUN_OFFSET.x, HELD_GUN_OFFSET.y, HELD_GUN_OFFSET.z);
+  } else if (state.kind === "grenade") {
+    lying = grenade();
+    shape = lying.children[0] as THREE.Mesh;
+    // in the right hand, at the hip
+    held = grenade();
+    held.position.set(0.32, 0.8, 0.2);
   } else {
     if (state.kind === "turret") {
       lying = sentryTurret();
@@ -474,7 +496,7 @@ function makeItem(state: ItemState): ClientItem {
   outline.visible = false;
   lying.add(outline);
   scene.add(lying);
-  return { state, lying, held, outline, bittenUntil: 0 };
+  return { state, lying, held, outline, bittenUntil: 0, lastAimAt: 0 };
 }
 
 function removeItem(item: ClientItem): void {
@@ -514,6 +536,7 @@ function updateItems(incoming: ItemState[]): void {
     const existing = items.get(state.id);
     if (existing) {
       if ((state.wear ?? 0) > (existing.state.wear ?? 0)) existing.bittenUntil = performance.now() + 180;
+      if (state.aim !== undefined && state.aim !== existing.state.aim) existing.lastAimAt = performance.now();
       existing.state = state;
     } else items.set(state.id, makeItem(state));
   }
@@ -585,14 +608,30 @@ function boxTarget(): { x: number; z: number } {
   return { x, z };
 }
 
-function boxVerdict(target: { x: number; z: number }): PlacementVerdict {
+function livingBodies(): { x: number; z: number }[] {
   const bodies: { x: number; z: number }[] = [];
   if (localMesh) bodies.push({ x: localMesh.position.x, z: localMesh.position.z });
   for (const remote of remotes.values()) {
     if (remote.mesh.visible) bodies.push({ x: remote.drawn.x, z: remote.drawn.z });
   }
-  return placementVerdict(target.x, target.z, localMesh!.position, obstacles, bodies);
+  return bodies;
 }
+
+function boxVerdict(target: { x: number; z: number }): PlacementVerdict {
+  return placementVerdict(target.x, target.z, localMesh!.position, obstacles, livingBodies());
+}
+
+function turretCount(): number {
+  return [...items.values()].filter((i) => i.state.kind === "turret").length;
+}
+
+/** where a turret being ordered would go, and whether it can: same spot and footprint as a box, plus the quota and the corp's cap */
+function turretVerdict(target: { x: number; z: number }): BuildTurretVerdict {
+  return buildTurretVerdict(target.x, target.z, localMesh!.position, obstacles, livingBodies(), funds, turretCount());
+}
+
+/** true while a turret's been ordered and is waiting for a spot: click to build it there, Q/Esc to cancel */
+let placingTurret = false;
 
 const previewMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.45, depthWrite: false });
 const placementPreview = new THREE.Mesh(
@@ -601,6 +640,24 @@ const placementPreview = new THREE.Mesh(
 );
 placementPreview.visible = false;
 scene.add(placementPreview);
+
+const throwRing = new THREE.Mesh(
+  new THREE.RingGeometry(GRENADE_RADIUS - 0.12, GRENADE_RADIUS, 32).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: STENCIL, transparent: true, depthWrite: false }),
+);
+throwRing.visible = false;
+scene.add(throwRing);
+
+// the turret's own shape, tinted OK/DANGER like the box preview, so what's
+// about to be built is unmistakable rather than a stand-in box
+const turretPreviewMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.55, depthWrite: false });
+const turretPreview = sentryTurret();
+turretPreview.traverse((o) => {
+  const m = o as THREE.Mesh;
+  if (m.isMesh) m.material = turretPreviewMaterial;
+});
+turretPreview.visible = false;
+scene.add(turretPreview);
 
 // shown around the preview while grid snap is on, so "snap" is visible
 // rather than just a word in the hint
@@ -656,12 +713,17 @@ function stepItemVisuals(time: number): void {
         lying.rotation.x = wear * -0.07;
         lying.scale.y = 1 - wear * 0.15;
       }
-      if (state.kind === "turret" && state.aim !== undefined) {
-        // the head swings toward what it last shot at, quickly but not in one snap
+      if (state.kind === "turret") {
         const head = lying.getObjectByName("turretHead")!;
-        let d = state.aim - head.rotation.y;
-        d = Math.atan2(Math.sin(d), Math.cos(d));
-        head.rotation.y += d * Math.min(1, frameDt * 14);
+        if (state.aim !== undefined && performance.now() - item.lastAimAt < TURRET_IDLE_AFTER_MS) {
+          // the head swings toward what it last shot at, quickly but not in one snap
+          let d = state.aim - head.rotation.y;
+          d = Math.atan2(Math.sin(d), Math.cos(d));
+          head.rotation.y += d * Math.min(1, frameDt * 14);
+        } else {
+          // nothing to shoot at for a while: it sweeps its lane on its own, like a sentry scanning
+          head.rotation.y += TURRET_IDLE_SPEED * frameDt;
+        }
       }
       continue;
     }
@@ -678,16 +740,35 @@ function stepItemVisuals(time: number): void {
   }
 
   const held = myHeldItem();
-  const showPreview = !dead && !!localMesh && (held !== undefined && BLOCKING_KINDS.has(held.state.kind));
+  const showPreview = !dead && !!localMesh && held !== undefined && BLOCKING_KINDS.has(held.state.kind);
   placementPreview.visible = showPreview;
-  snapGrid.visible = showPreview && gridSnap;
   if (showPreview) {
     const target = boxTarget();
     const sinceRefused = time - refusedAt;
     const shake = sinceRefused < 0.3 ? Math.sin(sinceRefused * 60) * 0.12 : 0;
     placementPreview.position.set(target.x + shake, BOX_HALF_EXTENT, target.z);
     previewMaterial.color.setHex(boxVerdict(target) === "ok" ? OK : DANGER);
+  }
+  // holding a grenade: a ring on the floor where it'll land, the blast's size
+  const showThrow = !dead && !!localMesh && held?.state.kind === "grenade";
+  throwRing.visible = showThrow;
+  if (showThrow) {
+    const land = grenadeLanding(localMesh!.position, aimPoint.x, aimPoint.z, obstacles);
+    throwRing.position.set(land.x, 0.04, land.z);
+    (throwRing.material as THREE.MeshBasicMaterial).opacity = 0.35 + 0.15 * pulse;
+  }
+  const showTurretPreview = !dead && !!localMesh && placingTurret;
+  turretPreview.visible = showTurretPreview;
+  snapGrid.visible = (showPreview || showTurretPreview) && gridSnap;
+  if (showTurretPreview) {
+    const target = boxTarget();
+    const sinceRefused = time - refusedAt;
+    const shake = sinceRefused < 0.3 ? Math.sin(sinceRefused * 60) * 0.12 : 0;
+    turretPreview.position.set(target.x + shake, 0, target.z);
+    turretPreviewMaterial.color.setHex(turretVerdict(target) === "ok" ? OK : DANGER);
     snapGrid.position.set(target.x, 0.02, target.z);
+  } else if (showPreview) {
+    snapGrid.position.set(placementPreview.position.x, 0.02, placementPreview.position.z);
   }
 }
 
@@ -728,6 +809,7 @@ const ACTIVATE_TIPS: Record<string, string> = {
 
 type Target =
   | { kind: "item"; item: ClientItem }
+  | { kind: "scrap"; item: ClientItem }
   | { kind: "reactor" }
   | { kind: "lift" }
   | { kind: "terminal" }
@@ -778,6 +860,8 @@ function eTarget(): Target | undefined {
   const held = myHeldItem();
   if (!held) {
     const item = nearestItem();
+    // a built turret never leaves the floor by picking it up --- E on one tears it down instead
+    if (item?.state.kind === "turret") return { kind: "scrap", item };
     if (item) return { kind: "item", item };
   }
   if (atTerminal(p)) return { kind: "terminal" };
@@ -787,8 +871,7 @@ function eTarget(): Target | undefined {
 }
 
 function shopVerdict(item: ShopItem): BuyVerdict {
-  const turrets = [...items.values()].filter((i) => i.state.kind === "turret").length;
-  return buyVerdict(item, localMesh!.position, { holding: !!myHeldItem(), wounds: myWounds }, funds, turrets);
+  return buyVerdict(item, localMesh!.position, { wounds: myWounds, holding: !!myHeldItem() }, funds, turretCount());
 }
 
 const BUY_REASONS: Record<BuyVerdict, string> = {
@@ -825,16 +908,28 @@ function renderShop(): void {
     '<div class="title">corp supply uplink</div>' +
     `<div class="run">crew quota: ${funds}</div>` +
     rows +
+    '<div class="legend">turret: pick its spot, pay when it\'s built · scrap with E</div>' +
     '<div class="legend">field dressing: patches every wound now; the next hit tears it open</div>' +
-    '<div class="legend">1 / 2 to order · E / Esc to close</div></div>';
+    '<div class="legend">grenade: one throw, blasts a crowd · kills a spitter outright</div>' +
+    '<div class="legend">1 / 2 / 3 to order · E / Esc to close</div></div>';
   if (html === lastShopHtml) return;
   lastShopHtml = html;
   shopEl.innerHTML = html;
 }
 function order(item: ShopItem): void {
   if (!shopOpen) return;
-  if (shopVerdict(item) === "ok") net.buy(item);
-  else flash(BUY_REASONS[shopVerdict(item)]);
+  if (shopVerdict(item) !== "ok") {
+    flash(BUY_REASONS[shopVerdict(item)]);
+    return;
+  }
+  if (item === "turret") {
+    // ordering a turret doesn't hand it over: it opens its placement
+    // preview, and only paying for a spot that actually passes builds it
+    placingTurret = true;
+    toggleShop(false);
+    return;
+  }
+  net.buy(item);
 }
 shopEl.addEventListener("pointerdown", (e) => {
   const row = (e.target as HTMLElement).closest<HTMLElement>("[data-item]");
@@ -848,6 +943,7 @@ setInterval(() => {
 function useTarget(target: Target | undefined): void {
   if (!target || !localMesh) return;
   if (target.kind === "item") net.pickup(target.item.state.id);
+  else if (target.kind === "scrap") net.scrap(target.item.state.id);
   else if (target.kind === "reactor") {
     const verdict = activateVerdict(localMesh.position, objective, defenceState.phase);
     if (verdict === "ok" || verdict === "skip break") net.activate();
@@ -872,6 +968,9 @@ function currentPrompts(): Prompt[] {
   if (target?.kind === "item") {
     const s = target.item.state;
     out.push({ id: `item:${s.id}`, at: v3(s.x, 0.4, s.z), key: "E", label: `pick up ${ITEM_NAMES[s.kind]}` });
+  } else if (target?.kind === "scrap") {
+    const s = target.item.state;
+    out.push({ id: `scrap:${s.id}`, at: v3(s.x, 0.9, s.z), key: "E", label: "scrap turret", detail: "no refund" });
   } else if (target?.kind === "reactor") {
     const verdict = activateVerdict(p, objective, defenceState.phase);
     if (verdict !== "already active") out.push({ id: "reactor", at: v3(REACTOR.x - 0.6, 1.9, REACTOR.z + 0.4), key: verdict === "stable" || verdict === "dead" ? "" : "E", label: ACTIVATE_TIPS[verdict], enabled: verdict === "ok" || verdict === "skip break" });
@@ -934,6 +1033,8 @@ function renderControls(): void {
   let text: string;
   if (myOut) {
     text = "you're out until this attempt ends";
+  } else if (placingTurret) {
+    text = `WASD move · click: build turret (${TURRET_COST} quota) · right-click / Space: grid snap (${gridSnap ? "on" : "off"}) · Q / Esc: cancel`;
   } else if (!held) {
     text = "WASD move · E use";
   } else {
@@ -986,6 +1087,10 @@ function clearSceneState(): void {
   items.clear();
   for (const e of enemies.values()) scene.remove(e.mesh);
   enemies.clear();
+  for (const s of spits.values()) scene.remove(s.blob, s.ring);
+  spits.clear();
+  for (const g of thrown.values()) scene.remove(g.mesh, g.ring);
+  thrown.clear();
   obstacles = OBSTACLES;
 }
 
@@ -1068,6 +1173,8 @@ const net = connect({
     // items only come when they've changed; otherwise keep what we have
     if (state.items) updateItems(state.items);
     updateEnemies(state.enemies, t);
+    updateSpits(state.spits);
+    updateGrenades(state.grenades, state.blasts);
     renderLeaderboard(players);
   },
 });
@@ -1180,6 +1287,18 @@ function primary(): void {
     return;
   }
   if (isDead() || !localMesh) return;
+  if (placingTurret) {
+    const target = boxTarget();
+    const verdict = turretVerdict(target);
+    if (verdict === "ok") {
+      net.buildTurret(target.x, target.z);
+      placingTurret = false;
+    } else {
+      refusedAt = clock.elapsedTime;
+      flash(`can't build: ${verdict}`);
+    }
+    return;
+  }
   const held = myHeldItem();
   // a click with something in hand is that item's action (firing over the reactor is firing); E still works
   if (hoveringReactor() && !held) {
@@ -1190,13 +1309,20 @@ function primary(): void {
   }
   if (!held) {
     const hovered = hoveredItem();
-    if (hovered?.inReach) net.pickup(hovered.item.state.id);
+    if (hovered?.inReach && hovered.item.state.kind === "turret") net.scrap(hovered.item.state.id);
+    else if (hovered?.inReach) net.pickup(hovered.item.state.id);
     else if (hovered) flash("move closer");
     return;
   }
   if (held.state.kind === "gun") {
     triggerHeld = true;
     fireGun(true);
+  } else if (held.state.kind === "grenade") {
+    if (noFireAt(localMesh.position.x, localMesh.position.z)) {
+      flash("no throwing in the lift");
+      return;
+    }
+    net.primary(aimPoint.x, aimPoint.z);
   } else if (BLOCKING_KINDS.has(held.state.kind)) {
     const target = boxTarget();
     const verdict = boxVerdict(target);
@@ -1251,11 +1377,15 @@ function stepTrigger(): void {
 function secondary(): void {
   if (isDead()) return;
   const held = myHeldItem();
-  if ((held !== undefined && BLOCKING_KINDS.has(held.state.kind))) gridSnap = !gridSnap;
+  if (placingTurret || (held !== undefined && BLOCKING_KINDS.has(held.state.kind))) gridSnap = !gridSnap;
 }
 
 function drop(): void {
   if (isDead()) return;
+  if (placingTurret) {
+    placingTurret = false;
+    return;
+  }
   const held = myHeldItem();
   if (!held) return;
   // a box can't just be let go of where you stand --- it'd land on you ---
@@ -1288,6 +1418,7 @@ window.addEventListener("keydown", (e) => {
   else if (key === "e") useTarget(eTarget());
   else if (key === "escape" && boardOpen) toggleBoard();
   else if (key === "escape" && shopOpen) toggleShop(false);
+  else if (key === "escape" && placingTurret) placingTurret = false;
   else if (shopOpen) {
     const item = SHOP_ITEMS.find((i) => SHOP[i].key === key);
     if (item) order(item);
@@ -1327,7 +1458,7 @@ const enemies = new Map<string, ClientEnemy>();
 let defenceState: DefenceState = { reactorHealth: 1, wave: 0, phase: "spawning" };
 /** the crew's shared quota, as the server last said */
 let funds = 0;
-const ITEM_NAMES: Record<ItemKind, string> = { gun: "rifle", box: "box", turret: "turret" };
+const ITEM_NAMES: Record<ItemKind, string> = { gun: "rifle", box: "box", turret: "turret", grenade: "grenade" };
 const enemyBarGeometry = new THREE.PlaneGeometry(0.7, 0.07).rotateX(-Math.PI / 2);
 
 function updateEnemies(incoming: EnemyState[], t: number): void {
@@ -1336,9 +1467,9 @@ function updateEnemies(incoming: EnemyState[], t: number): void {
     seen.add(e.id);
     let ce = enemies.get(e.id);
     if (!ce) {
-      const mesh = crawler();
+      const mesh = e.kind === "spitter" ? spitter() : crawler();
       const eyes = crawlerEyes(restingAngle(e.id));
-      eyes.group.position.set(0, 0.48, 0.66);
+      eyes.group.position.set(0, e.kind === "spitter" ? 0.66 : 0.48, e.kind === "spitter" ? 0.6 : 0.66);
       mesh.add(eyes.group);
       const bar = new THREE.Mesh(enemyBarGeometry, new THREE.MeshBasicMaterial({ color: DANGER, depthTest: false }));
       bar.position.set(0, 1.0, 0);
@@ -1359,6 +1490,123 @@ function updateEnemies(incoming: EnemyState[], t: number): void {
       scene.remove(ce.mesh);
       enemies.delete(id);
     }
+  }
+}
+
+// A spitter's glob: a glowing blob lobbed on an arc from thrower to where
+// its target stood, with a ring on the floor where it'll come down --- it's
+// slow enough to step out of, so the landing spot is shown. A splash of
+// acid where it lands.
+interface ClientSpit {
+  state: SpitState;
+  blob: THREE.Sprite;
+  ring: THREE.Mesh;
+}
+const spits = new Map<string, ClientSpit>();
+const spitRingGeometry = new THREE.RingGeometry(SPIT_SPLASH * 0.8, SPIT_SPLASH, 20).rotateX(-Math.PI / 2);
+
+function updateSpits(incoming: SpitState[]): void {
+  const seen = new Set<string>();
+  for (const s of incoming) {
+    seen.add(s.id);
+    if (spits.has(s.id)) continue;
+    const blob = glow(EMIT_ACID, 0.45, 1);
+    const ring = new THREE.Mesh(spitRingGeometry, new THREE.MeshBasicMaterial({ color: EMIT_ACID, transparent: true, opacity: 0.5, depthWrite: false }));
+    ring.position.set(s.tx, 0.04, s.tz);
+    scene.add(blob, ring);
+    spits.set(s.id, { state: s, blob, ring });
+  }
+  for (const [id, cs] of spits) {
+    if (seen.has(id)) continue;
+    // gone from the server: it landed
+    impacts.hit("enemy", cs.state.tx, cs.state.tz, cs.state.tx - cs.state.x, cs.state.tz - cs.state.z);
+    scene.remove(cs.blob, cs.ring);
+    spits.delete(id);
+  }
+}
+
+function stepSpits(time: number): void {
+  const now = serverClock.now();
+  for (const cs of spits.values()) {
+    const s = cs.state;
+    const k = Math.min(1, Math.max(0, (now - s.firedAt) / (s.arriveAt - s.firedAt)));
+    cs.blob.position.set(s.x + (s.tx - s.x) * k, 0.6 + Math.sin(k * Math.PI) * 1.4, s.z + (s.tz - s.z) * k);
+    // the ring tightens and brightens as it comes down
+    (cs.ring.material as THREE.MeshBasicMaterial).opacity = 0.3 + 0.5 * k + 0.1 * Math.sin(time * 20);
+    cs.ring.scale.setScalar(1.4 - 0.4 * k);
+  }
+}
+
+// Grenades: arcing to their spot, then sitting there with the fuse lamp
+// blinking faster and the blast's reach drawn round them, until they go.
+interface ClientGrenade {
+  state: GrenadeState;
+  mesh: THREE.Object3D;
+  ring: THREE.Mesh;
+}
+const thrown = new Map<string, ClientGrenade>();
+const blastRingGeometry = new THREE.RingGeometry(GRENADE_RADIUS - 0.15, GRENADE_RADIUS, 32).rotateX(-Math.PI / 2);
+
+function updateGrenades(incoming: GrenadeState[], blasts: { x: number; z: number }[] | undefined): void {
+  const seen = new Set<string>();
+  for (const g of incoming) {
+    seen.add(g.id);
+    if (thrown.has(g.id)) continue;
+    const mesh = grenade();
+    const ring = new THREE.Mesh(blastRingGeometry, new THREE.MeshBasicMaterial({ color: DANGER, transparent: true, opacity: 0, depthWrite: false }));
+    ring.position.set(g.tx, 0.04, g.tz);
+    scene.add(mesh, ring);
+    thrown.set(g.id, { state: g, mesh, ring });
+  }
+  for (const [id, cg] of thrown) {
+    if (seen.has(id)) continue;
+    scene.remove(cg.mesh, cg.ring);
+    thrown.delete(id);
+  }
+  for (const b of blasts ?? []) blastAt(b.x, b.z);
+}
+
+const blastLight = new THREE.PointLight(EMIT_SPARK, 0, GRENADE_RADIUS * 4, 2);
+scene.add(blastLight);
+const blastFlashes: { ring: THREE.Mesh; born: number }[] = [];
+let blastUntil = 0;
+
+function blastAt(x: number, z: number): void {
+  blastLight.position.set(x, 1.2, z);
+  blastUntil = performance.now() + 140;
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    impacts.hit("wall", x, z, Math.sin(a), Math.cos(a));
+  }
+  const ring = new THREE.Mesh(blastRingGeometry, new THREE.MeshBasicMaterial({ color: EMIT_SPARK, transparent: true, depthWrite: false }));
+  ring.position.set(x, 0.05, z);
+  scene.add(ring);
+  blastFlashes.push({ ring, born: performance.now() });
+}
+
+function stepGrenadeVisuals(time: number): void {
+  const now = serverClock.now();
+  for (const cg of thrown.values()) {
+    const g = cg.state;
+    const k = Math.min(1, Math.max(0, (now - g.thrownAt) / GRENADE_FLIGHT_MS));
+    cg.mesh.position.set(g.x + (g.tx - g.x) * k, Math.sin(k * Math.PI) * 1.6, g.z + (g.tz - g.z) * k);
+    cg.mesh.rotation.x = k < 1 ? time * 14 : 0;
+    // on the floor: the reach shows, pulsing quicker as the fuse runs down
+    const left = Math.max(0, (g.blowsAt - now) / (g.blowsAt - g.thrownAt - GRENADE_FLIGHT_MS));
+    const rate = 6 + 24 * (1 - left);
+    (cg.ring.material as THREE.MeshBasicMaterial).opacity = k < 1 ? 0 : 0.35 + 0.35 * Math.max(0, Math.sin(time * rate));
+  }
+  blastLight.intensity = performance.now() < blastUntil ? 40 : 0;
+  for (let i = blastFlashes.length - 1; i >= 0; i--) {
+    const f = blastFlashes[i];
+    const k = (performance.now() - f.born) / 350;
+    if (k >= 1) {
+      scene.remove(f.ring);
+      blastFlashes.splice(i, 1);
+      continue;
+    }
+    f.ring.scale.setScalar(0.3 + 0.8 * k);
+    (f.ring.material as THREE.MeshBasicMaterial).opacity = 1 - k;
   }
 }
 
@@ -1487,6 +1735,8 @@ function animate(): void {
 
   stepRemotes();
   stepEnemies(time);
+  stepSpits(time);
+  stepGrenadeVisuals(time);
   renderDefenceHud();
   stepTrigger();
   stepWounds(dt);

@@ -180,6 +180,8 @@ export const EMIT_TRACER = 0xffd9a0;
 
 /** sparks off a wall or a box where a round lands */
 export const EMIT_SPARK = 0xffe08a;
+/** a spitter's acid: a sour yellow-green, kept well off the turrets' clean green so hostile never reads as friendly */
+export const EMIT_ACID = 0xc8ff3a;
 
 // --- 2b. Gore (an exception to the gamut, like the floor guides) -------------
 // Blood is the one surface colour allowed past the gamut's chroma: it's

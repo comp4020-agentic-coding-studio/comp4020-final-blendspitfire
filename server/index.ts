@@ -69,7 +69,16 @@ import {
   BLOCKING_KINDS,
   BOX_HALF_EXTENT,
   SHOP,
+  TURRET_COST,
+  GRENADE_DAMAGE,
+  GRENADE_FLIGHT_MS,
+  GRENADE_FUSE_MS,
+  GRENADE_RADIUS,
+  grenadeLanding,
+  type GrenadeState,
   buyVerdict,
+  buildTurretVerdict,
+  scrapVerdict,
   waveReward,
   PAR_MS_PER_ENEMY,
   WAVE_BASE_REWARD,
@@ -331,9 +340,9 @@ const defence = new Defence(
     items,
     // enemies never leave the facility, so a player in the lift or the garden isn't a target
     players: () => [...connections.values()].filter((c) => !isDead(c) && !isSafe(c.player.x, c.player.z)).map((c) => c.player),
-    hurtPlayer: (id, now) => {
+    hurtPlayer: (id, now, by) => {
       const conn = connections.get(id);
-      if (conn && !isDead(conn)) wound(conn, now, "a crawler");
+      if (conn && !isDead(conn)) wound(conn, now, by);
     },
     changed: markWorldDirty,
     announce,
@@ -617,6 +626,26 @@ function handlePrimary(conn: Connection, x: number, z: number, now: number): voi
       dz = Math.cos(conn.player.rotation);
     }
     spawnProjectile(conn.player, dx, dz, now);
+  } else if (item.kind === "grenade") {
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return;
+    if (noFireAt(conn.player.x, conn.player.z)) {
+      refuse(conn, "fire", "refused: throwing in the lift");
+      return;
+    }
+    const land = grenadeLanding(conn.player, x, z, worldObstacles(items.values()));
+    items.delete(item.id);
+    grenades.set(item.id, {
+      id: item.id,
+      ownerId: conn.player.id,
+      x: conn.player.x,
+      z: conn.player.z,
+      tx: land.x,
+      tz: land.z,
+      thrownAt: now,
+      blowsAt: now + GRENADE_FLIGHT_MS + GRENADE_FUSE_MS,
+    });
+    act(conn.player, `threw grenade ${shortId(item.id)} at ${pos(land.x, land.z)}`);
+    markWorldDirty();
   } else if (BLOCKING_KINDS.has(item.kind)) {
     if (!Number.isFinite(x) || !Number.isFinite(z)) return;
     const verdict = placementVerdict(x, z, conn.player, worldObstacles(items.values()), livingPlayers(now));
@@ -871,9 +900,11 @@ wss.on("connection", (socket, req) => {
 
     if (msg.type === "buy") {
       const what = msg.item;
-      if (what !== "turret" && what !== "heal") return;
-      const turrets = [...items.values()].filter((i) => i.kind === "turret").length;
-      const verdict = buyVerdict(what, conn.player, { holding: heldItem(playerId) !== undefined, wounds: conn.wounds }, funds, turrets);
+      // a turret isn't handed over by this message any more: ordering one
+      // opens its placement panel client-side; buildTurret is what pays for
+      // it, atomically with a spot passing (see below)
+      if (what !== "heal" && what !== "grenade") return;
+      const verdict = buyVerdict(what, conn.player, { wounds: conn.wounds, holding: heldItem(playerId) !== undefined }, funds, 0);
       if (verdict !== "ok") {
         refuse(conn, "buy", `refused: ${what} (${verdict})`);
         return;
@@ -881,18 +912,49 @@ wss.on("connection", (socket, req) => {
       const cost = SHOP[what].cost;
       funds -= cost;
       saveFunds(funds);
-      if (what === "turret") {
+      if (what === "grenade") {
         const id = randomUUID();
-        items.set(id, { id, kind: "turret", x: conn.player.x, z: conn.player.z, heldBy: playerId });
-        act(conn.player, `bought turret ${shortId(id)} for ${cost} quota (${funds} left)`);
+        items.set(id, { id, kind: "grenade", x: conn.player.x, z: conn.player.z, heldBy: playerId });
+        act(conn.player, `bought grenade ${shortId(id)} for ${cost} quota (${funds} left)`);
         markWorldDirty();
-      } else {
-        // a dressing, not a cure: whatever they had comes back with the next hit
-        conn.bandaged = Math.max(conn.bandaged, conn.wounds);
-        conn.wounds = 0;
-        conn.dirty = true;
-        act(conn.player, `patched up (${conn.bandaged} wound(s) dressed) for ${cost} quota (${funds} left)`);
+        return;
       }
+      // a dressing, not a cure: whatever they had comes back with the next hit
+      conn.bandaged = Math.max(conn.bandaged, conn.wounds);
+      conn.wounds = 0;
+      conn.dirty = true;
+      act(conn.player, `patched up (${conn.bandaged} wound(s) dressed) for ${cost} quota (${funds} left)`);
+      return;
+    }
+
+    if (msg.type === "buildTurret") {
+      if (!Number.isFinite(msg.x) || !Number.isFinite(msg.z)) return;
+      const turrets = [...items.values()].filter((i) => i.kind === "turret").length;
+      const verdict = buildTurretVerdict(msg.x, msg.z, conn.player, worldObstacles(items.values()), livingPlayers(now), funds, turrets);
+      if (verdict !== "ok") {
+        refuse(conn, "build", `refused: turret at ${pos(msg.x, msg.z)} (${verdict})`);
+        return;
+      }
+      funds -= TURRET_COST;
+      saveFunds(funds);
+      const id = randomUUID();
+      items.set(id, { id, kind: "turret", x: msg.x, z: msg.z });
+      act(conn.player, `built turret ${shortId(id)} at ${pos(msg.x, msg.z)} for ${TURRET_COST} quota (${funds} left)`);
+      markWorldDirty();
+      return;
+    }
+
+    if (msg.type === "scrap") {
+      if (typeof msg.itemId !== "string") return;
+      const item = items.get(msg.itemId);
+      const verdict = scrapVerdict(item, conn.player);
+      if (verdict !== "ok") {
+        refuse(conn, "scrap", `refused: ${verdict}`);
+        return;
+      }
+      items.delete(msg.itemId);
+      act(conn.player, `scrapped turret ${shortId(msg.itemId)} at ${pos(item!.x, item!.z)}`);
+      markWorldDirty();
       return;
     }
 
@@ -900,6 +962,8 @@ wss.on("connection", (socket, req) => {
       if (typeof msg.itemId !== "string") return;
       const item = items.get(msg.itemId);
       if (!item) return;
+      // a built turret never leaves the floor except by scrapping it
+      if (item.kind === "turret") return;
       if (item.heldBy !== undefined && item.heldBy !== playerId) {
         const holder = connections.get(item.heldBy);
         refuse(conn, "pickup", `refused: ${item.kind} ${shortId(item.id)} is in ${holder ? codename(holder.player) : "someone else"}'s hands`);
@@ -1022,6 +1086,37 @@ function respawn(player: PlayerState, joining = false): void {
   player.z = spawn.z;
 }
 
+/** a kill goes on whoever's it was: their score, the attempt's tally, the all-time board */
+function creditKill(ownerId: string): void {
+  const ownerConn = connections.get(ownerId);
+  if (!ownerConn) return;
+  ownerConn.score += 1;
+  ownerConn.kills += 1;
+  if (objective.active) attemptKills.set(ownerConn.player.id, (attemptKills.get(ownerConn.player.id) ?? 0) + 1);
+  bumpStats(ownerConn.player.id, codename(ownerConn.player), { kills: 1 });
+  boardDirty = true;
+}
+
+// Grenades in the air or on the floor, by id; they go off at blowsAt.
+const grenades = new Map<string, GrenadeState & { ownerId: string }>();
+let pendingBlasts: { x: number; z: number }[] = [];
+
+function stepGrenades(now: number): void {
+  for (const g of grenades.values()) {
+    if (now < g.blowsAt) continue;
+    grenades.delete(g.id);
+    pendingBlasts.push({ x: g.tx, z: g.tz });
+    const killed = defence.blast(g.tx, g.tz, GRENADE_RADIUS, GRENADE_DAMAGE);
+    for (const k of killed) {
+      leaveGore({ kind: "blood", who: "enemy", x: k.x, z: k.z, size: 0.7 + Math.random() * 0.3 });
+      leaveGore({ kind: "corpse", who: "enemy", x: k.x, z: k.z, r: Math.atan2(k.x - g.tx, k.z - g.tz) });
+      creditKill(g.ownerId);
+    }
+    const owner = connections.get(g.ownerId);
+    if (owner) act(owner.player, `grenade went off at ${pos(g.tx, g.tz)}: ${killed.length} kill(s)`);
+  }
+}
+
 /** a stopped shot stays in the broadcast this long, so every client sees it reach where it stopped */
 const PROJECTILE_LINGER_MS = 150;
 
@@ -1072,16 +1167,7 @@ function stepProjectiles(now: number): void {
         leaveGore({ kind: "blood", who: "enemy", x: ex + p.dirX * 0.3, z: ez + p.dirZ * 0.3, size: 0.85 + Math.random() * 0.3 });
         leaveGore({ kind: "corpse", who: "enemy", x: ex + p.dirX * 0.3, z: ez + p.dirZ * 0.3, r: Math.atan2(p.dirX, p.dirZ) + (Math.random() - 0.5) });
       }
-      if (killed) {
-        const ownerConn = connections.get(p.ownerId);
-        if (ownerConn) {
-          ownerConn.score += 1;
-          ownerConn.kills += 1;
-          if (objective.active) attemptKills.set(ownerConn.player.id, (attemptKills.get(ownerConn.player.id) ?? 0) + 1);
-          bumpStats(ownerConn.player.id, codename(ownerConn.player), { kills: 1 });
-          boardDirty = true;
-        }
-      }
+      if (killed) creditKill(p.ownerId);
     } else if (victim) {
       p.range = at;
       p.hit = "player";
@@ -1167,6 +1253,7 @@ setInterval(() => {
   lift.step(now);
   defence.step(now, BROADCAST_INTERVAL_MS / 1000);
   stepProjectiles(now);
+  stepGrenades(now);
   checkWipe();
   if (bringUpAt && now >= bringUpAt) {
     bringUpAt = 0;
@@ -1200,6 +1287,9 @@ setInterval(() => {
     projectiles: projectileList,
     objective,
     enemies: defence.snapshot(),
+    spits: defence.spits(),
+    grenades: [...grenades.values()].map(({ ownerId: _o, ...g }) => g),
+    blasts: pendingBlasts.length ? pendingBlasts : undefined,
     defence: defence.state,
     funds,
     announcements: pendingAnnouncements.length ? pendingAnnouncements : undefined,
@@ -1208,6 +1298,7 @@ setInterval(() => {
   };
   pendingAnnouncements = [];
   pendingReports = [];
+  pendingBlasts = [];
   // a client that's never had the items, or the gore, gets them all; everyone else just what changed
   const newGore = goreReset ? { gore, goreReset: true as const } : goreNew.length ? { gore: goreNew } : {};
   const allGore = { gore, goreReset: true as const };

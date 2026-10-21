@@ -17,6 +17,8 @@ export interface Net {
   drop: () => void;
   activate: () => void;
   buy: (item: ShopItem) => void;
+  buildTurret: (x: number, z: number) => void;
+  scrap: (itemId: string) => void;
   lift: () => void;
 }
 
@@ -99,6 +101,12 @@ export function connect(handlers: NetHandlers): Net {
     },
     buy(item) {
       send({ type: "buy", item });
+    },
+    buildTurret(x, z) {
+      send({ type: "buildTurret", x, z });
+    },
+    scrap(itemId) {
+      send({ type: "scrap", itemId });
     },
     activate() {
       send({ type: "activate" });

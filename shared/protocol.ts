@@ -1,4 +1,4 @@
-import type { DefenceState, EnemyState } from "./enemies.ts";
+import type { DefenceState, EnemyState, SpitState } from "./enemies.ts";
 type Phase = DefenceState["phase"];
 
 export interface PlayerState {
@@ -59,6 +59,8 @@ export interface StateMessage {
   items?: ItemState[];
   objective: ObjectiveState;
   enemies: EnemyState[];
+  /** spitters' acid globs in flight */
+  spits: SpitState[];
   defence: DefenceState;
   /** the crew's shared quota, to spend at the supply terminal */
   funds: number;
@@ -66,6 +68,10 @@ export interface StateMessage {
   announcements?: string[];
   /** summaries for the report panel: a wave's pay, an attempt's end */
   reports?: Report[];
+  /** grenades thrown and not yet gone off */
+  grenades: GrenadeState[];
+  /** grenades that went off since the last message: where, for the blast */
+  blasts?: { x: number; z: number }[];
   /** blood and bodies left since the last message (all of them, after goreReset) */
   gore?: GoreMark[];
   /** drop every mark held before adding `gore`: a client's first message, or the facility cleaned after a won run */
@@ -148,6 +154,23 @@ export interface BuyMessage {
 }
 
 /**
+ * Confirm a turret's spot: funds permitting, this is the only way one gets
+ * built --- no more buying it into your hands and carrying it off. Placed
+ * right where the preview shows, atomically with paying for it.
+ */
+export interface BuildTurretMessage {
+  type: "buildTurret";
+  x: number;
+  z: number;
+}
+
+/** scrap a placed turret: it's built, not held, so this is the only way it leaves the floor. No refund. */
+export interface ScrapMessage {
+  type: "scrap";
+  itemId: string;
+}
+
+/**
  * A shot, sent once rather than every tick: where it started, which way it
  * flies and when, and how far it gets before it stops (a wall, a box, or
  * someone it hit). Every client plays the same straight line forward from
@@ -214,7 +237,16 @@ export interface ReplacedMessage {
 }
 
 export type ServerMessage = WelcomeMessage | StateMessage | BoardMessage | ReplacedMessage;
-export type ClientMessage = MoveMessage | PickupMessage | PrimaryMessage | DropMessage | ActivateMessage | LiftMessage | BuyMessage;
+export type ClientMessage =
+  | MoveMessage
+  | PickupMessage
+  | PrimaryMessage
+  | DropMessage
+  | ActivateMessage
+  | LiftMessage
+  | BuyMessage
+  | BuildTurretMessage
+  | ScrapMessage;
 
 /**
  * Every pickup-able thing in the world is one of these: same shape, same
@@ -222,7 +254,7 @@ export type ClientMessage = MoveMessage | PickupMessage | PrimaryMessage | DropM
  * secondary) action does. The "equipment slot" is just `heldBy` --- a
  * player holds at most one item, and nothing on screen shows a slot.
  */
-export type ItemKind = "gun" | "box" | "turret";
+export type ItemKind = "gun" | "box" | "turret" | "grenade";
 
 /** kinds that stand on a 1×1 tile once put down: placed like a box, block like a box, get chewed like a box */
 export const BLOCKING_KINDS: ReadonlySet<ItemKind> = new Set<ItemKind>(["box", "turret"]);
@@ -252,7 +284,44 @@ export const ITEM_KINDS: Record<ItemKind, ItemKindInfo> = {
   gun: { primaryLabel: "fire" },
   box: { primaryLabel: "place", secondaryLabel: "grid snap" },
   turret: { primaryLabel: "place", secondaryLabel: "grid snap" },
+  grenade: { primaryLabel: "throw" },
 };
+
+// The grenade: one use, bought at the terminal. Thrown at the cursor
+// (clamped to GRENADE_RANGE), it flies GRENADE_FLIGHT_MS, sits on the
+// floor for GRENADE_FUSE_MS so everyone can see where it'll go, then
+// blasts everything within GRENADE_RADIUS for GRENADE_DAMAGE --- enough to
+// drop a spitter outright and leave a crawler on its last legs. Crew are
+// never hurt by it, same as the rifle while friendly fire's off.
+export const GRENADE_RANGE = 8;
+export const GRENADE_FLIGHT_MS = 500;
+export const GRENADE_FUSE_MS = 700;
+export const GRENADE_RADIUS = 2.6;
+export const GRENADE_DAMAGE = 3;
+export const GRENADE_COST = 15;
+
+/** a grenade thrown and not yet gone off: drawn arcing to (tx, tz), then sitting there until it blows */
+export interface GrenadeState {
+  id: string;
+  x: number;
+  z: number;
+  tx: number;
+  tz: number;
+  thrownAt: number;
+  blowsAt: number;
+}
+
+/** where a grenade aimed at (ax, az) actually lands: pulled in to range, and stopped short of the first wall on the way */
+export function grenadeLanding(from: { x: number; z: number }, ax: number, az: number, obstacles: Obstacle[]): { x: number; z: number } {
+  let dx = ax - from.x;
+  let dz = az - from.z;
+  const d = Math.hypot(dx, dz);
+  if (d < 1e-6) return { x: from.x, z: from.z };
+  dx /= d;
+  dz /= d;
+  const reach = Math.min(d, GRENADE_RANGE, rayToObstacles(from.x, from.z, dx, dz, obstacles, GRENADE_RANGE, 0.15));
+  return { x: from.x + dx * reach, z: from.z + dz * reach };
+}
 
 /** how far (center to center) a player can reach to pick something up */
 export const PICKUP_RANGE = 2.2;
@@ -820,7 +889,7 @@ export const STATIONS: { kind: ItemKind; x: number; z: number }[] = [
 ];
 export const STATION_RESTOCK_MS = 3000;
 /** boxes are capped higher than a single attempt needs: they're what carries over between attempts */
-export const ITEM_CAPS: Record<ItemKind, number> = { gun: 12, box: 60, turret: 8 };
+export const ITEM_CAPS: Record<ItemKind, number> = { gun: 12, box: 60, turret: 8, grenade: 20 };
 
 // The quota: a shared supply credit the corp issues the crew for every wave
 // they clear (faster = more), spent at the supply terminal on kit. Shared,
@@ -830,10 +899,11 @@ export const BUY_RANGE = 2;
 export const TURRET_COST = 40;
 /** patching someone up: see bandaged on PlayerState */
 export const HEAL_COST = 20;
-export type ShopItem = "turret" | "heal";
+export type ShopItem = "turret" | "heal" | "grenade";
 export const SHOP: Record<ShopItem, { cost: number; label: string; key: string }> = {
   turret: { cost: TURRET_COST, label: "sentry turret", key: "1" },
   heal: { cost: HEAL_COST, label: "field dressing", key: "2" },
+  grenade: { cost: GRENADE_COST, label: "frag grenade", key: "3" },
 };
 /** what clearing a wave pays, before the speed bonus */
 export const WAVE_BASE_REWARD = 15;
@@ -850,20 +920,63 @@ export function atTerminal(player: { x: number; z: number }): boolean {
   return Math.hypot(dx, dz) <= BUY_RANGE;
 }
 
-/** shared, so the terminal's panel says exactly what the server would decide */
+/**
+ * Shared, so the terminal's panel says exactly what the server would
+ * decide. A turret isn't handed over here --- ordering one just clears the
+ * way to place it (see buildTurretVerdict); a dressing is used on the spot;
+ * a grenade goes into your hands, so they have to be empty.
+ */
 export function buyVerdict(
   item: ShopItem,
   player: { x: number; z: number },
-  buyer: { holding: boolean; wounds: number },
+  buyer: { wounds: number; holding?: boolean },
   funds: number,
   turretsInWorld: number,
 ): BuyVerdict {
   if (!atTerminal(player)) return "too far";
   if (item === "turret") {
-    if (buyer.holding) return "hands full";
     if (turretsInWorld >= ITEM_CAPS.turret) return "sold out";
+  } else if (item === "grenade") {
+    if (buyer.holding) return "hands full";
   } else if (buyer.wounds === 0) return "unhurt";
   if (funds < SHOP[item].cost) return "can't afford";
+  return "ok";
+}
+
+/**
+ * Where a turret can be built: same footprint rules as a box (not in reach,
+ * not walkable, in a no-build zone, or overlapping something), plus the
+ * quota and the corp's cap on how many stand at once. Checked again at the
+ * moment of building --- funds or the cap can have moved since the order
+ * was placed --- so this is also what pays for it: funds only leave the
+ * crew's quota once a spot actually passes.
+ */
+export type BuildTurretVerdict = PlacementVerdict | "can't afford" | "sold out";
+
+export function buildTurretVerdict(
+  x: number,
+  z: number,
+  placer: { x: number; z: number },
+  obstacles: Obstacle[],
+  players: { x: number; z: number }[],
+  funds: number,
+  turretsInWorld: number,
+): BuildTurretVerdict {
+  if (funds < TURRET_COST) return "can't afford";
+  if (turretsInWorld >= ITEM_CAPS.turret) return "sold out";
+  return placementVerdict(x, z, placer, obstacles, players);
+}
+
+/**
+ * A built turret never moves again: the only thing E does to it afterward
+ * is tear it down, for anyone in reach (it's the crew's, not whoever
+ * bought it) --- no refund, so placing it is a commitment.
+ */
+export type ScrapVerdict = "ok" | "too far" | "not a turret";
+
+export function scrapVerdict(item: { kind: ItemKind; x: number; z: number } | undefined, player: { x: number; z: number }): ScrapVerdict {
+  if (!item || item.kind !== "turret") return "not a turret";
+  if (Math.hypot(item.x - player.x, item.z - player.z) > PICKUP_RANGE) return "too far";
   return "ok";
 }
 

@@ -2,15 +2,22 @@ import { describe, expect, it } from "vitest";
 import { Defence, type World } from "../server/defence.ts";
 import {
   AGGRO_RANGE,
+  crawlerHitPoints,
   ENEMY_REACTOR_DAMAGE,
   FIRST_WAVE_DELAY_MS,
+  MAX_ENEMIES,
+  SPIT_MIN_RANGE,
+  SPIT_RANGE,
+  SPIT_SPLASH,
+  SPITTER_FROM_WAVE,
   spawnInterval,
+  spitterShare,
   TURRET_RANGE,
   WAVE_BREAK_MS,
   WAVES_TO_WIN,
   waveSize,
 } from "../shared/enemies.ts";
-import { REACTOR, type ItemState } from "../shared/protocol.ts";
+import { GRENADE_DAMAGE, GRENADE_RADIUS, REACTOR, type ItemState } from "../shared/protocol.ts";
 
 // Enemies pick between the reactor and a player: a player they can see and
 // reach close by draws them off, anything else and they keep for the
@@ -103,6 +110,59 @@ describe("enemy targeting", () => {
     run(d, 4, t);
     const e = enemyAt(d, id);
     expect(Math.hypot(e.x - REACTOR.x, e.z - REACTOR.z)).toBeLessThan(4);
+  });
+});
+
+describe("spitters", () => {
+  it("holds at range and lobs acid that wounds a player who stays put", () => {
+    const player = { id: "p", x: -6, z: -16 };
+    const { w, hurt } = world([player]);
+    const d = new Defence(w, { reactorHealth: 1, wave: 3, phase: "spawning", nextWaveAt: 1e12 });
+    const id = d.spawnAt(-6 - (SPIT_RANGE - 1), -16, "spitter");
+    run(d, 3);
+    expect(hurt).toContain("p");
+    // it never closed in to bite
+    const e = enemyAt(d, id);
+    expect(Math.hypot(e.x - player.x, e.z - player.z)).toBeGreaterThan(SPIT_MIN_RANGE - 0.5);
+  });
+
+  it("misses a player who steps out of the landing spot", () => {
+    const player = { id: "p", x: -6, z: -16 };
+    const { w, hurt } = world([player]);
+    const d = new Defence(w, { reactorHealth: 1, wave: 3, phase: "spawning", nextWaveAt: 1e12 });
+    d.spawnAt(-6 - (SPIT_RANGE - 1), -16, "spitter");
+    run(d, 0.1);
+    expect(d.spits().length).toBe(1);
+    player.z += SPIT_SPLASH + 1;
+    run(d, 1, 100);
+    expect(hurt).toEqual([]);
+  });
+
+  it("come in from wave 3, as a share of the wave rather than on top of it", () => {
+    expect(spitterShare(SPITTER_FROM_WAVE - 1)).toBe(0);
+    expect(spitterShare(SPITTER_FROM_WAVE)).toBeGreaterThan(0);
+    expect(spitterShare(WAVES_TO_WIN)).toBeGreaterThan(spitterShare(SPITTER_FROM_WAVE));
+    const { w } = world([]);
+    const d = new Defence(w, { reactorHealth: 1, wave: WAVES_TO_WIN - 1, phase: "break", nextWaveAt: 0 });
+    run(d, (waveSize(WAVES_TO_WIN) * spawnInterval(WAVES_TO_WIN)) / 1000 + 1);
+    const all = d.snapshot();
+    expect(all.length).toBe(Math.min(waveSize(WAVES_TO_WIN), MAX_ENEMIES));
+    expect(all.some((e) => e.kind === "spitter")).toBe(true);
+    expect(all.some((e) => e.kind === "crawler")).toBe(true);
+  });
+});
+
+describe("blasts", () => {
+  it("kill a spitter outright and wound a crawler, only inside the radius", () => {
+    const { w } = world([]);
+    const d = new Defence(w, { reactorHealth: 1, wave: 3, phase: "spawning", nextWaveAt: 1e12 });
+    const s = d.spawnAt(-6, -14, "spitter");
+    const c = d.spawnAt(-5, -14);
+    const far = d.spawnAt(-6 + GRENADE_RADIUS + 3, -14);
+    const killed = d.blast(-6, -14, GRENADE_RADIUS, GRENADE_DAMAGE);
+    expect(killed.map((k) => k.id)).toEqual([s]);
+    expect(enemyAt(d, c).health).toBeLessThan(1);
+    expect(enemyAt(d, far).health).toBe(1);
   });
 });
 
@@ -212,6 +272,11 @@ describe("waves", () => {
     d.fail("everyone's down in the dark", now);
     expect(outcome.ended).toBe(3);
     expect(outcome.blackoutMs).toBeGreaterThan(15000);
+  });
+
+  it("late crawlers take more to drop, so it gets harder without more of them", () => {
+    expect(crawlerHitPoints(1)).toBe(crawlerHitPoints(3));
+    expect(crawlerHitPoints(WAVES_TO_WIN)).toBeGreaterThan(crawlerHitPoints(1));
   });
 
   it("waves grow faster than linearly toward the last one", () => {

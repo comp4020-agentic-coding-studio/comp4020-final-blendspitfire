@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { PLAYER_COLORS } from "../../shared/palette.ts";
 import type { FixtureKind } from "../../shared/protocol.ts";
-import { GUN_REST_HEIGHT, character, crawler, equipmentCase, gun, heldGun, HELD_GUN_OFFSET, sentryTurret } from "./index.ts";
+import { GUN_REST_HEIGHT, character, crawler, equipmentCase, grenade, gun, heldGun, HELD_GUN_OFFSET, sentryTurret, spitter } from "./index.ts";
 import { fixtureModel } from "./facility.ts";
 
 // Every reviewable asset in one list. The model sheet (/gallery.html) is
@@ -63,8 +63,10 @@ export const ASSETS: AssetEntry[] = [
   },
   { id: "equipment case (box item)", category: "item", build: equipmentCase, frame: 1.8 },
   { id: "sentry turret (turret item)", category: "item", build: sentryTurret, frame: 1.8 },
+  { id: "frag grenade (grenade item)", category: "handheld", build: grenade, frame: 1 },
   fixture("supplyTerminal", 2.2, 0.9, 1.2, 3.5),
   { id: "crawler (enemy)", category: "enemy", build: crawler, frame: 2 },
+  { id: "spitter (enemy)", category: "enemy", build: spitter, frame: 2 },
   fixture("blastDoor", 4, 0.6, 2.5, 6),
   fixture("barrier", 2, 0.68, 0.8, 3),
   fixture("bench", 5, 1.2, 0.9, 6),

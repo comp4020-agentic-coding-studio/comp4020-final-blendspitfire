@@ -3,7 +3,6 @@ import {
   AGGRO_RANGE,
   BOX_HIT_POINTS,
   ENEMY_ATTACK_INTERVAL_MS,
-  ENEMY_HIT_POINTS,
   ENEMY_RADIUS,
   ENEMY_REACH,
   ENEMY_REACTOR_DAMAGE,
@@ -24,8 +23,18 @@ import {
   WAVES_TO_WIN,
   waveSize,
   blackoutSpawnInterval,
+  hitPointsOf,
+  spitterShare,
+  SPITTER_SPEED_FACTOR,
+  SPIT_INTERVAL_MS,
+  SPIT_MIN_RANGE,
+  SPIT_RANGE,
+  SPIT_SPEED,
+  SPIT_SPLASH,
   type DefenceState,
+  type EnemyKind,
   type EnemyState,
+  type SpitState,
 } from "../shared/enemies.ts";
 import {
   OBSTACLES,
@@ -48,6 +57,8 @@ import {
 
 interface Enemy extends EnemyState {
   hp: number;
+  /** what it spawned with, for the health bar */
+  maxHp: number;
   nextAttackAt: number;
   /** the player it's after, if any (otherwise the reactor) */
   target?: string;
@@ -62,8 +73,8 @@ export interface World {
   items: Map<string, ItemState>;
   /** living players' positions, by id */
   players(): { id: string; x: number; z: number }[];
-  /** an enemy reached a player */
-  hurtPlayer(id: string, now: number): void;
+  /** an enemy reached a player (or a spitter's glob landed on one) */
+  hurtPlayer(id: string, now: number, by: string): void;
   /** something about the world changed that should be saved */
   changed(): void;
   /** tell everyone something happened */
@@ -96,6 +107,10 @@ export class Defence {
   private waveStartedAt = 0;
   private waveSizeNow = 0;
   private readonly turretReadyAt = new Map<string, number>();
+  /** acid globs in flight */
+  private readonly spitsInFlight = new Map<string, SpitState>();
+  /** builds up a wave's spitter share spawn by spawn, so the mix is even and deterministic */
+  private spitterDebt = 0;
 
   private readonly world: World;
 
@@ -114,20 +129,26 @@ export class Defence {
   }
 
   /** put one enemy at (x, z) straight away, outside the wave schedule (tests, debugging) */
-  spawnAt(x: number, z: number): string {
+  spawnAt(x: number, z: number, kind: EnemyKind = "crawler"): string {
     const id = randomUUID();
-    this.enemies.set(id, { id, x, z, rotation: 0, health: 1, hp: ENEMY_HIT_POINTS, nextAttackAt: 0, nextThinkAt: 0 });
+    const hp = hitPointsOf(kind, this.state.wave);
+    this.enemies.set(id, { id, kind, x, z, rotation: 0, health: 1, hp, maxHp: hp, nextAttackAt: 0, nextThinkAt: 0 });
     return id;
   }
 
   snapshot(): EnemyState[] {
-    return [...this.enemies.values()].map(({ id, x, z, rotation, hp }) => ({
+    return [...this.enemies.values()].map(({ id, kind, x, z, rotation, hp, maxHp }) => ({
       id,
+      kind,
       x: Math.round(x * 100) / 100,
       z: Math.round(z * 100) / 100,
       rotation: Math.round(rotation * 100) / 100,
-      health: hp / ENEMY_HIT_POINTS,
+      health: hp / maxHp,
     }));
+  }
+
+  spits(): SpitState[] {
+    return [...this.spitsInFlight.values()];
   }
 
   /** a shot's stretch this tick: the first enemy on it, and where along it */
@@ -140,11 +161,22 @@ export class Defence {
     return best;
   }
 
-  /** a shot landed; true if it killed */
-  damage(id: string): boolean {
+  /** a blast at (x, z): everything within `radius` takes `amount`; the ids it killed, and where they fell */
+  blast(x: number, z: number, radius: number, amount: number): { id: string; x: number; z: number }[] {
+    const killed: { id: string; x: number; z: number }[] = [];
+    for (const e of [...this.enemies.values()]) {
+      if (Math.hypot(e.x - x, e.z - z) > radius + ENEMY_RADIUS) continue;
+      const at = { id: e.id, x: e.x, z: e.z };
+      if (this.damage(e.id, amount)) killed.push(at);
+    }
+    return killed;
+  }
+
+  /** a shot (1) or a blast (more) landed; true if it killed */
+  damage(id: string, amount = 1): boolean {
     const e = this.enemies.get(id);
     if (!e) return false;
-    e.hp -= 1;
+    e.hp -= amount;
     if (e.hp > 0) return false;
     this.enemies.delete(id);
     return true;
@@ -154,12 +186,14 @@ export class Defence {
     if (!this.world.objective.active || this.state.phase === "won") {
       // no live reactor (or a won one), no attack: anything left over goes away
       if (this.enemies.size) this.enemies.clear();
+      this.spitsInFlight.clear();
       return;
     }
     this.rebuildFieldIfBoxesMoved();
     if (this.state.phase === "blackout") this.runBlackout(now);
     else this.runWaves(now);
     this.moveAndAttack(now, dt);
+    this.landSpits(now);
     // turrets run off the reactor too
     if (this.world.objective.active && this.state.phase !== "blackout") this.fireTurrets(now);
   }
@@ -186,13 +220,23 @@ export class Defence {
   private spawnAtBreach(): void {
     const spawn = SPAWNS[this.spawnTurn++ % SPAWNS.length];
     const id = randomUUID();
+    // the wave's spitter share, paid out evenly: every spawn adds the share, each whole one owed is a spitter
+    this.spitterDebt += spitterShare(Math.max(1, this.state.wave));
+    let kind: EnemyKind = "crawler";
+    if (this.spitterDebt >= 1) {
+      this.spitterDebt -= 1;
+      kind = "spitter";
+    }
+    const hp = hitPointsOf(kind, this.state.wave);
     this.enemies.set(id, {
       id,
+      kind,
       x: spawn.x + (Math.random() - 0.5) * 0.6,
       z: spawn.z + (Math.random() - 0.5) * 0.6,
       rotation: 0,
       health: 1,
-      hp: ENEMY_HIT_POINTS,
+      hp,
+      maxHp: hp,
       nextAttackAt: 0,
       nextThinkAt: 0,
     });
@@ -202,6 +246,8 @@ export class Defence {
   finish(): void {
     this.world.objective.active = false;
     this.enemies.clear();
+    this.spitsInFlight.clear();
+    this.spitterDebt = 0;
     this.toSpawn = 0;
     this.state = { reactorHealth: 1, wave: 0, phase: "spawning" };
     this.world.changed();
@@ -294,13 +340,14 @@ export class Defence {
     const solid = [...OBSTACLES, ...boxes.map(boxObstacle)];
     const players = this.world.players();
     for (const e of this.enemies.values()) {
+      if (e.kind === "spitter" && this.spitterAct(e, players, solid, boxes, now, dt)) continue;
       // a player within reach is attacked first: they're in the way
       const victim = players.find((p) => Math.hypot(p.x - e.x, p.z - e.z) < ENEMY_REACH + PLAYER_RADIUS + ENEMY_RADIUS * 0.5);
       if (victim) {
         e.rotation = Math.atan2(victim.x - e.x, victim.z - e.z);
         if (now >= e.nextAttackAt) {
           e.nextAttackAt = now + ENEMY_ATTACK_INTERVAL_MS;
-          this.world.hurtPlayer(victim.id, now);
+          this.world.hurtPlayer(victim.id, now, "a crawler");
         }
         continue;
       }
@@ -341,12 +388,58 @@ export class Defence {
   /** one step along (dx, dz); stuck (or sealed in), chew whatever box is in the way */
   private walk(e: Enemy, dx: number, dz: number, dt: number, solid: typeof OBSTACLES, boxes: ItemState[], now: number, sealed: boolean): void {
     const len = Math.hypot(dx, dz) || 1;
-    const step = enemySpeed(this.state.wave) * dt;
+    const step = enemySpeed(this.state.wave) * (e.kind === "spitter" ? SPITTER_SPEED_FACTOR : 1) * dt;
     e.rotation = Math.atan2(dx, dz);
     const moved = this.collide(e, e.x + (dx / len) * step, e.z + (dz / len) * step, solid);
     if (sealed || Math.hypot(moved.x - e.x, moved.z - e.z) < step * 0.25) this.chewNearestBox(e, boxes, now);
     e.x = moved.x;
     e.z = moved.z;
+  }
+
+  /**
+   * A spitter with a player in sight inside SPIT_RANGE: it holds (backing
+   * off if they're too close) and throws when ready. True if it acted;
+   * false and it moves like a crawler (toward the reactor, or the player
+   * it's lost sight of).
+   */
+  private spitterAct(e: Enemy, players: { id: string; x: number; z: number }[], solid: typeof OBSTACLES, boxes: ItemState[], now: number, dt: number): boolean {
+    let target: { id: string; x: number; z: number } | undefined;
+    let bestD = SPIT_RANGE;
+    for (const p of players) {
+      const d = Math.hypot(p.x - e.x, p.z - e.z);
+      if (d < bestD && this.clearShot(e.x, e.z, p.x, p.z, solid)) {
+        target = p;
+        bestD = d;
+      }
+    }
+    if (!target) return false;
+    e.rotation = Math.atan2(target.x - e.x, target.z - e.z);
+    if (bestD < SPIT_MIN_RANGE) this.walk(e, e.x - target.x, e.z - target.z, dt, solid, boxes, now, false);
+    if (now >= e.nextAttackAt) {
+      e.nextAttackAt = now + SPIT_INTERVAL_MS;
+      const d = Math.hypot(target.x - e.x, target.z - e.z);
+      const id = randomUUID();
+      this.spitsInFlight.set(id, { id, x: e.x, z: e.z, tx: target.x, tz: target.z, firedAt: now, arriveAt: now + (d / SPIT_SPEED) * 1000 });
+    }
+    return true;
+  }
+
+  /** globs that have arrived: anyone standing in the splash is hurt */
+  private landSpits(now: number): void {
+    if (!this.spitsInFlight.size) return;
+    const players = this.world.players();
+    for (const s of this.spitsInFlight.values()) {
+      if (now < s.arriveAt) continue;
+      this.spitsInFlight.delete(s.id);
+      for (const p of players) if (Math.hypot(p.x - s.tx, p.z - s.tz) < SPIT_SPLASH) this.world.hurtPlayer(p.id, now, "a spitter");
+    }
+  }
+
+  /** a glob's straight line: only walls and boxes stop it (thinner than an enemy's body) */
+  private clearShot(x: number, z: number, tx: number, tz: number, solid: typeof OBSTACLES): boolean {
+    const d = Math.hypot(tx - x, tz - z);
+    if (d < 1e-6) return true;
+    return rayToObstacles(x, z, (tx - x) / d, (tz - z) / d, solid, d, 0.1) >= d - 0.05;
   }
 
   /** whether an enemy at (x, z) could walk in a straight line to (tx, tz): nothing solid in between */
