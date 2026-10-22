@@ -69,10 +69,11 @@ export interface DefenceState {
 }
 
 export const ENEMY_RADIUS = 0.38;
+/**
+ * Stats are fixed per kind, never scaled by wave: a crawler on wave 10 must
+ * be the crawler from wave 1. A tougher enemy has to look different.
+ */
 export const ENEMY_SPEED = 2.2;
-/** each wave after the first, enemies move this much faster */
-export const ENEMY_SPEED_PER_WAVE = 0.08;
-export const enemySpeed = (wave: number): number => ENEMY_SPEED + ENEMY_SPEED_PER_WAVE * Math.max(0, Math.min(wave, WAVES_TO_WIN) - 1);
 /** rifle rounds to drop one: the rifle fires fast and each round does little */
 export const ENEMY_HIT_POINTS = 5;
 /** how close (centre to the reactor's footprint edge, or to a player) an enemy attacks from */
@@ -170,13 +171,7 @@ export const SPITTER_FROM_WAVE = 3;
 /** share of a wave that's spitters: none before SPITTER_FROM_WAVE, then climbing to a third */
 export const spitterShare = (wave: number): number =>
   wave < SPITTER_FROM_WAVE ? 0 : Math.min(0.33, 0.1 + 0.04 * (Math.min(wave, WAVES_TO_WIN) - SPITTER_FROM_WAVE));
-/**
- * Harder without more of them: from wave 4 a crawler takes one more round
- * to drop every two waves (5, 6 at wave 4, 7 at 6 ... 8 at wave 10). Wave
- * sizes stay as they are; the late waves just hold the line longer.
- */
-export const crawlerHitPoints = (wave: number): number => ENEMY_HIT_POINTS + Math.max(0, Math.floor((Math.min(wave, WAVES_TO_WIN) - 2) / 2));
-export const hitPointsOf = (kind: EnemyKind, wave = 1): number => (kind === "spitter" ? SPITTER_HIT_POINTS : crawlerHitPoints(wave));
+export const hitPointsOf = (kind: EnemyKind): number => (kind === "spitter" ? SPITTER_HIT_POINTS : ENEMY_HIT_POINTS);
 
 /** where enemies come in: just inside each breach */
 export function breachSpawn(b: Breach): { x: number; z: number } {

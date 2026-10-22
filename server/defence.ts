@@ -6,7 +6,7 @@ import {
   ENEMY_RADIUS,
   ENEMY_REACH,
   ENEMY_REACTOR_DAMAGE,
-  enemySpeed,
+  ENEMY_SPEED,
   FIRST_WAVE_DELAY_MS,
   FlowField,
   LEASH_RANGE,
@@ -131,7 +131,7 @@ export class Defence {
   /** put one enemy at (x, z) straight away, outside the wave schedule (tests, debugging) */
   spawnAt(x: number, z: number, kind: EnemyKind = "crawler"): string {
     const id = randomUUID();
-    const hp = hitPointsOf(kind, this.state.wave);
+    const hp = hitPointsOf(kind);
     this.enemies.set(id, { id, kind, x, z, rotation: 0, health: 1, hp, maxHp: hp, nextAttackAt: 0, nextThinkAt: 0 });
     return id;
   }
@@ -227,7 +227,7 @@ export class Defence {
       this.spitterDebt -= 1;
       kind = "spitter";
     }
-    const hp = hitPointsOf(kind, this.state.wave);
+    const hp = hitPointsOf(kind);
     this.enemies.set(id, {
       id,
       kind,
@@ -388,7 +388,7 @@ export class Defence {
   /** one step along (dx, dz); stuck (or sealed in), chew whatever box is in the way */
   private walk(e: Enemy, dx: number, dz: number, dt: number, solid: typeof OBSTACLES, boxes: ItemState[], now: number, sealed: boolean): void {
     const len = Math.hypot(dx, dz) || 1;
-    const step = enemySpeed(this.state.wave) * (e.kind === "spitter" ? SPITTER_SPEED_FACTOR : 1) * dt;
+    const step = ENEMY_SPEED * (e.kind === "spitter" ? SPITTER_SPEED_FACTOR : 1) * dt;
     e.rotation = Math.atan2(dx, dz);
     const moved = this.collide(e, e.x + (dx / len) * step, e.z + (dz / len) * step, solid);
     if (sealed || Math.hypot(moved.x - e.x, moved.z - e.z) < step * 0.25) this.chewNearestBox(e, boxes, now);

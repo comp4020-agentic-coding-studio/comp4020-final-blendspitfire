@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Defence, type World } from "../server/defence.ts";
 import {
   AGGRO_RANGE,
-  crawlerHitPoints,
+  ENEMY_HIT_POINTS,
   ENEMY_REACTOR_DAMAGE,
   FIRST_WAVE_DELAY_MS,
   MAX_ENEMIES,
@@ -274,9 +274,14 @@ describe("waves", () => {
     expect(outcome.blackoutMs).toBeGreaterThan(15000);
   });
 
-  it("late crawlers take more to drop, so it gets harder without more of them", () => {
-    expect(crawlerHitPoints(1)).toBe(crawlerHitPoints(3));
-    expect(crawlerHitPoints(WAVES_TO_WIN)).toBeGreaterThan(crawlerHitPoints(1));
+  it("an enemy kind has the same stats on every wave", () => {
+    for (const wave of [1, WAVES_TO_WIN]) {
+      const d = new Defence(world([]).w, { reactorHealth: 1, wave, phase: "spawning", nextWaveAt: 1e12 });
+      d.spawnAt(-6, -16);
+      const [e] = d.snapshot();
+      d.damage(e.id, ENEMY_HIT_POINTS - 1);
+      expect(d.snapshot()[0].health).toBeCloseTo(1 / ENEMY_HIT_POINTS);
+    }
   });
 
   it("waves grow faster than linearly toward the last one", () => {
