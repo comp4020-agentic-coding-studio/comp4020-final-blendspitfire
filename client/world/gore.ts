@@ -247,11 +247,25 @@ export class Impacts {
         });
       }
     }
-    // a small hot flash at the point of impact: bright off metal, a dark puff off flesh
-    const flash = this.take(kind === "wall" ? EMIT_SPARK : colour, kind === "wall" ? 0.35 : 0.45, kind === "wall" ? 0.95 : 0.9, kind !== "wall");
-    flash.scale.setScalar(kind === "wall" ? 0.35 : 0.45);
-    flash.position.set(x, 0.95, z);
-    this.flashes.push({ sprite: flash, born: now });
+    // a dark puff off flesh; a wall gets no flash, only its sparks and chips
+    if (kind !== "wall") {
+      const flash = this.take(colour, 0.45, 0.9, true);
+      flash.scale.setScalar(0.45);
+      flash.position.set(x, 0.95, z);
+      this.flashes.push({ sprite: flash, born: now });
+    }
+  }
+
+  /**
+   * The shimmer at the muzzle when a round leaves: a soft hot glow that the
+   * retro grade quantises into a few stepped rings for a frame or two,
+   * which reads as the air bending. It used to sit on the wall hit.
+   */
+  muzzle(x: number, z: number): void {
+    const flash = this.take(EMIT_SPARK, 0.4, 0.95);
+    flash.scale.setScalar(0.4);
+    flash.position.set(x, 1.1, z);
+    this.flashes.push({ sprite: flash, born: performance.now() });
   }
 
   step(dt: number): void {

@@ -1193,6 +1193,8 @@ function updateProjectiles(incoming: ProjectileState[]): void {
       const mine = pendingShots.shift()!;
       scene.remove(mine.tracer.mesh);
     }
+    // someone else's round (a teammate, a turret): its muzzle shimmers here; ours did on the click
+    if (p.ownerId !== myId) impacts.muzzle(p.x, p.z);
     const tracer = new Tracer(p, tracerMaterial);
     tracers.set(p.id, tracer);
     scene.add(tracer.mesh);
@@ -1267,6 +1269,7 @@ let flashUntilT = 0;
 function muzzleFlash(x: number, z: number): void {
   flashLight.position.set(x, 1.1, z);
   flashUntilT = performance.now() + 60;
+  impacts.muzzle(x, z);
 }
 function stepMuzzleFlash(): void {
   flashLight.intensity = performance.now() < flashUntilT ? 6 : 0;
