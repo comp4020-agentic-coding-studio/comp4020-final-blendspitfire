@@ -2,7 +2,7 @@
 
 > **AI-recorded.** Written and kept current automatically by the coding agent (Claude Code) as its session-to-session handoff, not written by hand. Terse on purpose: it's for the next agent session to pick up from. Decision history lives in [adr.md](adr.md).
 
-Updated: 2026-10-22 (surface rebuilt + version label committed; sixth round (tutorial + guidance) planned with user decisions, not started; NOT pushed)
+Updated: 2026-10-22 (fifth round done: muzzle shimmer, loose guns lifted + glint, lift shakes before switching; awaiting user playtest; sixth round planned, not started; NOT pushed)
 
 ## Where we are
 - Crit 10 shipped (tag `crit-10` on origin at de1932b). Final project due 2026-11-09 12:00.
@@ -16,7 +16,7 @@ Updated: 2026-10-22 (surface rebuilt + version label committed; sixth round (tut
 
 ## Game (current)
 - Persistent multiplayer PVE. Spawn in the surface garden -> one lift -> underground facility (corridor, lab, server hall, core). Surface = same coords +40 Z (LIFT_DZ); identical car at both ends.
-- Lift (server/lift.ts, rules in shared/protocol.ts liftVerdict(player, lift, objective, phase)/obstaclesFor): E in car = send (15 s wait / 3 s if all aboard); E at door outside = call; empty car at bottom returns after 5 s. No firing in the car. Server `attemptLocked()` = active && phase !== "won".
+- Lift (server/lift.ts, rules in shared/protocol.ts liftVerdict(player, lift, objective, phase)/obstaclesFor): closing -> moving (at = departure level, shake) -> warp -> opening. E in car = send (15 s wait / 3 s if all aboard); E at door outside = call; empty car at bottom returns after 5 s. No firing in the car. Server `attemptLocked()` = active && phase !== "won".
 - Attempt membership (ADR-038): below = in it. Death below = out (spectate teammate, CRT, click = next). Before reactor on you may ride up.
 - Objective (ADR-040/044): E at reactor starts -> 10 s break -> waves. waveSize(w) = 6+3w+0.45w² (shared/enemies.ts), spawnInterval(w). No per-wave stat scaling. Wave cleared -> 30 s break; E at reactor in a break = send now. DefenceState.phase: spawning | break | won | blackout (+blackoutAt).
   - won (last wave cleared): lights full (client powerNow -> look.ts LightState power "full"), fallen revived to garden, rest evacuate by lift; tick calls resetAfterWin() once nobody is below (items/funds/gore/run reset).
@@ -44,14 +44,14 @@ Updated: 2026-10-22 (surface rebuilt + version label committed; sixth round (tut
 - shared/protocol.ts (contract, map, verdicts, Report, GoreMark, SHOP), shared/enemies.ts (waves, blackout, FlowField goal), shared/palette.ts
 - server/index.ts (connections, tick, projectiles, shop, gore, endings), server/defence.ts (waves, won/blackout, hunt, turrets), server/db.ts
 - client/main.ts, client/look.ts (LightState power), client/postprocess.ts (retro), client/world/gore.ts, client/world/surface.ts, client/models/facility.ts (supplyTerminal = comms desk)
-- Tests: spec/*.test.ts (148). defence.test.ts covers won/blackout/hunt; lift.test.ts the won/blackout lift; economy.test.ts shop + dressing + gore caps.
+- Tests: spec/*.test.ts (149). defence.test.ts covers won/blackout/hunt; lift.test.ts the won/blackout lift; economy.test.ts shop + dressing + gore caps.
 
 ## Next work (ordered)
-- **Fifth round, queued by user 2026-10-22, NOT started** (do after item 0's playtest unless the user says otherwise; user's wording in ADR draft "第五轮待办"):
-  a. Wall-hit effect (gore.ts Impacts) reads as air distortion + fine dust; the user likes the distortion but wants it at the MUZZLE, not on the wall. Research how the distortion look arises (flash/spark blend? sprite scale?), split it out, play it at the gun muzzle on fire; the wall hit keeps only debris/dust/sparks.
-  b. Guns lying on the ground (esp. the surface) are hard to spot. Check first whether lawn/floor geometry clips over the gun (z-fight/overlap with the gun's rest height GUN_REST_HEIGHT); then consider oversizing a little or another way to make it stand out (stay within art rules for the facility; surface is exempt).
-  c. DONE 2026-10-22: surface rebuilt as a city left 200 years (see Game: Surface). User approved; awaiting in-play feel and frame rate.
-  d. Lift ride order (user 2026-10-22): today the scene switches (warp to the other level) first and THEN the screen shakes to fake the descent. Swap it: shake while still at the departure level, then switch. Look in server/lift.ts (phase moving, warp) and the client ride shake in main.ts.
+- **Fifth round DONE 2026-10-22 (awaiting user playtest; ADR draft "第五轮①②④落地", not yet in docs/adr.md):**
+  a. Wall-hit shimmer (soft additive glow quantised by the retro grade) moved to Impacts.muzzle(), played at the muzzle on every shot (own on click in muzzleFlash(), others' on receipt in updateProjectiles). Wall hits = sparks + chips only.
+  b. Loose guns were half-buried (sights below the receiver): GUN_REST_HEIGHT now measured from the lying geometry's bbox (lowest point 3.5 cm up). Lying gun x1.15 (GUN_LYING_SCALE); outlineGlint pulses every 2.5 s on unhovered loose guns (main.ts stepItemVisuals).
+  c. Surface city (see Game: Surface).
+  d. Lift: phase "moving" now stays at the departure level (shake there), ride()/warp happens when moving ends -> "opening" at the destination. New LiftWorld.shut(level) hook stands riders out of the bottom car during an attempt as the doors shut. Client ride label: down = lift.at === "top".
 - **Sixth round: tutorial + visual guidance (user plan 2026-10-22, decisions made, NOT started).** Build order:
   1. Snap marker system (L4D-style): a floating terminal-style tag pinned near a target; off-screen it clamps to the screen edge as an arrow pointing at it. Same UI style (VT323, pixel-step leader, client/ui/prompts.ts look). Uses: surface lift + scoreboard (always shown but faint/small; loud only when needed: lift countdown, first seconds after spawn); underground reactor until activated ("activate the reactor"); comms desk in every break + a green lamp (EMIT_GREEN) on top of the desk, lit in breaks, off when a wave starts; lift prep countdown = big countdown + hint top-centre on EVERYONE's screen, lift arrow turns loud.
   2. Ready vote: X toggles ready in a break (tap, not hold). Next wave starts 3 s after ALL living players below are ready, else at break end. E at the reactor in a break = same as X. Show ready status (n/m + per player). Resolves the old "skip = anyone vs vote" decision: vote.
