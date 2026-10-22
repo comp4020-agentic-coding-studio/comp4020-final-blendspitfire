@@ -1741,7 +1741,7 @@ function animate(): void {
   stepWipe(dt);
   liftDoors.update(lift, serverClock.now());
   updateSightDoors();
-  stepRide(dt);
+  stepRide();
 
   stepRemotes();
   stepEnemies(time);
@@ -1798,12 +1798,16 @@ function stepLevel(x: number, z: number, dt: number): void {
   torch.light.intensity = 18 * (1 - paintLevel);
 }
 
-/** while the car's moving with us in it: a gentle sway, so the ride is felt */
-let rideShake = 0;
-function stepRide(dt: number): void {
+/**
+ * While the car's moving with us in it: a gentle sway, so the ride is felt.
+ * Timed off the ride itself, swelling in as it starts and dying away before
+ * it ends, so it's over by the time the level switches (both ways).
+ */
+function stepRide(): void {
   const p = localMesh?.position;
   const riding = !!p && lift.phase === "moving" && inCar(lift.at, p.x, p.z);
-  rideShake += ((riding ? 1 : 0) - rideShake) * Math.min(1, dt * 4);
+  const msLeft = Math.max(0, (lift.until ?? 0) - serverClock.now());
+  const rideShake = riding ? Math.min(1, (LIFT_RIDE_MS - msLeft) / 300, msLeft / 400) : 0;
   if (rideShake > 0.01) {
     const t = performance.now() / 1000;
     camera.position.x += Math.sin(t * 23) * 0.025 * rideShake;
@@ -1812,7 +1816,7 @@ function stepRide(dt: number): void {
   }
   rideEl.style.opacity = riding ? "1" : "0";
   if (riding) {
-    const left = Math.max(0, (lift.until ?? 0) - serverClock.now()) / LIFT_RIDE_MS;
+    const left = msLeft / LIFT_RIDE_MS;
     // moving, the car is still at the level it's leaving
     const down = lift.at === "top";
     rideFill.style.height = `${((down ? 1 - left : left) * 100).toFixed(1)}%`;
