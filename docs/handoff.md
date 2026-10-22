@@ -2,7 +2,7 @@
 
 > **AI-recorded.** Written and kept current automatically by the coding agent (Claude Code) as its session-to-session handoff, not written by hand. Terse on purpose: it's for the next agent session to pick up from. Decision history lives in [adr.md](adr.md).
 
-Updated: 2026-10-22 (surface rebuilt as 200-year overgrown city, version label always visible, fixed per-kind enemy stats; all committed, NOT pushed)
+Updated: 2026-10-22 (surface rebuilt + version label committed; sixth round (tutorial + guidance) planned with user decisions, not started; NOT pushed)
 
 ## Where we are
 - Crit 10 shipped (tag `crit-10` on origin at de1932b). Final project due 2026-11-09 12:00.
@@ -52,9 +52,14 @@ Updated: 2026-10-22 (surface rebuilt as 200-year overgrown city, version label a
   b. Guns lying on the ground (esp. the surface) are hard to spot. Check first whether lawn/floor geometry clips over the gun (z-fight/overlap with the gun's rest height GUN_REST_HEIGHT); then consider oversizing a little or another way to make it stand out (stay within art rules for the facility; surface is exempt).
   c. DONE 2026-10-22: surface rebuilt as a city left 200 years (see Game: Surface). User approved; awaiting in-play feel and frame rate.
   d. Lift ride order (user 2026-10-22): today the scene switches (warp to the other level) first and THEN the screen shakes to fake the descent. Swap it: shake while still at the departure level, then switch. Look in server/lift.ts (phase moving, warp) and the client ride shake in main.ts.
+- **Sixth round: tutorial + visual guidance (user plan 2026-10-22, decisions made, NOT started).** Build order:
+  1. Snap marker system (L4D-style): a floating terminal-style tag pinned near a target; off-screen it clamps to the screen edge as an arrow pointing at it. Same UI style (VT323, pixel-step leader, client/ui/prompts.ts look). Uses: surface lift + scoreboard (always shown but faint/small; loud only when needed: lift countdown, first seconds after spawn); underground reactor until activated ("activate the reactor"); comms desk in every break + a green lamp (EMIT_GREEN) on top of the desk, lit in breaks, off when a wave starts; lift prep countdown = big countdown + hint top-centre on EVERYONE's screen, lift arrow turns loud.
+  2. Ready vote: X toggles ready in a break (tap, not hold). Next wave starts 3 s after ALL living players below are ready, else at break end. E at the reactor in a break = same as X. Show ready status (n/m + per player). Resolves the old "skip = anyone vs vote" decision: vote.
+  3. Transport helicopter model (open side door) + one on the surface (arrival point; enlarge the garden a little if there's no room). Ride = lift-style warp between identical cars.
+  4. Tutorial zone: new separate area (own coordinate offset like LIFT_DZ). Rooms one per lesson, door opens on finishing: move (WASD) -> pick up gun (E) -> shoot targets -> drop (Q) -> throw a grenade at a cluster -> helicopter -> warp to surface helicopter. Shared zone, progress PER PLAYER (doors per player). Loaded only while someone is in it (server spawns its targets/items only then; client builds it only while you're there; unload when empty). Entry: first visit (new cookie) spawns in the tutorial; returning players spawn on the surface but CAN fly back via the surface helicopter.
 0. User restarts dev server (`DB_PATH=/tmp/blendspitfire-dev.db pnpm dev`), then plays the fourth round: turret order/build/scrap, spitters (DEV_WAVES helps reach wave 3), grenades, wild ruins, debris impacts, version label. Then sync the ADR draft's fourth-round entries into docs/adr.md (ADR-052+). Open choices the agent made: anyone can scrap any turret; spitters don't hit the reactor; all new numbers.
 1. Discuss tutorial + visual guidance with the user (ADR-050: nobody found the lift down, the reactor, or the supply terminal unprompted). Then user reviews in play: ADR-051 (flare look, minimap; crawlers on the minimap?), ADR-049 (eye glow strength: crawlerEyes numbers in look.ts; lift ride looks seamless now?) and ADR-044..048. Likely tuning: difficulty curve past wave 3 (untested by a human), blackout ramp, gore amount, retro strength (grade.ts levels/scanlines/grain; PIXEL_SCALE), VT323 size on small screens.
-2. Open user decisions: teammate markers so friendly fire can come back (or leave it off); blackout lift (agent: locked); skip = anyone vs vote; shared vs per-player quota; extra score parts; turret cost/cap; WAVES_TO_WIN.
+2. Open user decisions: teammate markers so friendly fire can come back (or leave it off); blackout lift (agent: locked); shared vs per-player quota; extra score parts; turret cost/cap; WAVES_TO_WIN.
 3. Shop has three lines; more buildables when the user picks them.
 4. Still pending playtest from 2026-10-14: wound effects, CRT/daze strength, aggro 6, grace 1 s.
 5. Lighting option C (overhead fixtures + halos). Garden tutorial gating. No sound.
