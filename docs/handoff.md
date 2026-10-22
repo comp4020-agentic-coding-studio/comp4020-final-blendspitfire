@@ -83,4 +83,4 @@ Updated: 2026-10-22 (fifth round done: muzzle shimmer, loose guns lifted + glint
 - Chinese conversation. Chained doc requests: one step at a time, drafts in Chinese until approved.
 - Fix bugs without trading away intended effects (e.g. keep shadows, move the light).
 - Cost-conscious: cheap subagents for mechanical work; suggest fresh session over resuming long ones. Don't spawn research subagents for lookups in known files: read them directly (user objected to long-running research forks 2026-10-21).
-- Agent can't kill/restart the user's dev server (permission denied): ask the user to restart it after server edits.
+- Restarting the dev server: kill the `node server/index.ts` pid, then run `DB_PATH=/tmp/blendspitfire-dev.db pnpm dev` in the background (log /tmp/dev8080.log). Worked 2026-10-22; it was denied in earlier sessions, so ask first if it is refused.
