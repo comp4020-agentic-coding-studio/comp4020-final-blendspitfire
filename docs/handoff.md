@@ -2,7 +2,7 @@
 
 > **AI-recorded.** Written and kept current automatically by the coding agent (Claude Code) as its session-to-session handoff, not written by hand. Terse on purpose: it's for the next agent session to pick up from. Decision history lives in [adr.md](adr.md).
 
-Updated: 2026-10-22 (fixed per-kind enemy stats: removed wave HP/speed scaling; committed, NOT pushed; dev server on 8080 needs a restart for server code)
+Updated: 2026-10-22 (fixed per-kind enemy stats committed; fifth-round list queued in Next work, not started; NOT pushed)
 
 ## Where we are
 - Crit 10 shipped (tag `crit-10` on origin at de1932b). Final project due 2026-11-09 12:00.
@@ -47,6 +47,10 @@ Updated: 2026-10-22 (fixed per-kind enemy stats: removed wave HP/speed scaling; 
 - Tests: spec/*.test.ts (148). defence.test.ts covers won/blackout/hunt; lift.test.ts the won/blackout lift; economy.test.ts shop + dressing + gore caps.
 
 ## Next work (ordered)
+- **Fifth round, queued by user 2026-10-22, NOT started** (do after item 0's playtest unless the user says otherwise; user's wording in ADR draft "第五轮待办"):
+  a. Wall-hit effect (gore.ts Impacts) reads as air distortion + fine dust; the user likes the distortion but wants it at the MUZZLE, not on the wall. Research how the distortion look arises (flash/spark blend? sprite scale?), split it out, play it at the gun muzzle on fire; the wall hit keeps only debris/dust/sparks.
+  b. Guns lying on the ground (esp. the surface) are hard to spot. Check first whether lawn/floor geometry clips over the gun (z-fight/overlap with the gun's rest height GUN_REST_HEIGHT); then consider oversizing a little or another way to make it stand out (stay within art rules for the facility; surface is exempt).
+  c. Ruins + vegetation still far too conservative (fourth-round wild pass was not enough). Needs a LOT more ruins, vines and weeds. Brief from the user: think through what a city empty for 200 years looks like, and build that. Propose the picture to the user before building (design judgement = main conversation, strongest model).
 0. User restarts dev server (`DB_PATH=/tmp/blendspitfire-dev.db pnpm dev`), then plays the fourth round: turret order/build/scrap, spitters (DEV_WAVES helps reach wave 3), grenades, wild ruins, debris impacts, version label. Then sync the ADR draft's fourth-round entries into docs/adr.md (ADR-052+). Open choices the agent made: anyone can scrap any turret; spitters don't hit the reactor; all new numbers.
 1. Discuss tutorial + visual guidance with the user (ADR-050: nobody found the lift down, the reactor, or the supply terminal unprompted). Then user reviews in play: ADR-051 (flare look, minimap; crawlers on the minimap?), ADR-049 (eye glow strength: crawlerEyes numbers in look.ts; lift ride looks seamless now?) and ADR-044..048. Likely tuning: difficulty curve past wave 3 (untested by a human), blackout ramp, gore amount, retro strength (grade.ts levels/scanlines/grain; PIXEL_SCALE), VT323 size on small screens.
 2. Open user decisions: teammate markers so friendly fire can come back (or leave it off); blackout lift (agent: locked); skip = anyone vs vote; shared vs per-player quota; extra score parts; turret cost/cap; WAVES_TO_WIN.
