@@ -101,6 +101,17 @@ describe("the lift", () => {
     expect(rides).toEqual(["top->bottom"]);
   });
 
+  it("going up, switches as the doors shut and rides up top", () => {
+    const rider = { ...carMid("bottom") };
+    const { lift, rides } = world([rider]);
+    lift.state = { at: "bottom", phase: "open" };
+    lift.send(0);
+    run(lift, 0, LIFT_SHORT_WAIT_MS + LIFT_DOOR_MS + LIFT_RIDE_MS / 2);
+    expect(lift.state).toMatchObject({ at: "top", phase: "moving", going: "top" });
+    expect(rides).toEqual(["bottom->top"]);
+    expect(levelOf(rider.z)).toBe("top");
+  });
+
   it("goes back up on its own once it's left empty at the bottom", () => {
     const { lift, rides } = world([{ x: 0, z: FACILITY_HALF - 3 }]);
     lift.state = { at: "bottom", phase: "open" };

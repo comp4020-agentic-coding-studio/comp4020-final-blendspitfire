@@ -513,6 +513,8 @@ export interface LiftState {
   phase: LiftPhase;
   /** server time the current closing/moving/opening phase ends */
   until?: number;
+  /** while moving: where it's headed (`at` is where its riders are right now: the ride always plays up top) */
+  going?: LiftLevel;
   /** while open: server time it'll shut and leave (set once someone presses the button) */
   departAt?: number;
 }

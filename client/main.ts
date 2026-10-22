@@ -271,7 +271,8 @@ function updateSightDoors(): void {
     key.push(`${level}${open}`);
     if (open >= 1) continue;
     // a leaf's inner edge sits `gap` from the centre line; its outer edge runs past the doorway into the wall
-    const gap = open * D * 0.95;
+    // closed, the two leaves overlap here by more than the mask's FACE_INSET trims off each, so sight can't slip down the seam
+    const gap = open * D * 0.95 - 0.25;
     const outer = D + 0.4;
     for (const side of [-1, 1]) {
       leaves.push({ x: side * (gap + outer) / 2, z: door.z, halfX: (outer - gap) / 2, halfZ: door.halfZ, halfHeight: door.halfHeight });
@@ -1817,8 +1818,7 @@ function stepRide(): void {
   rideEl.style.opacity = riding ? "1" : "0";
   if (riding) {
     const left = msLeft / LIFT_RIDE_MS;
-    // moving, the car is still at the level it's leaving
-    const down = lift.at === "top";
+    const down = lift.going === "bottom";
     rideFill.style.height = `${((down ? 1 - left : left) * 100).toFixed(1)}%`;
     rideLabel.textContent = down ? "descending" : "ascending";
   }

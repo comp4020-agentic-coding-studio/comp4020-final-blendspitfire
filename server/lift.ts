@@ -12,10 +12,12 @@ import {
 // with every tick. It sits open at one end until someone presses its
 // button; then it waits for the others (a short wait if everyone on that
 // level is already aboard), shuts, rides, and opens at the other end.
-// Whoever is inside when the doors shut goes with it. The ride is felt at
-// the level it leaves (the car shakes there); only at the end of it does
-// the server move them (and anything lying in the car) by LIFT_DZ in one
-// step, and since both cars are built identically nobody sees the jump.
+// Whoever is inside when the doors shut goes with it. The ride (the car
+// shaking) always plays at the surface: going down it shakes up top and
+// only then switches; going up it switches as the doors shut and shakes on
+// arrival. The switch moves riders (and anything lying in the car) by
+// LIFT_DZ in one step, and since both cars are built identically nobody
+// sees the jump.
 
 export interface LiftWorld {
   /** ids of the players standing in the car at this level */
@@ -90,14 +92,16 @@ export class Lift {
     }
     if (s.until === undefined || now < s.until) return;
     if (s.phase === "closing") {
-      // the doors are shut: the ride starts here, still at the level it's leaving
-      this.world.shut(s.at);
-      this.state = { at: s.at, phase: "moving", until: now + LIFT_RIDE_MS };
-    } else if (s.phase === "moving") {
-      // arrived: whoever's inside now steps across, and the doors open on the other level
+      // the doors are shut: whoever's inside now is going
       const to = other(s.at);
-      this.world.ride(s.at, to);
-      this.state = { at: to, phase: "opening", until: now + LIFT_DOOR_MS };
+      this.world.shut(s.at);
+      // going up, the switch comes first and the ride plays on arrival
+      if (to === "top") this.world.ride(s.at, to);
+      this.state = { at: "top", phase: "moving", until: now + LIFT_RIDE_MS, going: to };
+    } else if (s.phase === "moving") {
+      // going down, the switch comes at the end of the ride
+      if (s.going === "bottom") this.world.ride("top", "bottom");
+      this.state = { at: s.going ?? s.at, phase: "opening", until: now + LIFT_DOOR_MS };
     } else {
       this.state = { at: s.at, phase: "open" };
     }
