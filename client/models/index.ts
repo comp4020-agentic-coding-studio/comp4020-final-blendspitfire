@@ -96,8 +96,8 @@ export function character(color: string): THREE.Group {
  * those features survive the camera.
  */
 const GUN_SCALE = 1.25;
-/** half the gun's thickness once laid on its side: how high it rests off the ground */
-export const GUN_REST_HEIGHT = 0.035 * GUN_SCALE;
+/** a loose gun lies a touch bigger again than a held one, so it's findable on a busy floor */
+const GUN_LYING_SCALE = 1.15;
 
 function gunGeometry(): THREE.BufferGeometry {
   const dark = RUBBER;
@@ -166,10 +166,26 @@ function gunGeometry(): THREE.BufferGeometry {
 
 /** Lying on the ground, on its side: the profile, not the top edge, faces the camera. */
 export function gun(): THREE.Mesh {
+  return outlined(mesh(lyingGunGeometry(), "glossy"), 0.02);
+}
+
+function lyingGunGeometry(): THREE.BufferGeometry {
   const g = gunGeometry();
   g.rotateZ(PI / 2);
-  return outlined(mesh(g, "glossy"), 0.02);
+  g.scale(GUN_LYING_SCALE, GUN_LYING_SCALE, GUN_LYING_SCALE);
+  return g;
 }
+
+/**
+ * How high a loose gun sits so its lowest part (the sights and forward
+ * assist, not the receiver) just clears the floor tiles and the grass,
+ * which stand up to ~3 cm. Measured, so it follows the model.
+ */
+export const GUN_REST_HEIGHT = (() => {
+  const g = lyingGunGeometry();
+  g.computeBoundingBox();
+  return 0.035 - g.boundingBox!.min.y;
+})();
 
 /**
  * Held the way a person holds a rifle: upright, top up. From overhead that

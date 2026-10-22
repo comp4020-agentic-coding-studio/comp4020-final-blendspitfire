@@ -452,6 +452,8 @@ const outlineOutOfReach = new THREE.MeshBasicMaterial({
   transparent: true,
   opacity: 0.35,
 });
+/** a loose gun nobody's pointing at: a faint glint now and then, so it can be found on the floor */
+const outlineGlint = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.BackSide, transparent: true, opacity: 0 });
 
 /** a stable angle per item, so loose guns don't all lie parallel */
 function restingAngle(id: string): number {
@@ -693,12 +695,17 @@ function stepItemVisuals(time: number): void {
   }
   const pulse = 0.6 + 0.4 * Math.sin(time * 6);
   outlineInReach.opacity = pulse;
+  // a short swell every 2.5 s, dark between: noticed from across the room, not a lit-up floor
+  const glint = Math.max(0, Math.sin((time * Math.PI * 2) / 2.5));
+  outlineGlint.opacity = 0.35 * glint ** 6;
 
   for (const item of items.values()) {
     const { state, lying, held, outline } = item;
     const isHovered = hovered?.item === item;
-    outline.visible = isHovered;
-    if (hovered && isHovered) outline.material = hovered.inReach ? outlineInReach : outlineOutOfReach;
+    const glints = !isHovered && state.kind === "gun" && state.heldBy === undefined;
+    outline.visible = isHovered || glints;
+    if (glints) outline.material = outlineGlint;
+    else if (hovered && isHovered) outline.material = hovered.inReach ? outlineInReach : outlineOutOfReach;
 
     if (state.heldBy === undefined) {
       held.removeFromParent();
