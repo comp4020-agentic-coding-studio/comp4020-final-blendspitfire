@@ -183,7 +183,8 @@ const server = createServer((req, res) => {
       "content-type": MIME[extname(filePath)] ?? "application/octet-stream",
       "cache-control": "no-store",
     });
-    res.end(data);
+    // the version is in the page itself, so it shows before (and without) a connection
+    res.end(filePath.endsWith("index.html") ? data.toString("utf8").replace('<div id="version"></div>', `<div id="version">${escapeHtml(VERSION)}</div>`) : data);
   });
 });
 
