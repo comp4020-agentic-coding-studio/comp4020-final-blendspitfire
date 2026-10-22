@@ -2,7 +2,7 @@
 
 > **AI-recorded.** Written and kept current automatically by the coding agent (Claude Code) as its session-to-session handoff, not written by hand. Terse on purpose: it's for the next agent session to pick up from. Decision history lives in [adr.md](adr.md).
 
-Updated: 2026-10-22 (fixed per-kind enemy stats committed; fifth-round list queued in Next work, not started; NOT pushed)
+Updated: 2026-10-22 (surface rebuilt as 200-year overgrown city, version label always visible, fixed per-kind enemy stats; all committed, NOT pushed)
 
 ## Where we are
 - Crit 10 shipped (tag `crit-10` on origin at de1932b). Final project due 2026-11-09 12:00.
@@ -37,7 +37,7 @@ Updated: 2026-10-22 (fixed per-kind enemy stats committed; fifth-round list queu
 - Logs: `[Codename] verb` via act(); refuse(); `[attempt N] wave K cleared...`, `... blackout`, `... failed/WON`, `crew evacuated`.
 - Players: MAX_WOUNDS 3; grace 1 s. Death in garden = 3 s respawn.
 - Look underground: OKLCH greyed gamut (blood exempt), emitters vivid; 8-light pool + headlamp; LOS mask; retro post (PIXEL_SCALE 0.25, grade.levels 12, scanlines, grain; ?pixel=0.x). Rules: docs/art-and-interaction.md.
-- Surface (ADR-042/048, exempt from art rules): garden 34×24, chain-link FENCES, SURFACE_VIEW_MARGIN 16. Fallen town: surface.ts outsideRuins (roads, crane jib, cars, containers, pipes, pylon, building shells, rubble), ruinPillar = sheared concrete column, ruinLintel = cracked slab. Keep anything inside the fence under 0.95 half-height.
+- Surface (ADR-042/048, exempt from art rules): garden 34×24, chain-link FENCES, SURFACE_VIEW_MARGIN 16. Look = city left 200 years (user-approved 2026-10-22): surface.ts overgrownCity (buriedStreet, overgrownBlock wall stumps + tree inside, concreteFrame, rustHulk, pond, fallenLog, wildTree, forest-floor tiles, undergrowth carpet; fewer trees on user ask), crackedLot under the range (RANGE_LOT), wildGarden inside the fence (rank-grass patches, old street at minZ+13.5, house footings, fence-line weeds, weeds in gravel; keepClear() keeps paths/stations/spawn/lift door/range lane/fixtures clear, all ankle-high), overheadVine = 4 rusted masts with sagging ivy cables 8-10 m up that slide over the camera. Colours C.canopy/ivy/undergrowth (darker on user ask). ~277k tris, one mesh. Judge: /gallery.html?surface[&x=&z=][&high]. Keep anything inside the fence under 0.95 half-height.
 - UI (ADR-048): public/index.html "company terminal": VT323 (Google Fonts link), --ui #f2ead6, 2 px frames with stepped clip-path corners, segmented bars; client/ui/prompts.ts leader = pixel staircase.
 
 ## Key files
@@ -50,7 +50,7 @@ Updated: 2026-10-22 (fixed per-kind enemy stats committed; fifth-round list queu
 - **Fifth round, queued by user 2026-10-22, NOT started** (do after item 0's playtest unless the user says otherwise; user's wording in ADR draft "第五轮待办"):
   a. Wall-hit effect (gore.ts Impacts) reads as air distortion + fine dust; the user likes the distortion but wants it at the MUZZLE, not on the wall. Research how the distortion look arises (flash/spark blend? sprite scale?), split it out, play it at the gun muzzle on fire; the wall hit keeps only debris/dust/sparks.
   b. Guns lying on the ground (esp. the surface) are hard to spot. Check first whether lawn/floor geometry clips over the gun (z-fight/overlap with the gun's rest height GUN_REST_HEIGHT); then consider oversizing a little or another way to make it stand out (stay within art rules for the facility; surface is exempt).
-  c. Ruins + vegetation still far too conservative (fourth-round wild pass was not enough). Needs a LOT more ruins, vines and weeds. Brief from the user: think through what a city empty for 200 years looks like, and build that. Propose the picture to the user before building (design judgement = main conversation, strongest model).
+  c. DONE 2026-10-22: surface rebuilt as a city left 200 years (see Game: Surface). User approved; awaiting in-play feel and frame rate.
   d. Lift ride order (user 2026-10-22): today the scene switches (warp to the other level) first and THEN the screen shakes to fake the descent. Swap it: shake while still at the departure level, then switch. Look in server/lift.ts (phase moving, warp) and the client ride shake in main.ts.
 0. User restarts dev server (`DB_PATH=/tmp/blendspitfire-dev.db pnpm dev`), then plays the fourth round: turret order/build/scrap, spitters (DEV_WAVES helps reach wave 3), grenades, wild ruins, debris impacts, version label. Then sync the ADR draft's fourth-round entries into docs/adr.md (ADR-052+). Open choices the agent made: anyone can scrap any turret; spitters don't hit the reactor; all new numbers.
 1. Discuss tutorial + visual guidance with the user (ADR-050: nobody found the lift down, the reactor, or the supply terminal unprompted). Then user reviews in play: ADR-051 (flare look, minimap; crawlers on the minimap?), ADR-049 (eye glow strength: crawlerEyes numbers in look.ts; lift ride looks seamless now?) and ADR-044..048. Likely tuning: difficulty curve past wave 3 (untested by a human), blackout ramp, gore amount, retro strength (grade.ts levels/scanlines/grain; PIXEL_SCALE), VT323 size on small screens.

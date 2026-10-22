@@ -6,6 +6,7 @@ import { REACTOR_LIVE, REACTOR_STANDBY, buildFacility, reactorCore } from "./mod
 import { createPostProcess } from "./postprocess.ts";
 import { GRADE } from "./assets/grade.ts";
 import { VisibilityMask, sightBlockers } from "./visibility.ts";
+import { buildSurface, createSunlight } from "./world/surface.ts";
 import { buildYardGuides } from "./floorGuides.ts";
 import { LAMPS } from "./world/dressing.ts";
 import { AMBIENT_GROUND, AMBIENT_SKY, PLAYER_COLORS } from "../shared/palette.ts";
@@ -18,6 +19,7 @@ import {
   REACTOR,
   SIGHT_BOUNDS,
   SOLID,
+  SURFACE,
   WALLS,
   ZONE_RECTS,
 } from "../shared/protocol.ts";
@@ -32,6 +34,8 @@ import {
 //                                 with line of sight from that spot
 //   add &pixel=0 to either facility view to drop the pixelation
 //   add &live to light it as if the reactor were on
+//   /gallery.html?surface         the surface at game height (sun + paint);
+//                                 &x=&z= to move, &high for the whole map
 
 /** the game camera's view height in world units */
 const GAME_UNITS_TALL = 2 * CAMERA_ALTITUDE * Math.tan(((CAMERA_FOV / 2) * Math.PI) / 180);
@@ -135,6 +139,42 @@ function facilityView(): void {
   requestAnimationFrame(render);
 }
 
+/** the surface through the game camera, sun and paint: ?surface[&x=&z=][&high] */
+function surfaceView(): void {
+  const params = new URLSearchParams(location.search);
+  const renderer = new THREE.WebGLRenderer({ antialias: false });
+  configureRenderer(renderer);
+  document.body.innerHTML = "";
+  document.body.style.margin = "0";
+  document.body.style.background = "#000";
+  document.body.appendChild(renderer.domElement);
+  const post = createPostProcess(renderer, params.get("pixel") === "0" ? 1 : Number(params.get("pixel")) || 0.25, GRADE);
+  post.effects.paint = 1;
+  const scene = new THREE.Scene();
+  scene.add(buildSurface());
+  const cx = Number(params.get("x") ?? 0);
+  const cz = Number(params.get("z") ?? (SURFACE.minZ + SURFACE.maxZ) / 2);
+  const sun = createSunlight(scene);
+  sun.setOn(true);
+  sun.follow(cx, cz);
+  const p = character(PLAYER_COLORS[0]);
+  p.position.set(cx, 0, cz);
+  scene.add(p);
+  const cam = new THREE.PerspectiveCamera(CAMERA_FOV, 1, 0.1, 200);
+  cam.up.set(0, 0, -1);
+  cam.position.set(cx, params.has("high") ? 55 : CAMERA_ALTITUDE, cz);
+  cam.lookAt(cx, 0, cz);
+  const render = (): void => {
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    post.setSize(window.innerWidth, window.innerHeight);
+    cam.aspect = window.innerWidth / window.innerHeight;
+    cam.updateProjectionMatrix();
+    post.render(scene, cam);
+    requestAnimationFrame(render);
+  };
+  requestAnimationFrame(render);
+}
+
 /**
  * The model sheet. Each row is one asset: overhead at the game's own pixel
  * scale (what a player actually gets), overhead close up, from the side,
@@ -224,5 +264,6 @@ function sheet(): void {
   requestAnimationFrame(render);
 }
 
-if (new URLSearchParams(location.search).has("facility")) facilityView();
+if (new URLSearchParams(location.search).has("surface")) surfaceView();
+else if (new URLSearchParams(location.search).has("facility")) facilityView();
 else sheet();

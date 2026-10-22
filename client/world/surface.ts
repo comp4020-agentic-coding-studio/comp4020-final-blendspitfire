@@ -5,6 +5,7 @@ import {
   LIFT_CARS,
   LIFT_DZ,
   SCOREBOARD,
+  STATIONS,
   SURFACE,
   SURFACE_FIXTURES,
   SURFACE_VIEW_MARGIN,
@@ -14,11 +15,12 @@ import {
 import { rng } from "../models/kit.ts";
 
 // The garden on the surface: where everyone arrives, learns the controls,
-// and takes the lift down. The story it tells: a town that fell --- broken
-// concrete, rebar, burnt-out cars, a crane down across a street, containers
-// and pipe left where they were dropped, all gone to grass --- that a corp's
-// crew has just fenced off a patch of and moved into: fresh chain-link,
-// drop crates and a field tent. It's deliberately the facility's opposite ---
+// and takes the lift down. The story it tells: a city left two hundred
+// years, gone back to forest --- roofless wall stumps with trees inside,
+// streets heaved into slabs, rust-brown hulks, ivy over everything --- that
+// a corp's crew has just fenced off a patch of and moved into: fresh
+// chain-link, a mown lawn the wild is already winning back, drop crates and
+// a field tent. It's deliberately the facility's opposite ---
 // and deliberately outside docs/art-and-interaction.md, which governs the
 // underground only. Up here the brief is an impressionist painting: warm
 // sun, soft blue shade, saturated young greens, flowers as dabs of colour.
@@ -46,23 +48,20 @@ const C = {
   stoneShade: 0xc9bfae,
   terracotta: 0xc99474,
   roof: 0xb86a4f,
-  plaster: 0xf3e8d4,
   plasterShade: 0xe2d2b8,
   targetRed: 0xe8574a,
   targetWhite: 0xfaf4ea,
   boardFrame: 0x4a5560,
   boardScreen: 0x1b2730,
-  water: 0x9fd8e8,
   // the fallen town: sun-bleached concrete, soot, iron gone to rust, faded paint
   ruin: [0xa8a49c, 0x9c978e, 0xb4afa6, 0x8e8a82],
   ruinShade: 0x7a766e,
   soot: [0x5a5652, 0x6a645e, 0x4c4844],
-  moss: 0x8aa868,
   // what's grown over the ruins since the town fell: darker, shaggier,
   // muddier than the garden's trimmed, sun-bright greens --- these never
   // get cut back
-  wildLeaf: [0x4f6e42, 0x3f5c38, 0x5a7a4a, 0x46633c, 0x567048],
-  mossDark: [0x6a7a52, 0x5a6c46, 0x7a8a5c, 0x4f5e42],
+  wildLeaf: [0x41603a, 0x34502f, 0x4a6a3e, 0x3a5634, 0x48623c],
+  mossDark: [0x56663f, 0x485a38, 0x627448, 0x3f4e34],
   rust: [0xb0704a, 0x9a5e40, 0xc08058, 0x8a5238],
   faded: [0x8aa0a8, 0xb89a6a, 0x9a7a72, 0x7f9a80, 0xc4b07a],
   // the corp's kit: olive drab, khaki canvas, fresh hazard yellow, galvanised steel
@@ -74,6 +73,15 @@ const C = {
   steel: 0xa8aeb0,
   steelDark: 0x80878a,
   dirt: 0xb89c78,
+  // two hundred years on: a canopy that's lighter on top where the sun hits,
+  // ivy darker than any of it, ground cover between, water gone tea-dark
+  canopy: [0x3c5a32, 0x46683a, 0x324e2c, 0x5a7840, 0x506e36, 0x668446],
+  ivy: [0x2f4a2a, 0x3a5830, 0x284226, 0x345030],
+  undergrowth: [0x4c6a3c, 0x587446, 0x435e36, 0x627c48, 0x3e5834, 0x6c8250],
+  asphalt: [0x6c6a66, 0x76736c, 0x5e5c58, 0x807a70],
+  pond: [0x4f6e6c, 0x5a7a74, 0x48625e],
+  reed: [0xa8a868, 0x8e9a5a, 0xb8ac74],
+  bark: [0x6a5a48, 0x7a6a54, 0x5a4c3e],
 } as const;
 
 /** soft materials: no metal, a little sheen on the lawn so the sun reads on it */
@@ -139,6 +147,7 @@ function lawn(parts: THREE.BufferGeometry[], random: () => number): void {
     const x = S.minX + random() * (S.maxX - S.minX);
     const z = S.minZ + random() * (S.maxZ - S.minZ);
     if (onPath(x, z)) continue;
+    if (onRangeLot(x, z)) continue;
     if (random() < 0.45) {
       const color = pick(C.flower, random);
       parts.push(tint(at(new THREE.IcosahedronGeometry(0.07 + random() * 0.05, 0), x, 0.1, z), color));
@@ -271,28 +280,6 @@ function ruinLintel(f: SurfaceFixture, parts: THREE.BufferGeometry[], random: ()
 
 // --- The fallen town: wreck builders (outside the fence, and low ones inside) ---
 
-/** a burnt-out car: a sooty shell on its rims, the roof caved, glass long gone */
-function wreckCar(parts: THREE.BufferGeometry[], random: () => number, x: number, z: number, ry: number): void {
-  const paint = random() < 0.5 ? pick(C.faded, random) : pick(C.rust, random);
-  const g = (gg: THREE.BufferGeometry, lx: number, y: number, lz: number) => {
-    gg.translate(lx, y, lz);
-    gg.rotateY(ry);
-    gg.translate(x, 0, z);
-    return gg;
-  };
-  parts.push(tint(g(box(1.7, 0.45, 3.6), 0, 0.38, 0), paint));
-  parts.push(tint(g(box(1.5, 0.38, 1.8), 0, 0.78, -0.2), pick(C.soot, random)));
-  parts.push(tint(g(box(1.3, 0.04, 1.5), 0, 0.98, -0.2), pick(C.soot, random)));
-  for (const sx of [-0.8, 0.8]) for (const sz of [-1.2, 1.2]) {
-    const w = new THREE.CylinderGeometry(0.28, 0.28, 0.2, 7);
-    w.rotateZ(PI / 2);
-    parts.push(tint(g(w, sx, 0.22, sz), C.soot[2]));
-  }
-  // weeds grown up through the undercarriage and round the wheels
-  weedTuft(parts, random, x, z, 0.7);
-  if (random() < 0.5) mossPatch(parts, random, x, 0.42, z, 1);
-}
-
 /** a shipping container, dented, door hanging, faded paint and rust streaks */
 function container(parts: THREE.BufferGeometry[], random: () => number, x: number, z: number, ry: number, y = 0): void {
   const c = pick(C.faded, random);
@@ -351,64 +338,6 @@ function pylon(parts: THREE.BufferGeometry[], random: () => number, x: number, z
   for (const sx of [-1.5, 1.5]) parts.push(tint(g(box(0.03, 0.03, 4), sx, 0.04, len / 2 + 2), C.soot[2]));
 }
 
-/** a run of large pipe sections dropped in a heap */
-function pipes(parts: THREE.BufferGeometry[], random: () => number, x: number, z: number, ry: number): void {
-  const g = (gg: THREE.BufferGeometry, lx: number, ly: number, lz: number) => {
-    gg.translate(lx, ly, lz);
-    gg.rotateY(ry);
-    gg.translate(x, 0, z);
-    return gg;
-  };
-  const rows: [number, number][] = [
-    [-0.75, 0.42],
-    [0, 0.42],
-    [0.75, 0.42],
-    [-0.38, 1.12],
-    [0.38, 1.12],
-  ];
-  for (const [lx, ly] of rows) {
-    const p = new THREE.CylinderGeometry(0.4, 0.4, 3 + random() * 0.6, 8, 1, true);
-    p.rotateX(PI / 2);
-    parts.push(tint(g(p, lx, ly, (random() - 0.5) * 0.4), pick([...C.rust, C.ruinShade], random)));
-  }
-}
-
-/** what's left of a building: two walls meeting at a corner, window holes, a floor slab hanging off */
-function buildingShell(parts: THREE.BufferGeometry[], random: () => number, x: number, z: number, ry: number): void {
-  const w = 4 + random() * 3;
-  const d = 3 + random() * 3;
-  const h = 2.6 + random() * 2.4;
-  const g = (gg: THREE.BufferGeometry, lx: number, ly: number, lz: number) => {
-    gg.translate(lx, ly, lz);
-    gg.rotateY(ry);
-    gg.translate(x, 0, z);
-    return gg;
-  };
-  const c = pick(C.ruin, random);
-  // the long wall, stepped down where it broke, window holes cut by leaving gaps
-  const segs = Math.round(w / 1.1);
-  for (let i = 0; i < segs; i++) {
-    const sh = h * (1 - (i / segs) * 0.6 * random());
-    const lx = -w / 2 + (i + 0.5) * (w / segs);
-    parts.push(tint(g(box(w / segs - 0.02, sh * 0.35, 0.3), lx, sh * 0.175, 0), c));
-    if (i % 2 === 0) parts.push(tint(g(box(w / segs - 0.02, sh * 0.35, 0.3), lx, sh * 0.82, 0), c));
-    parts.push(tint(g(box(0.32, sh, 0.3), lx - w / segs / 2 + 0.16, sh / 2, 0), c));
-  }
-  // the short wall
-  parts.push(tint(g(box(0.3, h * 0.8, d), -w / 2, h * 0.4, d / 2), c));
-  // a floor slab tipped down from the first storey
-  const slab = box(w * 0.6, 0.18, d * 0.9);
-  slab.rotateX(0.35);
-  parts.push(tint(g(slab, -w * 0.15, h * 0.42, d * 0.45), C.ruinShade));
-  rebar(parts, random, x, h * 0.55, z, 4, 0.7);
-  // scorch and rubble at its foot
-  parts.push(tint(g(box(w * 0.7, 0.02, d * 0.8), 0, 0.01, d * 0.5), pick(C.soot, random)));
-  for (let i = 0; i < 7; i++) parts.push(tint(g(new THREE.DodecahedronGeometry(0.15 + random() * 0.3, 0), (random() - 0.5) * w, 0.12, random() * d), pick(C.ruin, random)));
-  // reclaimed: weeds thick along the foot, moss up the walls, vines spilling off the slab --- this is the wild stage, long since left to the green
-  for (let i = 0; i < 6; i++) weedTuft(parts, random, x + (random() - 0.5) * w * 1.4, z + (random() - 0.5) * d * 1.4, 0.8 + random() * 0.6);
-  mossPatch(parts, random, x - w * 0.2, h * 0.15, z, Math.min(w, d) * 0.5);
-  vineHang(parts, random, x - w * 0.15, h * 0.42, z + d * 0.45, h * 0.4);
-}
 
 /** broken slabs and loose concrete with rebar sticking out */
 function rubbleHeap(parts: THREE.BufferGeometry[], random: () => number, x: number, z: number, spread = 1.6): void {
@@ -422,16 +351,6 @@ function rubbleHeap(parts: THREE.BufferGeometry[], random: () => number, x: numb
   if (random() < 0.6) mossPatch(parts, random, x, 0.1, z, spread * 0.4);
   for (let j = 0; j < 7; j++) parts.push(tint(at(new THREE.DodecahedronGeometry(0.08 + random() * 0.14, 0), x + (random() - 0.5) * spread * 1.3, 0.06, z + (random() - 0.5) * spread * 1.3), pick(random() < 0.3 ? C.soot : C.ruin, random)));
   rebar(parts, random, x, 0.2, z, 3, 0.5);
-}
-
-/** a road's worth of cracked asphalt, so the town reads as streets, not a field */
-function roadPatch(parts: THREE.BufferGeometry[], random: () => number, x: number, z: number, w: number, d: number): void {
-  parts.push(tint(at(box(w, 0.03, d), x, 0.012, z), 0x6c6a66));
-  for (let i = 0; i < Math.floor(Math.max(w, d) / 2.5); i++) {
-    const along = w > d;
-    parts.push(tint(at(box(along ? 1.1 : 0.12, 0.005, along ? 0.12 : 1.1), x + (along ? -w / 2 + 1.2 + i * 2.5 : 0), 0.03, z + (along ? 0 : -d / 2 + 1.2 + i * 2.5)), 0xd8d0b8));
-  }
-  for (let i = 0; i < 4; i++) weedTuft(parts, random, x + (random() - 0.5) * w, z + (random() - 0.5) * d, 0.6);
 }
 
 /** a stack of drop crates, olive drab with stencilled lids, strapped on a pallet */
@@ -471,94 +390,534 @@ function fieldTent(f: SurfaceFixture, parts: THREE.BufferGeometry[]): void {
   parts.push(tint(at(box(0.6, 0.4, 0.4), f.x + w / 2 + 0.5, 0.2, f.z + 0.4), C.drab));
 }
 
+// --- Two hundred years on ------------------------------------------------------
+// What a city looks like after two centuries with nobody in it, from above:
+// mostly forest. Roofs went first, then floors; what stands is wall stumps
+// and a few concrete frames, each one full of soil and the trees growing out
+// of it. Streets are lines of broken asphalt slabs heaved up by roots, grass
+// in every crack. Cars and steel have rusted to stained frames sunk in the
+// ground. Ivy covers every wall top and spills down the faces; low ground
+// has flooded into reedy ponds. Grey shows only where the green breaks.
+
+/** a clump of undergrowth: a few low puffs, the carpet everything else sits in */
+function undergrowth(parts: THREE.BufferGeometry[], random: () => number, x: number, z: number, r: number): void {
+  const n = 2 + Math.floor(random() * 3);
+  for (let i = 0; i < n; i++) {
+    const s = r * (0.5 + random() * 0.6);
+    parts.push(at(puff(s, pick(C.undergrowth, random), random, 0.45), x + (random() - 0.5) * r * 1.4, s * 0.2, z + (random() - 0.5) * r * 1.4));
+  }
+}
+
+/** a wild tree: a leaning trunk and a broad, lumpy crown, lighter on top */
+function wildTree(parts: THREE.BufferGeometry[], random: () => number, x: number, z: number, size = 1, base = 0): void {
+  const h = (2.2 + random() * 1.6) * size;
+  const trunk = new THREE.CylinderGeometry(0.12 * size, 0.24 * size, h, 6);
+  trunk.translate(0, h / 2, 0);
+  trunk.rotateZ((random() - 0.5) * 0.25);
+  parts.push(tint(at(trunk, x, base, z), pick(C.bark, random)));
+  const n = 5 + Math.floor(random() * 4);
+  for (let i = 0; i < n; i++) {
+    const a = random() * PI * 2;
+    const r = i === 0 ? 0 : (0.45 + random() * 0.55) * size;
+    const top = i === 0 || random() < 0.4;
+    parts.push(at(puff((0.5 + random() * 0.4) * size, pick(top ? C.canopy.slice(3) : C.canopy.slice(0, 3), random), random, 0.7), x + Math.cos(a) * r, base + h + (top ? 0.4 : -0.1) * size + random() * 0.3, z + Math.sin(a) * r));
+  }
+}
+
+/** ivy along a wall top and spilling down both faces: what you see of a wall from overhead */
+function ivyWall(parts: THREE.BufferGeometry[], random: () => number, ax: number, az: number, bx: number, bz: number, h: number, cover = 0.8): void {
+  const len = Math.hypot(bx - ax, bz - az);
+  const nx = -(bz - az) / len;
+  const nz = (bx - ax) / len;
+  for (let t = 0; t < len; t += 0.45) {
+    if (random() > cover) continue;
+    const x = ax + ((bx - ax) * t) / len;
+    const z = az + ((bz - az) * t) / len;
+    parts.push(at(puff(0.28 + random() * 0.18, pick(C.ivy, random), random, 0.55), x, h + 0.05, z));
+    // a curtain down one face or the other
+    if (random() < 0.55) {
+      const side = random() < 0.5 ? -1 : 1;
+      const drop = h * (0.3 + random() * 0.6);
+      const sheet = box(0.4 + random() * 0.4, drop, 0.06);
+      sheet.rotateY(Math.atan2(bx - ax, bz - az) + PI / 2);
+      parts.push(tint(at(sheet, x + nx * side * 0.2, h - drop / 2, z + nz * side * 0.2), pick(C.ivy, random)));
+    }
+  }
+}
+
+/** a wall stump: a run of concrete at a broken height, ivy over the top */
+function wallStump(parts: THREE.BufferGeometry[], random: () => number, ax: number, az: number, bx: number, bz: number, h: number): void {
+  const len = Math.hypot(bx - ax, bz - az);
+  const ry = Math.atan2(bx - ax, bz - az);
+  const segs = Math.max(1, Math.round(len / 1.2));
+  const c = pick(C.ruin, random);
+  for (let i = 0; i < segs; i++) {
+    if (random() < 0.15) continue; // a gap where it's come down
+    const t = (i + 0.5) / segs;
+    const sh = h * (0.45 + random() * 0.55);
+    const x = ax + (bx - ax) * t;
+    const z = az + (bz - az) * t;
+    parts.push(tint(at(box(0.3, sh, len / segs + 0.02), x, sh / 2, z, ry), c));
+    ivyWall(parts, random, x - ((bx - ax) / segs) * 0.5, z - ((bz - az) / segs) * 0.5, x + ((bx - ax) / segs) * 0.5, z + ((bz - az) / segs) * 0.5, sh, 0.75);
+  }
+}
+
+/** a block that's lost its roof and floors: outer walls at broken heights, soil inside, a tree growing out */
+function overgrownBlock(parts: THREE.BufferGeometry[], random: () => number, x: number, z: number, w: number, d: number, h: number, ry: number): void {
+  const cs = Math.cos(ry);
+  const sn = Math.sin(ry);
+  const p = (lx: number, lz: number): [number, number] => [x + lx * cs + lz * sn, z - lx * sn + lz * cs];
+  const corners = [p(-w / 2, -d / 2), p(w / 2, -d / 2), p(w / 2, d / 2), p(-w / 2, d / 2)];
+  for (let i = 0; i < 4; i++) {
+    if (random() < 0.2) continue; // one face gone entirely
+    const [ax, az] = corners[i];
+    const [bx, bz] = corners[(i + 1) % 4];
+    wallStump(parts, random, ax, az, bx, bz, h);
+  }
+  // inside: a floor of soil and fallen slab, the undergrowth thick
+  parts.push(tint(at(box(w - 0.3, 0.1, d - 0.3), x, 0.05, z, ry), C.lawnDark));
+  for (let i = 0; i < Math.ceil((w * d) / 2); i++) {
+    const [ux, uz] = p((random() - 0.5) * (w - 0.6), (random() - 0.5) * (d - 0.6));
+    if (random() < 0.3) {
+      const s = box(0.8 + random() * 1.2, 0.15, 0.6 + random());
+      s.rotateX((random() - 0.5) * 0.6);
+      parts.push(tint(at(s, ux, 0.2, uz, random() * PI), pick(C.ruin, random)));
+    }
+    undergrowth(parts, random, ux, uz, 0.5 + random() * 0.4);
+  }
+  // most have a tree: it's had two centuries to come up through the floors
+  if (random() < 0.55) {
+    const [tx, tz] = p((random() - 0.5) * w * 0.4, (random() - 0.5) * d * 0.4);
+    wildTree(parts, random, tx, tz, Math.min(w, d) / 4 + 0.6 + random() * 0.4);
+  }
+}
+
+/** a concrete frame that kept its columns and a floor or two: the tall ruins, with a garden on every slab */
+function concreteFrame(parts: THREE.BufferGeometry[], random: () => number, x: number, z: number, w: number, d: number, floors: number, ry: number): void {
+  const cs = Math.cos(ry);
+  const sn = Math.sin(ry);
+  const p = (lx: number, lz: number): [number, number] => [x + lx * cs + lz * sn, z - lx * sn + lz * cs];
+  const storey = 2.4;
+  const c = pick(C.ruin, random);
+  const cols = Math.max(2, Math.round(w / 2.5));
+  const rows = Math.max(2, Math.round(d / 2.5));
+  for (let i = 0; i < cols; i++) {
+    for (let j = 0; j < rows; j++) {
+      const [cx, cz] = p(-w / 2 + (w * i) / (cols - 1), -d / 2 + (d * j) / (rows - 1));
+      const ch = storey * floors * (random() < 0.25 ? 0.4 + random() * 0.4 : 1);
+      parts.push(tint(at(box(0.35, ch, 0.35), cx, ch / 2, cz, ry), c));
+      if (random() < 0.5) ivyWall(parts, random, cx - 0.1, cz, cx + 0.1, cz, ch, 1);
+    }
+  }
+  for (let f = 1; f <= floors; f++) {
+    // each slab broken: only part of it still up, the rest tipped or gone
+    const keep = 0.45 + random() * 0.45;
+    const off = (random() - 0.5) * w * (1 - keep);
+    const [sx, sz] = p(off, 0);
+    const slab = box(w * keep, 0.2, d);
+    if (f === floors || random() < 0.3) slab.rotateZ((random() - 0.5) * 0.12);
+    parts.push(tint(at(slab, sx, storey * f, sz, ry), f === floors ? C.ruinShade : c));
+    // and on it, what's taken root: moss, shrubs, on the top one a thicket
+    const growth = f === floors ? 10 : 3;
+    for (let i = 0; i < growth; i++) {
+      const [gx, gz] = p(off + (random() - 0.5) * w * keep * 0.9, (random() - 0.5) * d * 0.9);
+      parts.push(at(puff(0.35 + random() * 0.35, pick(random() < 0.5 ? C.ivy : C.undergrowth, random), random, 0.5), gx, storey * f + 0.2, gz));
+    }
+    if (f === floors && random() < 0.6) {
+      const [tx, tz] = p(off, 0);
+      wildTree(parts, random, tx, tz, 0.32, storey * f + 0.1);
+    }
+    rebar(parts, random, sx + (w * keep * 0.5) * cs, storey * f - 0.2, sz - (w * keep * 0.5) * sn, 4, 0.6);
+  }
+  // the fallen part of the slabs, in a heap at its foot gone to green
+  for (let i = 0; i < 4; i++) {
+    const [hx, hz] = p((random() - 0.5) * w * 1.2, (random() - 0.5) * d * 1.2);
+    const s = box(1 + random() * 1.4, 0.2, 0.8 + random());
+    s.rotateX((random() - 0.5) * 0.9);
+    parts.push(tint(at(s, hx, 0.3, hz, random() * PI), C.ruinShade));
+    undergrowth(parts, random, hx, hz, 0.7);
+  }
+}
+
+/** a street: asphalt broken into slabs, heaved by roots, grass and saplings up every crack */
+function buriedStreet(parts: THREE.BufferGeometry[], random: () => number, x: number, z: number, w: number, d: number): void {
+  const along = w > d;
+  const len = along ? w : d;
+  const wide = along ? d : w;
+  for (let t = -len / 2; t < len / 2; t += 1.1) {
+    for (let s = -wide / 2; s < wide / 2; s += 1.1) {
+      if (random() < 0.3) continue; // gone under the turf
+      const slab = box(0.7 + random() * 0.6, 0.06, 0.7 + random() * 0.6);
+      slab.rotateX((random() - 0.5) * 0.18);
+      slab.rotateZ((random() - 0.5) * 0.18);
+      const sx = x + (along ? t : s) + (random() - 0.5) * 0.3;
+      const sz = z + (along ? s : t) + (random() - 0.5) * 0.3;
+      parts.push(tint(at(slab, sx, 0.03 + random() * 0.04, sz, (random() - 0.5) * 0.4), pick(C.asphalt, random)));
+    }
+    // a centre line, mostly worn off
+    if (random() < 0.35) parts.push(tint(at(box(along ? 0.9 : 0.1, 0.01, along ? 0.1 : 0.9), x + (along ? t : 0), 0.085, z + (along ? 0 : t)), 0xc8c0a8));
+  }
+  for (let i = 0; i < len * 0.9; i++) {
+    const a = (random() - 0.5) * len;
+    const b = (random() - 0.5) * wide;
+    const ux = x + (along ? a : b);
+    const uz = z + (along ? b : a);
+    if (random() < 0.7) weedTuft(parts, random, ux, uz, 0.6 + random() * 0.6);
+    else undergrowth(parts, random, ux, uz, 0.4 + random() * 0.4);
+  }
+  // a sapling or two right in the carriageway
+  for (let i = 0; i < len / 9; i++) wildTree(parts, random, x + (along ? (random() - 0.5) * len : (random() - 0.5) * wide * 0.5), z + (along ? (random() - 0.5) * wide * 0.5 : (random() - 0.5) * len), 0.55 + random() * 0.3);
+}
+
+/** a car two centuries gone: a rust-brown body sunk to its sills, glass and wheels long gone, growing a bush */
+function rustHulk(parts: THREE.BufferGeometry[], random: () => number, x: number, z: number, ry: number): void {
+  const c = pick(C.rust, random);
+  parts.push(tint(at(box(1.6, 0.4, 3.5), x, 0.15, z, ry), c));
+  parts.push(tint(at(box(1.35, 0.3, 1.6), x, 0.5, z - 0.2 * Math.cos(ry), ry), pick(C.rust, random)));
+  undergrowth(parts, random, x, z, 0.9);
+  if (random() < 0.6) parts.push(at(puff(0.55, pick(C.ivy, random), random, 0.6), x, 0.75, z));
+}
+
+/** a pond where the ground sank: dark water, a reedy rim */
+function pond(parts: THREE.BufferGeometry[], random: () => number, x: number, z: number, r: number): void {
+  const water = new THREE.CylinderGeometry(r, r, 0.04, 10);
+  water.scale(1, 1, 0.7 + random() * 0.4);
+  parts.push(tint(at(water, x, 0.025, z, random() * PI), pick(C.pond, random)));
+  for (let a = 0; a < PI * 2; a += 0.35) {
+    const rr = r * (0.95 + random() * 0.25);
+    if (random() < 0.6) {
+      for (let k = 0; k < 3; k++) {
+        const h = 0.4 + random() * 0.4;
+        const reed = new THREE.ConeGeometry(0.03, h, 3);
+        reed.translate(0, h / 2, 0);
+        reed.rotateZ((random() - 0.5) * 0.4);
+        parts.push(tint(at(reed, x + Math.cos(a) * rr + (random() - 0.5) * 0.3, 0, z + Math.sin(a) * rr * 0.85 + (random() - 0.5) * 0.3), pick(C.reed, random)));
+      }
+    } else undergrowth(parts, random, x + Math.cos(a) * rr, z + Math.sin(a) * rr * 0.85, 0.4);
+  }
+}
+
+/** a tree that came down years ago: a mossy log on the ground */
+function fallenLog(parts: THREE.BufferGeometry[], random: () => number, x: number, z: number): void {
+  const len = 2.5 + random() * 2.5;
+  const log = new THREE.CylinderGeometry(0.2, 0.26, len, 6);
+  log.rotateZ(PI / 2);
+  parts.push(tint(at(log, x, 0.2, z, random() * PI), pick(C.bark, random)));
+  mossPatch(parts, random, x, 0.35, z, 0.5);
+}
+
+/** the range sits on what was a car park: inside the fence, north-west, under the targets */
+const RANGE_LOT = { minX: SURFACE.minX + 1.2, maxX: -3.2, minZ: SURFACE.minZ + 0.3, maxZ: SURFACE.minZ + 4.3 };
+const onRangeLot = (x: number, z: number): boolean => x > RANGE_LOT.minX && x < RANGE_LOT.maxX && z > RANGE_LOT.minZ && z < RANGE_LOT.maxZ;
+
 /**
- * Past the fence, where nobody can go but everyone can see: the town that
- * fell. Streets of cracked asphalt, building shells, burnt cars, a crane
- * down across the north road, containers and pipe, a pylon on its side,
- * rubble everywhere in between --- dense enough that the view never runs
- * out into empty grass. Seeded, so every client has the same.
+ * The car park under the range: asphalt crazed into plates, weeds up every
+ * crack, the bay lines nearly gone. Weeds kept short so the targets and the
+ * shots still read over them.
  */
-function outsideRuins(parts: THREE.BufferGeometry[], random: () => number): void {
+function crackedLot(parts: THREE.BufferGeometry[], random: () => number): void {
+  const L = RANGE_LOT;
+  parts.push(tint(at(box(L.maxX - L.minX, 0.006, L.maxZ - L.minZ), (L.minX + L.maxX) / 2, 0.028, (L.minZ + L.maxZ) / 2), 0x3e4c34));
+  for (let x = L.minX; x < L.maxX; x += 0.85) {
+    for (let z = L.minZ; z < L.maxZ; z += 0.85) {
+      if (random() < 0.12) continue; // a plate gone, soil showing
+      const w = 0.55 + random() * 0.35;
+      const d = 0.55 + random() * 0.35;
+      const plate = box(Math.min(w, L.maxX - x), 0.04, Math.min(d, L.maxZ - z));
+      plate.rotateX((random() - 0.5) * 0.08);
+      plate.rotateZ((random() - 0.5) * 0.08);
+      parts.push(tint(at(plate, x + 0.42, 0.045 + random() * 0.015, z + 0.42, (random() - 0.5) * 0.35), pick(C.asphalt, random)));
+    }
+  }
+  // the old bay lines, run toward the targets, mostly worn away
+  for (let lx = L.minX + 1.2; lx < L.maxX; lx += 2.5) {
+    for (let z = L.minZ + 0.2; z < L.maxZ - 0.3; z += 0.5) {
+      if (random() < 0.45) continue;
+      parts.push(tint(at(box(0.1, 0.008, 0.42), lx + (random() - 0.5) * 0.04, 0.072, z + 0.2), 0xcfc6ac));
+    }
+  }
+  // weeds along the cracks, thick at the edges where the lawn's pushing in
+  for (let i = 0; i < 150; i++) {
+    const edge = random() < 0.4;
+    const x = L.minX + random() * (L.maxX - L.minX);
+    const z = edge ? (random() < 0.5 ? L.minZ + random() * 0.6 : L.maxZ - random() * 0.6) : L.minZ + random() * (L.maxZ - L.minZ);
+    if (random() < 0.75) weedTuft(parts, random, x, z, 0.35 + random() * 0.4);
+    else undergrowth(parts, random, x, z, 0.2 + random() * 0.2);
+  }
+}
+
+/**
+ * Old cables strung high between rusted masts outside the fence, sagging
+ * over corners of the garden with ivy hanging off them. They sit at 6--10 m,
+ * so as you walk under one it slides across the top camera's view and
+ * briefly covers a little of it.
+ */
+function overheadVine(parts: THREE.BufferGeometry[], random: () => number, ax: number, az: number, ah: number, bx: number, bz: number, bh: number, sag: number): void {
+  for (const [x, z, h] of [
+    [ax, az, ah],
+    [bx, bz, bh],
+  ]) {
+    const mast = new THREE.CylinderGeometry(0.12, 0.18, h, 6);
+    mast.translate(0, h / 2, 0);
+    mast.rotateZ((random() - 0.5) * 0.08);
+    parts.push(tint(at(mast, x, 0, z), pick(C.rust, random)));
+    ivyWall(parts, random, x - 0.05, z, x + 0.05, z, h, 1);
+    for (let k = 0; k < 4; k++) parts.push(at(puff(0.3, pick(C.ivy, random), random, 1.4), x + (random() - 0.5) * 0.2, h * (0.15 + random() * 0.7), z + (random() - 0.5) * 0.2));
+  }
+  const len = Math.hypot(bx - ax, bz - az);
+  const steps = Math.ceil(len / 0.6);
+  const y = (t: number) => ah + (bh - ah) * t - sag * 4 * t * (1 - t);
+  for (let i = 0; i < steps; i++) {
+    const t0 = i / steps;
+    const t1 = (i + 1) / steps;
+    const x0 = ax + (bx - ax) * t0;
+    const z0 = az + (bz - az) * t0;
+    const x1 = ax + (bx - ax) * t1;
+    const z1 = az + (bz - az) * t1;
+    const seg = new THREE.CylinderGeometry(0.025, 0.025, Math.hypot(x1 - x0, y(t1) - y(t0), z1 - z0), 4);
+    const dir = new THREE.Vector3(x1 - x0, y(t1) - y(t0), z1 - z0).normalize();
+    seg.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir));
+    parts.push(tint(at(seg, (x0 + x1) / 2, (y(t0) + y(t1)) / 2, (z0 + z1) / 2), C.soot[2]));
+    // ivy along it in clumps, with strands hanging down
+    if (random() < 0.6) parts.push(at(puff(0.22 + random() * 0.2, pick(C.ivy, random), random, 0.8), x0, y(t0), z0));
+    if (random() < 0.22) {
+      const drop = 1 + random() * 2.2;
+      const stem = new THREE.CylinderGeometry(0.02, 0.02, drop, 4);
+      stem.translate(0, -drop / 2, 0);
+      parts.push(tint(at(stem, x0, y(t0), z0), pick(C.ivy, random)));
+      for (let k = 0; k < 3; k++) parts.push(at(puff(0.12 + random() * 0.1, pick(C.ivy, random), random, 0.9), x0 + (random() - 0.5) * 0.15, y(t0) - drop * ((k + 1) / 3), z0 + (random() - 0.5) * 0.15));
+    }
+  }
+}
+
+/**
+ * Inside the fence, two hundred years on: the crew mowed a lawn over the old
+ * square but hasn't won. Patches of rank grass, the old street and house
+ * footings breaking through, weeds banked against every fence and footing,
+ * moss in the gravel. All of it ankle-high and walk-through, and kept off
+ * the paths, the stations, the spawn, the lift door and the range lane, so
+ * players, guns and prompts still read.
+ */
+function wildGarden(parts: THREE.BufferGeometry[], random: () => number): void {
+  const S = SURFACE;
+  const keepClear = (x: number, z: number, pad = 0): boolean =>
+    onPath(x, z) ||
+    onRangeLot(x, z) ||
+    STATIONS.some((s) => Math.hypot(x - s.x, z - s.z) < 2 + pad) ||
+    (Math.abs(x) < 4 && z > S.maxZ - 7) || // spawn and the lift door
+    (x < -3 && z < S.minZ + 5.5) || // the range lane
+    (Math.abs(x - SCOREBOARD.x) < 3 && z < S.minZ + 2.5) ||
+    SURFACE_FIXTURES.some((f) => Math.abs(x - f.x) < f.halfX + 0.25 && Math.abs(z - f.z) < f.halfZ + 0.25);
+  const inside = (x: number, z: number) => x > S.minX + 0.2 && x < S.maxX - 0.2 && z > S.minZ + 0.2 && z < S.maxZ - 0.2;
+  // patches of rank grass: the mower lost these, darker and coarser than the lawn
+  for (let i = 0; i < 16; i++) {
+    const cx = S.minX + random() * (S.maxX - S.minX);
+    const cz = S.minZ + random() * (S.maxZ - S.minZ);
+    const r = 1.5 + random() * 2.2;
+    for (let k = 0; k < r * r * 2.2; k++) {
+      const a = random() * PI * 2;
+      const d = Math.sqrt(random()) * r;
+      const x = cx + Math.cos(a) * d;
+      const z = cz + Math.sin(a) * d * 0.8;
+      if (!inside(x, z) || keepClear(x, z)) continue;
+      parts.push(tint(at(box(0.5 + random() * 0.5, 0.02, 0.22 + random() * 0.25), x, 0.022, z, random() * PI), pick(C.undergrowth, random)));
+      if (random() < 0.35) weedTuft(parts, random, x, z, 0.35 + random() * 0.35);
+    }
+  }
+  // the old street under the square, east to west across the middle: asphalt plates breaking through
+  const streetZ = S.minZ + 13.5;
+  for (let x = S.minX + 0.5; x < S.maxX - 0.5; x += 0.8) {
+    for (let dz = -1.4; dz < 1.4; dz += 0.8) {
+      const px = x + (random() - 0.5) * 0.3;
+      const pz = streetZ + dz + (random() - 0.5) * 0.3;
+      if (random() < 0.45 || keepClear(px, pz, -0.5)) continue;
+      const plate = box(0.5 + random() * 0.35, 0.03, 0.5 + random() * 0.35);
+      plate.rotateX((random() - 0.5) * 0.08);
+      plate.rotateZ((random() - 0.5) * 0.08);
+      parts.push(tint(at(plate, px, 0.03 + random() * 0.012, pz, (random() - 0.5) * 0.4), pick(C.asphalt, random)));
+      if (random() < 0.4) weedTuft(parts, random, px + 0.35, pz + 0.3, 0.3 + random() * 0.3);
+    }
+  }
+  // house footings: low outlines of what stood here, ivy along them, weeds inside the corners
+  const footings: [number, number, number, number, number][] = [
+    [-11.5, S.minZ + 8.5, 4.5, 3.5, 0.05],
+    [10.5, S.minZ + 7.5, 4, 3.2, -0.08],
+    [-12.5, S.maxZ - 8.5, 3.6, 4, 0.1],
+    [6, S.minZ + 19.5, 3.4, 3, 0.04],
+    [-5, S.minZ + 19, 3, 2.6, -0.12],
+  ];
+  for (const [fx, fz, w, d, ry] of footings) {
+    const cs = Math.cos(ry);
+    const sn = Math.sin(ry);
+    const p = (lx: number, lz: number): [number, number] => [fx + lx * cs + lz * sn, fz - lx * sn + lz * cs];
+    const corners = [p(-w / 2, -d / 2), p(w / 2, -d / 2), p(w / 2, d / 2), p(-w / 2, d / 2)];
+    for (let i = 0; i < 4; i++) {
+      const [ax, az] = corners[i];
+      const [bx, bz] = corners[(i + 1) % 4];
+      const len = Math.hypot(bx - ax, bz - az);
+      for (let t = 0; t < len; t += 0.5) {
+        const x = ax + ((bx - ax) * t) / len;
+        const z = az + ((bz - az) * t) / len;
+        if (random() < 0.2 || keepClear(x, z, -0.8)) continue;
+        const h = 0.08 + random() * 0.14;
+        parts.push(tint(at(box(0.52, h, 0.24), x, h / 2, z, Math.atan2(bx - ax, bz - az) + PI / 2), pick(C.ruin, random)));
+        if (random() < 0.45) parts.push(at(puff(0.16 + random() * 0.1, pick(C.ivy, random), random, 0.5), x, h + 0.03, z));
+        if (random() < 0.3) weedTuft(parts, random, x, z, 0.4 + random() * 0.3);
+      }
+      mossPatch(parts, random, ax, 0.05, az, 0.35);
+    }
+  }
+  // banked against the fence, all the way round: weeds, ivy clumps, a scatter of broken concrete
+  for (const f of FENCES) {
+    const alongX = f.halfX >= f.halfZ;
+    const len = (alongX ? f.halfX : f.halfZ) * 2;
+    const inward = alongX ? (f.z < (S.minZ + S.maxZ) / 2 ? 1 : -1) : f.x < 0 ? 1 : -1;
+    for (let t = -len / 2; t < len / 2; t += 0.35) {
+      const depth = 0.25 + random() * random() * 1.6;
+      const x = f.x + (alongX ? t : inward * depth);
+      const z = f.z + (alongX ? inward * depth : t);
+      if (!inside(x, z) || keepClear(x, z, -1)) continue;
+      const r = random();
+      if (r < 0.55) weedTuft(parts, random, x, z, 0.45 + random() * 0.45);
+      else if (r < 0.8) undergrowth(parts, random, x, z, 0.25 + random() * 0.2);
+      else if (r < 0.88) parts.push(tint(at(new THREE.DodecahedronGeometry(0.08 + random() * 0.1, 0), x, 0.06, z), pick(C.ruin, random)));
+    }
+  }
+  // weeds up through the gravel, moss along its edges
+  for (const pth of [
+    { minX: -1.6, maxX: 1.6, minZ: S.minZ + 1.5, maxZ: S.maxZ },
+    { minX: -11, maxX: 7, minZ: S.minZ + 4.4, maxZ: S.minZ + 6.2 },
+  ]) {
+    const area = (pth.maxX - pth.minX) * (pth.maxZ - pth.minZ);
+    for (let i = 0; i < area * 0.35; i++) {
+      const edge = random() < 0.6;
+      const x = edge ? (random() < 0.5 ? pth.minX : pth.maxX) + (random() - 0.5) * 0.3 : pth.minX + random() * (pth.maxX - pth.minX);
+      const z = pth.minZ + random() * (pth.maxZ - pth.minZ);
+      if (Math.abs(x) < 4 && z > S.maxZ - 7) continue;
+      if (edge) parts.push(at(puff(0.12 + random() * 0.1, pick(C.mossDark, random), random, 0.3), x, 0.05, z));
+      else weedTuft(parts, random, x, z, 0.25 + random() * 0.2);
+    }
+  }
+  // and loose weeds everywhere else the crew hasn't got to
+  for (let i = 0; i < 340; i++) {
+    const x = S.minX + random() * (S.maxX - S.minX);
+    const z = S.minZ + random() * (S.maxZ - S.minZ);
+    if (keepClear(x, z)) continue;
+    if (random() < 0.7) weedTuft(parts, random, x, z, 0.3 + random() * 0.4);
+    else parts.push(tint(at(new THREE.DodecahedronGeometry(0.06 + random() * 0.08, 0), x, 0.04, z), pick(C.ruin, random)));
+  }
+}
+
+/**
+ * The surface past the fence, two hundred years on. Placed on a loose street
+ * grid so it still reads as a town; everything between the streets is block
+ * ruins and woodland, and nothing is bare ground. Seeded.
+ */
+function overgrownCity(parts: THREE.BufferGeometry[], random: () => number): void {
   const S = SURFACE;
   const m = SURFACE_VIEW_MARGIN;
-  // streets just outside the fence, round three sides
-  roadPatch(parts, random, (S.minX + S.maxX) / 2, S.minZ - 3.2, S.maxX - S.minX + 2 * m, 4);
-  roadPatch(parts, random, S.minX - 3.2, (S.minZ + S.maxZ) / 2 + 1, 4, S.maxZ - S.minZ + m);
-  roadPatch(parts, random, S.maxX + 3.2, (S.minZ + S.maxZ) / 2 + 1, 4, S.maxZ - S.minZ + m);
-  // the landmarks, placed by hand so they frame the garden from every side
-  craneJib(parts, random, -2, S.minZ - 3.4, PI / 2 + 0.08, 22);
-  pylon(parts, random, S.maxX + 9, S.minZ + 5, 0.4);
-  container(parts, random, S.minX - 8, S.minZ + 4, 0.15);
-  container(parts, random, S.minX - 8.3, S.minZ + 4.2, 0.1, 2.5);
-  container(parts, random, S.maxX + 7.5, S.maxZ - 3, -0.3);
-  container(parts, random, 9, S.minZ - 10, PI / 2 - 0.2);
-  pipes(parts, random, S.minX - 6.5, S.maxZ - 4, 0.6);
-  pipes(parts, random, S.maxX + 6, S.minZ + 14, -0.9);
-  wreckCar(parts, random, S.minX - 3.4, S.minZ + 8, 0.2);
-  wreckCar(parts, random, S.minX - 2.8, S.maxZ - 7, PI + 0.4);
-  wreckCar(parts, random, S.maxX + 3.1, S.minZ + 2, -0.15);
-  wreckCar(parts, random, S.maxX + 3.6, S.maxZ - 9, 0.9);
-  wreckCar(parts, random, 8, S.minZ - 3.4, PI / 2 + 0.3);
-  wreckCar(parts, random, -11, S.minZ - 2.9, PI / 2 - 0.5);
-  // building shells further out, all the way round
-  const shells: [number, number, number][] = [
-    [S.minX - 11, S.minZ - 8, 0.1],
-    [-8, S.minZ - 11, 0],
-    [3, S.minZ - 12, -0.15],
-    [S.maxX + 11, S.minZ - 7, PI / 2],
-    [S.minX - 12, S.minZ + 13, PI / 2 + 0.2],
-    [S.maxX + 12, S.minZ + 21, -PI / 2],
-    [S.minX - 11, S.maxZ + 2, 0.3],
-    [S.maxX + 10, S.maxZ + 3, -0.2],
+  const minX = S.minX - m;
+  const maxX = S.maxX + m;
+  const minZ = S.minZ - m;
+  const maxZ = S.maxZ + 12;
+  const outside = (x: number, z: number, pad: number) => x < S.minX - pad || x > S.maxX + pad || z < S.minZ - pad || z > S.maxZ + pad;
+  const nearLift = (x: number, z: number) => Math.abs(x) < 5 && z > S.maxZ - 1;
+  // the forest floor: darker than the garden's lawn, laid over it everywhere past the fence
+  for (let x = minX; x < maxX; x += 2) {
+    for (let z = minZ; z < maxZ; z += 2) {
+      const ux = x + 1;
+      const uz = z + 1;
+      if (!outside(ux, uz, 0.3) || nearLift(ux, uz)) continue;
+      parts.push(tint(at(box(2.3, 0.02, 2.3), ux + (random() - 0.5) * 0.4, 0.004, uz + (random() - 0.5) * 0.4, (random() - 0.5) * 0.3), pick(C.undergrowth.slice(0, 5), random)));
+    }
+  }
+  // the old streets: one ring just past the fence (the crew camped in what was a square), cross streets further out
+  buriedStreet(parts, random, (S.minX + S.maxX) / 2, S.minZ - 3.2, S.maxX - S.minX + 2 * m, 4);
+  buriedStreet(parts, random, S.minX - 3.2, (S.minZ + S.maxZ) / 2 + 2, 4, S.maxZ - S.minZ + m);
+  buriedStreet(parts, random, S.maxX + 3.2, (S.minZ + S.maxZ) / 2 + 2, 4, S.maxZ - S.minZ + m);
+  buriedStreet(parts, random, -6, S.minZ - 12, 3.2, 10);
+  buriedStreet(parts, random, S.minX - 12, S.minZ + 10, 10, 3.2);
+  // blocks between the streets: wall stumps full of trees, and a few tall concrete frames
+  const blocks: [number, number, number, number, number, number][] = [
+    // x, z, w, d, h, ry
+    [S.minX - 11, S.minZ - 10, 6, 5, 2.6, 0.05],
+    [-12, S.minZ - 10, 5, 6, 3.4, -0.04],
+    [1, S.minZ - 10, 7, 5, 2.2, 0.08],
+    [11, S.minZ - 11, 5, 5, 3, -0.1],
+    [S.maxX + 10, S.minZ - 9, 6, 6, 2.8, 0.03],
+    [S.minX - 10, S.minZ + 3, 5, 7, 2.4, PI / 2],
+    [S.minX - 10.5, S.minZ + 18, 6, 6, 3.2, 0.12],
+    [S.maxX + 10, S.minZ + 3, 5, 6, 2, -0.06],
+    [S.maxX + 11, S.minZ + 21, 6, 5, 2.6, 0.1],
+    [S.minX - 9, S.maxZ + 6, 7, 5, 2.4, -0.08],
+    [S.maxX + 9, S.maxZ + 6, 6, 5, 2.8, 0.05],
   ];
-  for (const [x, z, ry] of shells) buildingShell(parts, random, x, z, ry);
-  // south of the fence either side of the lift house: a yard of scrap
-  wreckCar(parts, random, -9, S.maxZ + 4, 1.2);
-  wreckCar(parts, random, 12, S.maxZ + 5.5, -0.5);
-  container(parts, random, -15, S.maxZ + 6, PI / 2 + 0.1);
-  pipes(parts, random, 7, S.maxZ + 6, 0.2);
-  for (let i = 0; i < 26; i++) {
-    const side = random() < 0.5 ? -1 : 1;
-    const x = side * (5 + random() * (S.maxX + m - 5));
-    rubbleHeap(parts, random, x, S.maxZ + 1.5 + random() * 9, 0.8 + random());
+  for (const [x, z, w, d, h, ry] of blocks) overgrownBlock(parts, random, x, z, w, d, h, ry);
+  // the tall ones stand north and east, so their long shadows fall away from the garden
+  concreteFrame(parts, random, 6, S.minZ - 11, 6, 4.5, 3, 0.04);
+  concreteFrame(parts, random, S.maxX + 11, S.minZ + 12, 5, 6, 2, -0.08);
+  concreteFrame(parts, random, -19, S.minZ - 12, 5, 5, 2, 0.1);
+  // the old town's bigger wrecks, rusted out and grown over
+  craneJib(parts, random, -2, S.minZ - 3.6, PI / 2 + 0.08, 22);
+  ivyWall(parts, random, -12, S.minZ - 3.6, 9, S.minZ - 3.3, 1.05, 0.6);
+  container(parts, random, S.minX - 7.5, S.minZ + 10, 0.15);
+  ivyWall(parts, random, S.minX - 7.5, S.minZ + 7.2, S.minX - 7.2, S.minZ + 12.8, 2.55, 0.9);
+  pylon(parts, random, S.maxX + 7, S.maxZ - 4, 0.5);
+  const hulks: [number, number, number][] = [
+    [S.minX - 3.4, S.minZ + 6, 0.2],
+    [S.minX - 2.8, S.maxZ - 6, PI + 0.4],
+    [S.maxX + 3.1, S.minZ + 3, -0.15],
+    [S.maxX + 3.6, S.maxZ - 10, 0.9],
+    [9, S.minZ - 3.4, PI / 2 + 0.3],
+    [-14, S.minZ - 2.9, PI / 2 - 0.5],
+    [-9, S.maxZ + 3, 1.2],
+    [12, S.maxZ + 3.5, -0.5],
+  ];
+  for (const [x, z, ry] of hulks) rustHulk(parts, random, x, z, ry);
+  pond(parts, random, S.maxX + 9, S.minZ + 30 - 14, 2.4);
+  pond(parts, random, S.minX - 13, S.minZ - 2, 1.8);
+  // the woods: trees wherever there's room, dense away from the streets
+  for (let i = 0; i < 74; i++) {
+    const x = minX + random() * (maxX - minX);
+    const z = minZ + random() * (maxZ - minZ);
+    if (!outside(x, z, 2.5) || nearLift(x, z)) continue;
+    wildTree(parts, random, x, z, 0.6 + random() * 0.5);
   }
-  // and rubble, scrap and weeds filling everything between --- dense enough
-  // that this reads as the wild, overgrown stage: nothing left bare
-  for (let i = 0; i < 190; i++) {
-    const side = Math.floor(random() * 3);
-    const k = random();
-    const o = 1 + random() * (m - 1);
-    let x: number;
-    let z: number;
-    if (side === 0) [x, z] = [S.minX - o, S.minZ - m + k * (S.maxZ - S.minZ + m * 1.5)];
-    else if (side === 1) [x, z] = [S.maxX + o, S.minZ - m + k * (S.maxZ - S.minZ + m * 1.5)];
-    else [x, z] = [S.minX - m + k * (S.maxX - S.minX + 2 * m), S.minZ - o];
-    const r = random();
-    if (r < 0.4) rubbleHeap(parts, random, x, z, 0.8 + random() * 1.4);
-    else if (r < 0.52) {
-      // a twisted beam
-      const b = box(0.2, 0.25, 2 + random() * 3);
-      b.rotateX((random() - 0.5) * 0.4);
-      parts.push(tint(at(b, x, 0.2, z, random() * PI), pick(C.rust, random)));
-    } else if (r < 0.62) {
-      // an oil drum, some tipped over
-      const d = new THREE.CylinderGeometry(0.3, 0.3, 0.85, 8);
-      if (random() < 0.5) d.rotateZ(PI / 2);
-      parts.push(tint(at(d, x, random() < 0.5 ? 0.3 : 0.43, z, random() * PI), pick([...C.rust, ...C.faded], random)));
-    } else if (r < 0.85) weedTuft(parts, random, x, z, 0.8 + random() * 0.7);
-    else mossPatch(parts, random, x, 0.08, z, 0.8 + random() * 0.6);
+  for (let i = 0; i < 24; i++) {
+    const x = minX + random() * (maxX - minX);
+    const z = minZ + random() * (maxZ - minZ);
+    if (!outside(x, z, 1.5) || nearLift(x, z)) continue;
+    fallenLog(parts, random, x, z);
   }
-  // a second, denser weed pass right along the fence line, where the crew's
-  // mowing stops and the wild growth presses right up against the wire
-  for (let i = 0; i < 70; i++) {
-    const side = Math.floor(random() * 4);
-    let x: number;
-    let z: number;
-    if (side === 0) [x, z] = [S.minX - 0.5 - random() * 2.5, S.minZ + random() * (S.maxZ - S.minZ)];
-    else if (side === 1) [x, z] = [S.maxX + 0.5 + random() * 2.5, S.minZ + random() * (S.maxZ - S.minZ)];
-    else if (side === 2) [x, z] = [S.minX + random() * (S.maxX - S.minX), S.minZ - 0.5 - random() * 2.5];
-    else [x, z] = [S.minX + random() * (S.maxX - S.minX), S.maxZ + 0.5 + random() * 2.5];
-    weedTuft(parts, random, x, z, 0.6 + random() * 0.8);
+  // and the carpet under all of it: no bare ground anywhere past the fence
+  for (let x = minX; x < maxX; x += 1.3) {
+    for (let z = minZ; z < maxZ; z += 1.3) {
+      const ux = x + random() * 1.3;
+      const uz = z + random() * 1.3;
+      if (!outside(ux, uz, 0.6) || nearLift(ux, uz)) continue;
+      const r = random();
+      if (r < 0.55) undergrowth(parts, random, ux, uz, 0.45 + random() * 0.45);
+      else if (r < 0.85) weedTuft(parts, random, ux, uz, 0.7 + random() * 0.8);
+      else if (r < 0.93) rubbleHeap(parts, random, ux, uz, 0.6 + random() * 0.6);
+    }
+  }
+  // cables high overhead, sagging across corners of the garden: walk under one and it slides over the view
+  overheadVine(parts, random, S.minX - 3, S.minZ - 2, 9, -4, S.minZ + 6, 10, 2.2);
+  overheadVine(parts, random, S.maxX + 2.5, S.minZ + 4, 10, 6, S.minZ + 14, 8.5, 1.8);
+  overheadVine(parts, random, S.minX - 2.5, S.maxZ - 3, 8, -9, S.maxZ + 3, 9, 1.5);
+  overheadVine(parts, random, S.maxX + 3, S.maxZ - 8, 9.5, 12, S.maxZ + 4, 8, 1.6);
+  // the wild pressing on the fence: ivy climbing the wire, saplings against it
+  for (const f of FENCES) {
+    const alongX = f.halfX >= f.halfZ;
+    const len = (alongX ? f.halfX : f.halfZ) * 2;
+    for (let t = -len / 2; t < len / 2; t += 0.6) {
+      const x = f.x + (alongX ? t : 0);
+      const z = f.z + (alongX ? 0 : t);
+      if (random() < 0.55) {
+        const h = 0.4 + random() * 1.3;
+        parts.push(at(puff(0.25 + random() * 0.15, pick(C.ivy, random), random, 1.3), x + (alongX ? 0 : 0.12), h * 0.6, z + (alongX ? 0.12 : 0)));
+      }
+    }
   }
 }
 
@@ -653,7 +1012,9 @@ export function buildSurface(): THREE.Group {
     else if (f.kind === "supplyCrates") supplyCrates(f, parts, random);
     else if (f.kind === "fieldTent") fieldTent(f, parts);
   }
-  outsideRuins(parts, random);
+  overgrownCity(parts, random);
+  crackedLot(parts, random);
+  wildGarden(parts, random);
   // inside the fence, kept low (under the sight-blocking height): what the crew hasn't cleared yet
   rubbleHeap(parts, random, -13.5, SURFACE.minZ + 18.5, 1.6);
   rubbleHeap(parts, random, 14.6, SURFACE.minZ + 8, 1.2);
