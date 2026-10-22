@@ -1756,9 +1756,9 @@ function animate(): void {
 // --- Levels and the ride --------------------------------------------------------
 // Which level the viewer is on decides the light (the sun up top, the
 // facility's lamps and torch below), the line-of-sight mask, and the grade
-// (paint up top). The swap happens while the lift's shut and moving, inside
-// the identical car, and the grade cross-fades over the ride, so stepping
-// out at the bottom is the first you see of the dark.
+// (paint up top). The swap happens at the end of the ride, doors still
+// shut, inside the identical car, so stepping out at the bottom is the
+// first you see of the dark.
 
 let paintLevel = 1;
 function stepLevel(x: number, z: number, dt: number): void {
@@ -1803,7 +1803,8 @@ function stepRide(dt: number): void {
   rideEl.style.opacity = riding ? "1" : "0";
   if (riding) {
     const left = Math.max(0, (lift.until ?? 0) - serverClock.now()) / LIFT_RIDE_MS;
-    const down = lift.at === "bottom";
+    // moving, the car is still at the level it's leaving
+    const down = lift.at === "top";
     rideFill.style.height = `${((down ? 1 - left : left) * 100).toFixed(1)}%`;
     rideLabel.textContent = down ? "descending" : "ascending";
   }

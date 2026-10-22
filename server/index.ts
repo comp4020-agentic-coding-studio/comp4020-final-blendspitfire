@@ -523,16 +523,19 @@ const lift = new Lift({
   aboard: (level) => [...connections.values()].filter((c) => !isDead(c) && inCar(level, c.player.x, c.player.z)).map((c) => c.player.id),
   attemptOn: () => attemptLocked(),
   onLevel: (level) => [...connections.values()].filter((c) => !isDead(c) && levelOf(c.player.z) === level).length,
+  shut(level) {
+    if (level !== "bottom" || !attemptLocked()) return;
+    for (const conn of connections.values()) {
+      if (!isDead(conn) && inCar("bottom", conn.player.x, conn.player.z)) standOutOfCar(conn);
+    }
+  },
   ride(from, to) {
     const dz = to === "bottom" ? -LIFT_DZ : LIFT_DZ;
     for (const conn of connections.values()) {
       if (isDead(conn) || !inCar(from, conn.player.x, conn.player.z)) continue;
+      // normally done when the doors shut; this catches an attempt that went live mid-ride
       if (from === "bottom" && attemptLocked()) {
-        // nobody leaves a live attempt: the doors won't shut on them, so
-        // they're stood back out in the corridor and the car goes up empty
-        conn.player.z = FACILITY_HALF - 1;
-        conn.player.x = Math.max(-1.5, Math.min(1.5, conn.player.x));
-        warped(conn);
+        standOutOfCar(conn);
         continue;
       }
       conn.player.z += dz;
@@ -552,6 +555,13 @@ const lift = new Lift({
     }
   },
 });
+
+/** nobody leaves a live attempt: the doors won't shut on them, so they're stood back out in the corridor */
+function standOutOfCar(conn: Connection): void {
+  conn.player.z = FACILITY_HALF - 1;
+  conn.player.x = Math.max(-1.5, Math.min(1.5, conn.player.x));
+  warped(conn);
+}
 
 function spawnItem(kind: ItemKind, x: number, z: number): void {
   const id = randomUUID();

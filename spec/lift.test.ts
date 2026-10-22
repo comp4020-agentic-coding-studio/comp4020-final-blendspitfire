@@ -36,6 +36,7 @@ function world(players: { x: number; z: number }[], attemptOn = () => false) {
     aboard: (level) => players.filter((p) => inCarAt(level, p)).map((_, i) => String(i)),
     onLevel: (level) => players.filter((p) => levelOf(p.z) === level).length,
     attemptOn,
+    shut() {},
     ride(from, to) {
       rides.push(`${from}->${to}`);
       for (const p of players) if (inCarAt(from, p)) p.z += to === "bottom" ? -LIFT_DZ : LIFT_DZ;
@@ -85,6 +86,19 @@ describe("the lift", () => {
     expect(levelOf(stayer.z)).toBe("top");
     expect(lift.state).toMatchObject({ at: "bottom", phase: "open" });
     expect(now).toBeGreaterThan(0);
+  });
+
+  it("rides at the level it leaves, and moves its riders only on arrival", () => {
+    const rider = { ...carMid("top") };
+    const { lift, rides } = world([rider]);
+    lift.send(0);
+    const midRide = run(lift, 0, LIFT_SHORT_WAIT_MS + LIFT_DOOR_MS + LIFT_RIDE_MS / 2);
+    expect(lift.state).toMatchObject({ at: "top", phase: "moving" });
+    expect(rides).toEqual([]);
+    expect(levelOf(rider.z)).toBe("top");
+    run(lift, midRide, LIFT_RIDE_MS / 2 + 100);
+    expect(lift.state).toMatchObject({ at: "bottom", phase: "opening" });
+    expect(rides).toEqual(["top->bottom"]);
   });
 
   it("goes back up on its own once it's left empty at the bottom", () => {

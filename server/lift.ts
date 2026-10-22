@@ -12,9 +12,10 @@ import {
 // with every tick. It sits open at one end until someone presses its
 // button; then it waits for the others (a short wait if everyone on that
 // level is already aboard), shuts, rides, and opens at the other end.
-// Whoever is inside when it starts moving goes with it: the server moves
-// them (and anything lying in the car) by LIFT_DZ in one step, and since
-// both cars are built identically nobody sees the jump.
+// Whoever is inside when the doors shut goes with it. The ride is felt at
+// the level it leaves (the car shakes there); only at the end of it does
+// the server move them (and anything lying in the car) by LIFT_DZ in one
+// step, and since both cars are built identically nobody sees the jump.
 
 export interface LiftWorld {
   /** ids of the players standing in the car at this level */
@@ -23,6 +24,8 @@ export interface LiftWorld {
   onLevel(level: LiftLevel): number;
   /** an attempt is on: nobody rides up, so the car goes back to the top whoever's standing in it */
   attemptOn(): boolean;
+  /** the doors have shut at this level: anyone who mayn't go is stood back out now, before the ride */
+  shut(level: LiftLevel): void;
   /** move everyone and everything in the car from one level to the other */
   ride(from: LiftLevel, to: LiftLevel): void;
 }
@@ -87,12 +90,14 @@ export class Lift {
     }
     if (s.until === undefined || now < s.until) return;
     if (s.phase === "closing") {
-      // the doors are shut: whoever's inside now is going
+      // the doors are shut: the ride starts here, still at the level it's leaving
+      this.world.shut(s.at);
+      this.state = { at: s.at, phase: "moving", until: now + LIFT_RIDE_MS };
+    } else if (s.phase === "moving") {
+      // arrived: whoever's inside now steps across, and the doors open on the other level
       const to = other(s.at);
       this.world.ride(s.at, to);
-      this.state = { at: to, phase: "moving", until: now + LIFT_RIDE_MS };
-    } else if (s.phase === "moving") {
-      this.state = { at: s.at, phase: "opening", until: now + LIFT_DOOR_MS };
+      this.state = { at: to, phase: "opening", until: now + LIFT_DOOR_MS };
     } else {
       this.state = { at: s.at, phase: "open" };
     }
