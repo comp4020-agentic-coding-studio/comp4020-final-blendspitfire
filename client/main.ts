@@ -65,6 +65,7 @@ import {
   DOOR_HALF_WIDTH,
   liftVerdict,
   noFireAt,
+  type LiftLevel,
   type LiftState,
   type LiftVerdict,
   SIGHT_BOUNDS,
@@ -1728,10 +1729,13 @@ function animate(): void {
   const view = viewPoint;
   const power = powerNow(time);
   halos.visible = power !== "out";
+  const shutCar = carShutAround(view.x, view.z);
   lighting.update(view.x, view.z, time, { reactorActive: objective.active, power, since: powerSince }, (lamp) => {
+    const at = lampSource(lamp);
+    // a shut car is sealed both ways: inside it only its own bulbs, outside none of them
+    if (!carLightPasses(shutCar, at.x, at.z)) return false;
     if (power === "full") return true;
     // a lamp lights the scene only if its light could reach what we see: in sight, or close
-    const at = lampSource(lamp);
     return Math.hypot(at.x - view.x, at.z - view.z) < LAMP_SPECS[lamp.kind].range * 0.5 || canSee(view.x, view.z, at.x, at.z, visibility.segs);
   });
   const coreColour = objective.active ? REACTOR_LIVE : REACTOR_STANDBY;
@@ -1771,6 +1775,25 @@ function animate(): void {
 // shut, inside the identical car, so stepping out at the bottom is the
 // first you see of the dark.
 
+/**
+ * The point lights have no shadows, so a shut car's walls and door don't
+ * stop them: left alone, the corridor's tubes light the car through its
+ * door and the car's bulbs spill out over the floor outside. Which lamps
+ * count is decided here instead, per car whose door is shut: the viewer
+ * inside gets only that car's lamps, outside none of them. Open (or
+ * opening), the light runs through the doorway as before.
+ */
+type ShutCar = { level: LiftLevel; inside: boolean };
+function carShutAround(x: number, z: number): ShutCar[] {
+  const now = serverClock.now();
+  return (["top", "bottom"] as const)
+    .filter((level) => liftDoorOpen(lift, level, now) < 0.05)
+    .map((level) => ({ level, inside: inCar(level, x, z) }));
+}
+function carLightPasses(shut: ShutCar[], x: number, z: number): boolean {
+  return shut.every((c) => inCar(c.level, x, z) === c.inside);
+}
+
 let paintLevel = 1;
 function stepLevel(x: number, z: number, dt: number): void {
   const level = levelOf(z);
@@ -1788,6 +1811,8 @@ function stepLevel(x: number, z: number, dt: number): void {
   const inside = inAnyCar(x, z);
   sunlight.setOn(up);
   sunlight.follow(x, z);
+  // in the top car the sky only gets in through the doorway, as far as the door's open
+  sunlight.setLevel(inCar("top", x, z) ? liftDoorOpen(lift, "top", serverClock.now()) : 1);
   const want = up && !inside ? 1 : up && lift.phase === "open" && lift.at === "top" ? 0.6 : 0;
   paintLevel += (want - paintLevel) * Math.min(1, dt * 2.5);
   post.effects.paint = paintLevel < 0.01 ? 0 : paintLevel;

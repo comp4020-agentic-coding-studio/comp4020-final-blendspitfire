@@ -44,6 +44,23 @@ function panel(): THREE.Group {
   return g;
 }
 
+/**
+ * The top car has no drawn roof (the camera looks down through it), so the
+ * low sun would light its floor as if it stood open to the sky. An unseen
+ * lid that only throws a shadow keeps the sun out but for what slants in
+ * through the doorway.
+ */
+function sunRoof(): THREE.Mesh {
+  const car = LIFT_CARS.top;
+  const roof = new THREE.Mesh(
+    box(car.maxX - car.minX + 0.6, 0.1, car.maxZ - car.minZ + 0.6),
+    new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }),
+  );
+  roof.position.set((car.minX + car.maxX) / 2, HEIGHT + 0.05, (car.minZ + car.maxZ) / 2);
+  roof.castShadow = true;
+  return roof;
+}
+
 export class LiftDoors {
   readonly group = new THREE.Group();
   private readonly leaves: Record<LiftLevel, [THREE.Mesh, THREE.Mesh]>;
@@ -62,6 +79,7 @@ export class LiftDoors {
       return pair;
     };
     this.leaves = { top: make("top"), bottom: make("bottom") };
+    this.group.add(sunRoof());
   }
 
   /** slide each pair to how open the server says that end is */

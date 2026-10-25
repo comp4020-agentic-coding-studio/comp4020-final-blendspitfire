@@ -2,7 +2,7 @@
 
 > **AI-recorded.** Written and kept current automatically by the coding agent (Claude Code) as its session-to-session handoff, not written by hand. Terse on purpose: it's for the next agent session to pick up from. Decision history lives in [adr.md](adr.md).
 
-Updated: 2026-10-22 (fifth round done: muzzle shimmer, loose guns lifted + glint, lift shakes before switching; awaiting user playtest; sixth round planned, not started; NOT pushed)
+Updated: 2026-10-25 (shut lift doors now block light; awaiting user playtest of fifth round + this; sixth round planned, not started; NOT pushed)
 
 ## Where we are
 - Crit 10 shipped (tag `crit-10` on origin at de1932b). Final project due 2026-11-09 12:00.
@@ -52,7 +52,7 @@ Updated: 2026-10-22 (fifth round done: muzzle shimmer, loose guns lifted + glint
   b. Loose guns were half-buried (sights below the receiver): GUN_REST_HEIGHT now measured from the lying geometry's bbox (lowest point 3.5 cm up). Lying gun x1.15 (GUN_LYING_SCALE); outlineGlint pulses every 2.5 s on unhovered loose guns (main.ts stepItemVisuals).
   c. Surface city (see Game: Surface).
   d. Lift: the ride (phase "moving", shake) always plays at the TOP: LiftState.going = destination, at = "top" while moving. Down: shake up top, warp at ride end. Up: warp as doors shut (ride() in closing->moving), shake on the surface. LiftWorld.shut(level) stands riders out of the bottom car during an attempt. Client: ride label from lift.going; shake = envelope on ride time. Sight mask: closed door leaves overlap 0.25 (FACE_INSET 0.15 per face left a seam you could see out through).
-- **Queued by user 2026-10-22, NOT started: shut lift doors don't block light.** The leaves block sight (mask) but light from outside still reaches into the car (and the car's bulbs spill out), so a shut car looks fake. Likely: point lights have no shadows (8-light pool, client/look.ts / dressing.ts) and the surface sun's shadow map may not include the leaves (client/world/lift.ts leaf meshes: castShadow?). Options to weigh: leaves cast sun shadows; while the car is shut, drop pool lights outside the car from affecting inside (or clamp by zone); dim what's past the door. Keep shadows/effects intact (user pref).
+- **Shut lift doors block light: DONE 2026-10-25 (awaiting user look; ADR draft "关门挡光", not yet in docs/adr.md).** Point lights have no shadows, so main.ts carShutAround()/carLightPasses() filter the lamp pool per car whose door is shut (open < 0.05): viewer inside gets only that car's bulbs, outside none of them. In the top car Sunlight.setLevel(door open fraction) dims sun + sky. lift.ts sunRoof(): invisible shadow-only lid over the top car so the sun only slants in through the doorway. Verified headless (no daylight on the shut car floor, no bulb spill, corridor lit normally, no console errors).
 - **Sixth round: tutorial + visual guidance (user plan 2026-10-22, decisions made, NOT started).** Build order:
   1. Snap marker system (L4D-style): a floating terminal-style tag pinned near a target; off-screen it clamps to the screen edge as an arrow pointing at it. Same UI style (VT323, pixel-step leader, client/ui/prompts.ts look). Uses: surface lift + scoreboard (always shown but faint/small; loud only when needed: lift countdown, first seconds after spawn); underground reactor until activated ("activate the reactor"); comms desk in every break + a green lamp (EMIT_GREEN) on top of the desk, lit in breaks, off when a wave starts; lift prep countdown = big countdown + hint top-centre on EVERYONE's screen, lift arrow turns loud.
   2. Ready vote: X toggles ready in a break (tap, not hold). Next wave starts 3 s after ALL living players below are ready, else at break end. E at the reactor in a break = same as X. Show ready status (n/m + per player). Resolves the old "skip = anyone vs vote" decision: vote.
@@ -64,6 +64,7 @@ Updated: 2026-10-22 (fifth round done: muzzle shimmer, loose guns lifted + glint
 3. Shop has three lines; more buildables when the user picks them.
 4. Still pending playtest from 2026-10-14: wound effects, CRT/daze strength, aggro 6, grace 1 s.
 5. Lighting option C (overhead fixtures + halos). Garden tutorial gating. No sound.
+- Idea from a teammate's playtest (2026-10-25, logged in ADR draft only, NOT to implement until the user decides): sprint on Space. Open: hold-to-run vs dash, stamina/cooldown, firing while sprinting; Space currently = grid snap while placing a turret.
 - Open user decisions (older): lift-return rule; overall grade/brightness; hall racks claustrophobic; hide /gallery.html in prod?
 - Docs: README "good" section unfinished (user writes). Authorship rule: skeleton only unless user dictated.
 

@@ -1041,6 +1041,8 @@ export function buildSurface(): THREE.Group {
  */
 export interface Sunlight {
   setOn(on: boolean): void;
+  /** 0..1 of full strength: the sky as seen from inside a part-shut lift car */
+  setLevel(level: number): void;
   follow(x: number, z: number): void;
 }
 
@@ -1064,6 +1066,10 @@ export function createSunlight(scene: THREE.Scene): Sunlight {
     setOn(on) {
       sun.visible = on;
       sky.visible = on;
+    },
+    setLevel(level) {
+      sun.intensity = 2.4 * level;
+      sky.intensity = 1.3 * level;
     },
     follow(x, z) {
       sun.position.set(x + offset.x, offset.y, z + offset.z);
