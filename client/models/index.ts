@@ -289,6 +289,33 @@ export function sentryTurret(): THREE.Group {
 }
 
 /**
+ * The comms set's call lamp: a green beacon in a small steel cage, clamped
+ * on top of the desk. Lit while a break is on (supply can be ordered, the
+ * next wave can be voted in), dark once a wave starts. The lens is its own
+ * mesh (named "lens") so the client can switch it.
+ */
+export function beaconLamp(): THREE.Group {
+  const cage = merge(
+    [
+      part(new THREE.CylinderGeometry(0.11, 0.13, 0.06, 8), STEEL.shade, 0, 0.03, 0),
+      ...[0, 1, 2, 3].map((i) => {
+        const a = (i / 4) * PI * 2 + PI / 4;
+        return part(box(0.025, 0.2, 0.025), STEEL.base, Math.sin(a) * 0.09, 0.15, Math.cos(a) * 0.09);
+      }),
+      part(new THREE.CylinderGeometry(0.1, 0.1, 0.03, 8), STEEL.shade, 0, 0.26, 0),
+    ],
+    "self",
+    0.05,
+  );
+  const g = new THREE.Group();
+  g.add(mesh(cage));
+  const lens = mesh(glowPart(new THREE.CylinderGeometry(0.07, 0.07, 0.16, 8), EMIT_GREEN, 0, 0.14, 0), "emissive");
+  lens.name = "lens";
+  g.add(lens);
+  return g;
+}
+
+/**
  * What comes through the breaches: a hunched, eyeless-looking thing on
  * four legs, the colour of old meat and wet concrete (greyed, inside the
  * gamut) --- except for two small red eyes, its one emitter, so it's found

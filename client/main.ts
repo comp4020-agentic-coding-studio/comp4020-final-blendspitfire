@@ -17,6 +17,7 @@ import { GRADE } from "./assets/grade.ts";
 import { VisibilityMask, canSee, sightBlockers } from "./visibility.ts";
 import { buildYardGuides } from "./floorGuides.ts";
 import { Prompts, type Prompt } from "./ui/prompts.ts";
+import { Markers, type Marker } from "./ui/markers.ts";
 import { Minimap } from "./ui/minimap.ts";
 import { buildSurface, createSunlight, scoreboardScreen } from "./world/surface.ts";
 import { LiftDoors, liftPanelAt } from "./world/lift.ts";
@@ -32,12 +33,13 @@ import {
   gun,
   heldGun,
   sentryTurret,
+  beaconLamp,
   spitter,
 } from "./models/index.ts";
 import { REACTOR_LIVE, REACTOR_STANDBY, buildFacility, reactorCore } from "./models/facility.ts";
 import { mesh } from "./models/kit.ts";
 import { LAMPS, LAMP_SPECS, lampSource } from "./world/dressing.ts";
-import { STENCIL, DANGER, OK, EMIT_TRACER, EMIT_ACID, EMIT_SPARK, AMBIENT_SKY } from "../shared/palette.ts";
+import { STENCIL, DANGER, OK, EMIT_GREEN, EMIT_TRACER, EMIT_ACID, EMIT_SPARK, AMBIENT_SKY } from "../shared/palette.ts";
 import { INTERP_DELAY_MS, ServerClock, SnapshotBuffer, Tracer } from "./netsync.ts";
 import { ENEMY_RADIUS, SPIT_SPLASH, WAVES_TO_WIN, waveSize, type DefenceState, type EnemyState, type SpitState } from "../shared/enemies.ts";
 import {
@@ -227,6 +229,18 @@ scene.add(core);
 const coreHalo = glow(REACTOR_STANDBY, 3.2, 0.5);
 coreHalo.position.set(REACTOR.x, 2.1, REACTOR.z);
 scene.add(coreHalo);
+
+// the comms set's green call lamp: lit through a break, dark once a wave is on
+const beacon = beaconLamp();
+beacon.position.set(SUPPLY_TERMINAL.x + 0.2, SUPPLY_TERMINAL.halfHeight * 2 * 0.62 + 0.03, SUPPLY_TERMINAL.z + 0.05);
+scene.add(beacon);
+const beaconLens = beacon.getObjectByName("lens") as THREE.Mesh;
+const beaconHalo = glow(EMIT_GREEN, 1.6, 0.6);
+beaconHalo.position.set(beacon.position.x, beacon.position.y + 0.2, beacon.position.z);
+scene.add(beaconHalo);
+const beaconLight = new THREE.PointLight(EMIT_GREEN, 0, 4, 2);
+beaconLight.position.set(beacon.position.x, beacon.position.y + 0.5, beacon.position.z);
+scene.add(beaconLight);
 let objective: ObjectiveState = { active: false };
 
 // Line of sight, one mask per level: the facility's walls below; up top the
@@ -318,6 +332,8 @@ let myWounds = 0;
 let myBandaged = 0;
 /** the warp count we've caught up with: moves are stamped with it (see PlayerState.warp) */
 let myWarp = 0;
+/** when we last appeared somewhere new (joined, respawned, rode the lift): markers shout for a few seconds after */
+let arrivedAt = 0;
 const remotes = new Map<string, RemotePlayer>();
 const serverClock = new ServerClock();
 const respawnEl = document.getElementById("respawn")!;
@@ -1036,6 +1052,97 @@ function renderPointerFeedback(): void {
   prompts.render(currentPrompts(), camera);
 }
 
+// --- Markers: where to go next ------------------------------------------------
+// Snap markers (client/ui/markers.ts) point at what matters on this level:
+// faint when it's just there to be found, loud when it's what to do now.
+// One gives way to the E prompt once you're standing at the thing.
+
+const markers = new Markers();
+/** how long after arriving somewhere the way on stays loud */
+const ARRIVAL_LOUD_MS = 8000;
+const MARKER_NEAR = 2.6;
+
+function currentMarkers(): Marker[] {
+  const out: Marker[] = [];
+  if (!localMesh || isDead() || myOut) return out;
+  const p = localMesh.position;
+  const from = { x: p.x, z: p.z };
+  const level = levelOf(p.z);
+  if (inAnyCar(p.x, p.z)) return out;
+  const now = serverClock.now();
+  const fresh = performance.now() - arrivedAt < ARRIVAL_LOUD_MS;
+  // standing at the thing, its E prompt says it all
+  const using = eTarget()?.kind;
+  const add = (m: Marker & { near?: { x: number; z: number } }): void => {
+    const near = m.near ?? m.at;
+    if (Math.hypot(near.x - p.x, near.z - p.z) < MARKER_NEAR) return;
+    if ((m.id === "m-reactor" && using === "reactor") || (m.id === "m-comms" && using === "terminal") || (m.id === "m-board" && using === "board")) return;
+    out.push({ ...m, from });
+  };
+  const door = LIFT_DOORS[level];
+  const leaving = lift.phase === "open" && lift.at === level && lift.departAt !== undefined;
+  const leavesIn = leaving ? Math.max(0, Math.ceil((lift.departAt! - now) / 1000)) : 0;
+  if (level === "top") {
+    const locked = attemptLocked();
+    add({ id: "m-lift", at: v3(door.x, 2.4, door.z), near: door, label: locked ? "lift · locked" : "lift · to the facility", detail: leaving ? `leaves in ${leavesIn}s` : undefined, loud: !locked && (leaving || fresh) });
+    add({ id: "m-board", at: v3(SCOREBOARD.x, 2.8, SCOREBOARD.z), label: "scores" });
+    return out;
+  }
+  const phase = defenceState.phase;
+  if (!objective.active) {
+    add({ id: "m-reactor", at: v3(REACTOR.x, 2.4, REACTOR.z), near: REACTOR, label: "activate the reactor", loud: true });
+  } else if (phase === "break") {
+    add({ id: "m-comms", at: v3(SUPPLY_TERMINAL.x, 2.2, SUPPLY_TERMINAL.z), near: SUPPLY_TERMINAL, label: "comms · order supply", detail: `quota ${funds}`, loud: true });
+  } else if (phase === "won") {
+    add({ id: "m-lift", at: v3(door.x, 2.4, door.z), near: door, label: "evacuate · lift up", detail: leaving ? `leaves in ${leavesIn}s` : undefined, loud: true });
+  }
+  // underground the lift is always findable before the attempt locks it in
+  if (!objective.active || phase === "won") {
+    if (phase !== "won") add({ id: "m-lift", at: v3(door.x, 2.4, door.z), near: door, label: "lift · back up", detail: leaving ? `leaves in ${leavesIn}s` : undefined, loud: leaving });
+  }
+  return out;
+}
+
+/** mirrors the server's attemptLocked(): an attempt is on and not yet won */
+function attemptLocked(): boolean {
+  return objective.active && defenceState.phase !== "won";
+}
+
+// The lift's prep countdown, big and top-centre on every screen whatever
+// level you're on: whoever wants to come has these seconds to get in.
+const countdownEl = document.createElement("div");
+countdownEl.className = "ui-countdown";
+countdownEl.innerHTML = '<div class="cd-num"></div><div class="cd-text"></div>';
+document.body.appendChild(countdownEl);
+const countdownNum = countdownEl.querySelector<HTMLDivElement>(".cd-num")!;
+const countdownText = countdownEl.querySelector<HTMLDivElement>(".cd-text")!;
+let lastCountdown = "";
+function renderCountdown(): void {
+  const on = lift.phase === "open" && lift.departAt !== undefined && !!localMesh;
+  countdownEl.classList.toggle("open", on);
+  if (!on) return;
+  const left = Math.max(0, Math.ceil((lift.departAt! - serverClock.now()) / 1000));
+  const p = localMesh!.position;
+  const aboard = inCar(lift.at, p.x, p.z);
+  const here = levelOf(p.z) === lift.at;
+  const dir = lift.at === "top" ? "down to the facility" : "up to the surface";
+  const text = aboard ? `you're aboard · ${dir}` : here ? `get in the lift to come · ${dir}` : `lift leaving the ${lift.at === "top" ? "surface" : "facility"}`;
+  const key = `${left}|${text}`;
+  if (key === lastCountdown) return;
+  lastCountdown = key;
+  countdownNum.textContent = `${left}`;
+  countdownText.textContent = text;
+}
+
+function stepBeacon(time: number): void {
+  const lit = objective.active && defenceState.phase === "break" && powerLevel !== "out";
+  const pulse = 0.75 + 0.25 * Math.sin(time * 4);
+  (beaconLens.material as THREE.MeshBasicMaterial).color.setScalar(lit ? 1 : 0.12);
+  beaconHalo.visible = lit;
+  beaconHalo.material.opacity = 0.55 * pulse;
+  beaconLight.intensity = lit ? 2.2 * pulse : 0;
+}
+
 let lastControlsText = "";
 function renderControls(): void {
   const held = myHeldItem();
@@ -1119,6 +1226,7 @@ const net = connect({
     myWounds = you.wounds ?? 0;
     myBandaged = you.bandaged ?? 0;
     myWarp = you.warp ?? 0;
+    arrivedAt = performance.now();
     myColor = you.color;
     localMesh = makeCharacter(you.color, true);
     localMesh.position.set(you.x, 0, you.z);
@@ -1155,6 +1263,7 @@ const net = connect({
         // stamp moves from here on with the new count
         if (localMesh && (p.warp ?? 0) !== myWarp) {
           myWarp = p.warp ?? 0;
+          arrivedAt = performance.now();
           localMesh.position.x = p.x;
           localMesh.position.z = p.z;
           continue;
@@ -1761,6 +1870,9 @@ function animate(): void {
   stepMuzzleFlash();
   stepItemVisuals(time);
   renderPointerFeedback();
+  markers.render(currentMarkers(), camera, hudEl.style.display === "block" ? hudEl.getBoundingClientRect().bottom + 40 : undefined);
+  renderCountdown();
+  stepBeacon(time);
   renderControls();
   renderDebug(dt);
 
