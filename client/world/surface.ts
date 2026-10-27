@@ -1044,6 +1044,8 @@ export interface Sunlight {
   /** 0..1 of full strength: the sky as seen from inside a part-shut lift car */
   setLevel(level: number): void;
   follow(x: number, z: number): void;
+  /** overhead: noon through a skylight (the training shed), rather than the garden's low afternoon sun */
+  setOverhead(on: boolean): void;
 }
 
 export function createSunlight(scene: THREE.Scene): Sunlight {
@@ -1060,7 +1062,9 @@ export function createSunlight(scene: THREE.Scene): Sunlight {
   sun.shadow.bias = -0.0015;
   sun.shadow.radius = 3;
   const sky = new THREE.HemisphereLight(0xc4dcf2, 0xb8c890, 1.3);
-  const offset = new THREE.Vector3(-9, 18, 7);
+  const low = new THREE.Vector3(-9, 18, 7);
+  const high = new THREE.Vector3(-1.5, 20, 1);
+  let offset = low;
   scene.add(sun, sun.target, sky);
   return {
     setOn(on) {
@@ -1074,6 +1078,9 @@ export function createSunlight(scene: THREE.Scene): Sunlight {
     follow(x, z) {
       sun.position.set(x + offset.x, offset.y, z + offset.z);
       sun.target.position.set(x, 0, z);
+    },
+    setOverhead(on) {
+      offset = on ? high : low;
     },
   };
 }

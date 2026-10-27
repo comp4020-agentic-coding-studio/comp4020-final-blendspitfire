@@ -22,6 +22,26 @@ import { Minimap } from "./ui/minimap.ts";
 import { buildSurface, createSunlight, scoreboardScreen } from "./world/surface.ts";
 import { LiftDoors, liftPanelAt } from "./world/lift.ts";
 import { Gore, Impacts } from "./world/gore.ts";
+import { buildTutorial, type TutorialView } from "./world/tutorial.ts";
+import { helicopter } from "./models/heli.ts";
+import {
+  CABIN,
+  DROP_PAD,
+  HELIPADS,
+  HELI_RIDE_MS,
+  LESSONS,
+  MOVE_PAD,
+  TUT_BOUNDS,
+  TUT_CLUSTER,
+  TUT_GUN_AT,
+  TUT_TARGETS,
+  TUT_WALLS,
+  inTutorial,
+  padAt,
+  roomAt,
+  shutTutDoors,
+  tutDoor,
+} from "../shared/tutorial.ts";
 import {
   GUN_REST_HEIGHT,
   HELD_GUN_OFFSET,
@@ -261,8 +281,35 @@ const surfaceVisibility = new VisibilityMask(
   [],
   SURFACE_SIGHT,
 );
+// the helicopter in the garden (its twin is part of the tutorial build)
+const gardenHeli = helicopter();
+gardenHeli.position.set(HELIPADS.garden.x, 0, HELIPADS.garden.z);
+gardenHeli.traverse((o) => {
+  if ((o as THREE.Mesh).isMesh) o.castShadow = o.receiveShadow = true;
+});
+surface.add(gardenHeli);
+const gardenRotor = gardenHeli.getObjectByName("rotor")!;
+const gardenRoof = gardenHeli.getObjectByName("roof")!;
+
+// The tutorial (client/world/tutorial.ts): built when you walk (or fly, or
+// join) into it, thrown away when you leave. Its own sight mask, as its
+// rooms have their own walls.
+let tutorialView: TutorialView | undefined;
+const tutorialVisibility = new VisibilityMask(
+  sightBlockers(TUT_WALLS, []),
+  [],
+  { minX: TUT_BOUNDS.minX - 2, maxX: TUT_BOUNDS.maxX + 2, minZ: TUT_BOUNDS.minZ - 2, maxZ: TUT_BOUNDS.maxZ + 2 },
+);
+/** this player's tutorial progress, from the server (undefined = not a trainee) */
+let myTut: number | undefined;
+let myTutHits: number[] | undefined;
+let myTutBlasted = false;
+/** riding a helicopter: when the ride ends (server time), 0 when not */
+let myFlyingUntil = 0;
+let lastTutDoorKey = "";
+
 let activeVisibility = visibility;
-let viewLevel: "top" | "bottom" = "bottom";
+let viewLevel: "top" | "bottom" | "tutorial" = "bottom";
 const minimap = new Minimap();
 let myColor = "#ffffff";
 post.setMask(activeVisibility.postMask(FACILITY_WALL_HALF_HEIGHT * 2 - 0.05));
@@ -550,8 +597,10 @@ function stepDust(): void {
   }
 }
 
-function updateItems(incoming: ItemState[]): void {
+function updateItems(all: ItemState[]): void {
   const seen = new Set<string>();
+  // someone else's tutorial props are theirs alone: not drawn, not offered (unless they're carrying it)
+  const incoming = all.filter((i) => i.owner === undefined || i.owner === myId || i.heldBy !== undefined);
   for (const state of incoming) {
     seen.add(state.id);
     const existing = items.get(state.id);
@@ -839,7 +888,8 @@ type Target =
   | { kind: "reactor" }
   | { kind: "lift" }
   | { kind: "terminal" }
-  | { kind: "board" };
+  | { kind: "board" }
+  | { kind: "heli" };
 
 const prompts = new Prompts();
 /** the scoreboard overlay is open */
@@ -882,6 +932,7 @@ const nearLiftButton = (): boolean => {
 function eTarget(): Target | undefined {
   if (!localMesh || isDead()) return undefined;
   const p = localMesh.position;
+  if (padAt(p.x, p.z)) return { kind: "heli" };
   if (nearLiftButton()) return { kind: "lift" };
   const held = myHeldItem();
   if (!held) {
@@ -997,11 +1048,26 @@ function useTarget(target: Target | undefined): void {
     const verdict = liftVerdict(localMesh.position, lift, objective, defenceState.phase);
     if (verdict === "send" || verdict === "call") net.lift();
     else prompts.nope("lift");
+  } else if (target.kind === "heli") {
+    const v = heliVerdict();
+    if (v === "ok") net.heli();
+    else prompts.nope("heli");
   } else if (target.kind === "terminal") toggleShop();
   else if (target.kind === "board") toggleBoard();
 }
 
 const v3 = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+
+/** mirrors the server's takeOff(): what E in a cabin would do */
+function heliVerdict(): "ok" | "flying" | "lessons" | "hands full" {
+  const p = localMesh!.position;
+  if (myFlyingUntil) return "flying";
+  const from = padAt(p.x, p.z);
+  if (from === "tutorial" && myTut !== undefined && myTut < LESSONS.length - 1) return "lessons";
+  if (from === "garden" && myHeldItem()) return "hands full";
+  return "ok";
+}
+const HELI_LABELS = { ok: "take off", flying: "in the air", lessons: "finish the lessons first", "hands full": "hands full: put it down (Q)" } as const;
 
 /** every prompt to show this frame */
 function currentPrompts(): Prompt[] {
@@ -1026,6 +1092,11 @@ function currentPrompts(): Prompt[] {
     out.push({ id: "terminal", at: v3(t.x - 0.8, 1.9, t.z + 0.3), key: "E", label: shopOpen ? "close supply uplink" : "order supply", detail: `crew quota: ${funds}` });
   } else if (target?.kind === "board") {
     out.push({ id: "board", at: v3(SCOREBOARD.x - 1.2, 2.6, SCOREBOARD.z), key: "E", label: boardOpen ? "close scores" : "read scores" });
+  } else if (target?.kind === "heli") {
+    const from = padAt(p.x, p.z)!;
+    const pad = HELIPADS[from];
+    const v = heliVerdict();
+    out.push({ id: "heli", at: v3(pad.x - CABIN.halfX, 1.6, pad.z - 0.6), key: v === "flying" ? "" : "E", label: HELI_LABELS[v], enabled: v === "ok", detail: from === "tutorial" ? "to the dig site" : "back to the training shed" });
   } else if (target?.kind === "lift") {
     const level = levelOf(p.z);
     const verdict = liftVerdict(p, lift, objective, defenceState.phase);
@@ -1090,7 +1161,7 @@ function currentMarkers(): Marker[] {
   const p = localMesh.position;
   const from = { x: p.x, z: p.z };
   const level = levelOf(p.z);
-  if (inAnyCar(p.x, p.z)) return out;
+  if (inAnyCar(p.x, p.z) || padAt(p.x, p.z)) return out;
   const now = serverClock.now();
   const fresh = performance.now() - arrivedAt < ARRIVAL_LOUD_MS;
   // standing at the thing, its E prompt says it all
@@ -1101,6 +1172,7 @@ function currentMarkers(): Marker[] {
     if ((m.id === "m-reactor" && using === "reactor") || (m.id === "m-comms" && using === "terminal") || (m.id === "m-board" && using === "board")) return;
     out.push({ ...m, from });
   };
+  if (inTutorial(p.x, p.z)) return tutorialMarkers(p, from);
   const door = LIFT_DOORS[level];
   const leaving = lift.phase === "open" && lift.at === level && lift.departAt !== undefined;
   const leavesIn = leaving ? Math.max(0, Math.ceil((lift.departAt! - now) / 1000)) : 0;
@@ -1108,6 +1180,7 @@ function currentMarkers(): Marker[] {
     const locked = attemptLocked();
     add({ id: "m-lift", at: v3(door.x, 2.4, door.z), near: door, label: locked ? "lift · locked" : "lift · to the facility", detail: leaving ? `leaves in ${leavesIn}s` : undefined, loud: !locked && (leaving || fresh) });
     add({ id: "m-board", at: v3(SCOREBOARD.x, 2.8, SCOREBOARD.z), label: "scores" });
+    add({ id: "m-heli", at: v3(HELIPADS.garden.x, 2.6, HELIPADS.garden.z), label: "helicopter · training" });
     return out;
   }
   const phase = defenceState.phase;
@@ -1122,6 +1195,48 @@ function currentMarkers(): Marker[] {
   if (!objective.active || phase === "won") {
     if (phase !== "won") add({ id: "m-lift", at: v3(door.x, 2.4, door.z), near: door, label: "lift · back up", detail: leaving ? `leaves in ${leavesIn}s` : undefined, loud: leaving });
   }
+  return out;
+}
+
+/**
+ * In the tutorial: one loud marker on what this lesson wants (the pad, the
+ * rifle, the targets still standing, the mat, the grenade then the huddle,
+ * the helicopter), and once it's done, the door that's just opened.
+ */
+function tutorialMarkers(p: THREE.Vector3, from: { x: number; z: number }): Marker[] {
+  const stage = myTut ?? LESSONS.length - 1;
+  const lesson = LESSONS[Math.min(stage, LESSONS.length - 1)];
+  const here = roomAt(p.x, p.z);
+  const out: Marker[] = [];
+  const mark = (id: string, x: number, z: number, label: string, y = 1.6) => {
+    if (Math.hypot(x - p.x, z - p.z) < 1.2) return;
+    out.push({ id, at: v3(x, y, z), label, loud: true, from });
+  };
+  // behind on the lessons (respawned, wandered back): the way on
+  if (here >= 0 && here < stage && stage < LESSONS.length) {
+    const d = tutDoor(here);
+    mark("t-door", d.x, d.z, "this way");
+    return out;
+  }
+  const held = myHeldItem();
+  const mine = (kind: string) => [...items.values()].find((i) => i.state.owner === myId && i.state.kind === kind && i.state.heldBy === undefined);
+  if (lesson === "move") mark("t-goal", MOVE_PAD.x, MOVE_PAD.z, "walk here · WASD", 0.6);
+  else if (lesson === "pickup") {
+    const gun = mine("gun");
+    const g = gun?.state ?? TUT_GUN_AT;
+    mark("t-goal", g.x, g.z, "rifle · E to pick up", 0.8);
+  } else if (lesson === "shoot") {
+    TUT_TARGETS.forEach((t, i) => {
+      if ((myTutHits?.[i] ?? 0) < 3) out.push({ id: `t-target${i}`, at: v3(t.x, 1.6, t.z), label: held ? "shoot" : "pick the rifle back up", loud: true, from });
+    });
+  } else if (lesson === "drop") mark("t-goal", DROP_PAD.x, DROP_PAD.z, held ? "put it down here · Q" : "rifle · E, then Q on the mat", 0.6);
+  else if (lesson === "grenade") {
+    const g = mine("grenade");
+    if (held?.state.kind === "grenade") {
+      const c = TUT_CLUSTER[0];
+      mark("t-goal", c.x, c.z, "throw it here · click", 1.8);
+    } else if (g) mark("t-goal", g.state.x, g.state.z, "grenade · E to pick up", 0.8);
+  } else if (lesson === "fly") mark("t-goal", HELIPADS.tutorial.x, HELIPADS.tutorial.z, "helicopter · step in, E", 2.4);
   return out;
 }
 
@@ -1249,6 +1364,7 @@ const net = connect({
     myWounds = you.wounds ?? 0;
     myBandaged = you.bandaged ?? 0;
     myWarp = you.warp ?? 0;
+    myTut = you.tut;
     arrivedAt = performance.now();
     myColor = you.color;
     localMesh = makeCharacter(you.color, true);
@@ -1282,6 +1398,10 @@ const net = connect({
         else if (wounds < myWounds && (p.bandaged ?? 0) > 0) showBanner("patched up — the next hit tears it open");
         myWounds = wounds;
         myBandaged = p.bandaged ?? 0;
+        myTut = p.tut;
+        myTutHits = p.tutHits;
+        myTutBlasted = !!p.tutBlasted;
+        myFlyingUntil = p.flyingUntil ?? 0;
         // the server moved us (a respawn, a lift ride): jump there now, and
         // stamp moves from here on with the new count
         if (localMesh && (p.warp ?? 0) !== myWarp) {
@@ -1806,6 +1926,8 @@ function animate(): void {
       if (pressed.has("a") || pressed.has("arrowleft")) dx -= 1;
       if (pressed.has("d") || pressed.has("arrowright")) dx += 1;
 
+      // aboard a helicopter that's taken off: sit tight till it lands
+      if (myFlyingUntil) dx = dz = 0;
       if (dx !== 0 || dz !== 0) {
         const len = Math.hypot(dx, dz);
         dx /= len;
@@ -1816,7 +1938,8 @@ function animate(): void {
         );
         const p = localMesh.position;
         const lockedOut = objective.active && levelOf(p.z) === "bottom" && !inCar("bottom", p.x, p.z);
-        const resolved = resolveObstacles(next.x, next.z, obstaclesFor(lift, lockedOut, obstacles));
+        const solid = obstaclesFor(lift, lockedOut, obstacles);
+        const resolved = resolveObstacles(next.x, next.z, inTutorial(p.x, p.z) ? [...solid, ...shutTutDoors(myTut ?? LESSONS.length)] : solid);
         localMesh.position.x = resolved.x;
         localMesh.position.z = resolved.z;
       }
@@ -1854,7 +1977,8 @@ function animate(): void {
     viewPoint.set(eye.x, 0, eye.z);
     const crew = [...remotes.values()].filter((r) => r.alive && levelOf(r.drawn.z) === viewLevel).map((r) => ({ x: r.drawn.x, z: r.drawn.z, color: r.color }));
     const me = dead ? undefined : { x: localMesh.position.x, z: localMesh.position.z, rotation: localMesh.rotation.y, color: myColor };
-    minimap.render({ level: viewLevel, self: me, crew, reactorActive: objective.active, time: clock.elapsedTime });
+    if (viewLevel === "tutorial") minimap.hide();
+    else minimap.render({ level: viewLevel, self: me, crew, reactorActive: objective.active, time: clock.elapsedTime });
   }
   renderSpectating(dt);
 
@@ -1880,6 +2004,7 @@ function animate(): void {
   liftDoors.update(lift, serverClock.now());
   updateSightDoors();
   stepRide();
+  stepHeliRide();
 
   stepRemotes();
   stepEnemies(time);
@@ -1932,23 +2057,46 @@ function carLightPasses(shut: ShutCar[], x: number, z: number): boolean {
 
 let paintLevel = 1;
 function stepLevel(x: number, z: number, dt: number): void {
-  const level = levelOf(z);
+  const level = inTutorial(x, z) ? "tutorial" : levelOf(z);
   if (level !== viewLevel) {
     viewLevel = level;
-    activeVisibility = level === "top" ? surfaceVisibility : visibility;
+    activeVisibility = level === "top" ? surfaceVisibility : level === "tutorial" ? tutorialVisibility : visibility;
     activeVisibility.invalidate();
-    // underground the wall tops are out of sight; outdoors there's nothing overhead to hide (tree crowns stand above the walls)
+    // underground (and in the shed) the wall tops are out of sight; outdoors there's nothing overhead to hide (tree crowns stand above the walls)
     post.setMask(activeVisibility.postMask(level === "top" ? 50 : FACILITY_WALL_HALF_HEIGHT * 2 - 0.05));
+    // the tutorial's built only while someone's looking at it
+    if (level === "tutorial" && !tutorialView) {
+      tutorialView = buildTutorial();
+      scene.add(tutorialView.group);
+    } else if (level !== "tutorial" && tutorialView) {
+      scene.remove(tutorialView.group);
+      tutorialView.dispose();
+      tutorialView = undefined;
+    }
+  }
+  if (tutorialView) {
+    tutorialView.update(myTut ?? LESSONS.length, myTutHits, myTutBlasted, clock.elapsedTime);
+    updateTutorialSight();
+  }
+  gardenRotor.rotation.y = clock.elapsedTime * 0.6 + rotorSpin;
+  // the camera's overhead: in a cabin, its roof and rotor are lifted off so you can see yourself
+  const aboard = padAt(x, z);
+  gardenRoof.visible = gardenRotor.visible = aboard !== "garden";
+  if (tutorialView) {
+    const heli = tutorialView.group;
+    heli.getObjectByName("roof")!.visible = heli.getObjectByName("rotor")!.visible = aboard !== "tutorial";
   }
   const up = level === "top";
   surface.visible = up;
   // in the car the light is the car's own bulbs whichever end it's at; the
   // sun and the paint only once you step out (or, riding, as you arrive)
   const inside = inAnyCar(x, z);
-  sunlight.setOn(up);
+  sunlight.setOn(up || level === "tutorial");
+  sunlight.setOverhead(level === "tutorial");
   sunlight.follow(x, z);
   // in the top car the sky only gets in through the doorway, as far as the door's open
   sunlight.setLevel(inCar("top", x, z) ? liftDoorOpen(lift, "top", serverClock.now()) : 1);
+  // in the shed it's daylight but the facility's plain look, not the garden's paint
   const want = up && !inside ? 1 : up && lift.phase === "open" && lift.at === "top" ? 0.6 : 0;
   paintLevel += (want - paintLevel) * Math.min(1, dt * 2.5);
   post.effects.paint = paintLevel < 0.01 ? 0 : paintLevel;
@@ -1957,7 +2105,40 @@ function stepLevel(x: number, z: number, dt: number): void {
   lighting.ambient.intensity = FACILITY_AMBIENT * fill * (1 - paintLevel);
   lighting.ambient.color.setHex(powerLevel === "full" ? 0xdfe8f0 : AMBIENT_SKY);
   // no headlamp in the sun
-  torch.light.intensity = 18 * (1 - paintLevel);
+  torch.light.intensity = level === "tutorial" ? 0 : 18 * (1 - paintLevel);
+  if (level === "tutorial") lighting.ambient.intensity = FACILITY_AMBIENT * 2;
+}
+
+/** the tutorial doors still shut to us block sight, like a wall */
+function updateTutorialSight(): void {
+  const key = `${myTut ?? -1}`;
+  if (key === lastTutDoorKey) return;
+  lastTutDoorKey = key;
+  tutorialVisibility.setExtra(shutTutDoors(myTut ?? LESSONS.length));
+}
+
+// --- The helicopter ride ------------------------------------------------------
+// E in a cabin (either one): the rotor winds up, the cabin shakes, the screen
+// fades to black, and you come up in the other one. Each rider flies alone
+// (unlike the lift, there's nothing to wait for), so it's per player.
+
+let rotorSpin = 0;
+const heliFadeEl = document.createElement("div");
+heliFadeEl.className = "ui-wipe";
+document.body.appendChild(heliFadeEl);
+function stepHeliRide(): void {
+  const left = myFlyingUntil ? Math.max(0, myFlyingUntil - serverClock.now()) : 0;
+  const k = myFlyingUntil ? 1 - left / HELI_RIDE_MS : 0;
+  rotorSpin += myFlyingUntil ? 0.6 + k * 1.5 : 0;
+  if (tutorialView) tutorialView.group.getObjectByName("rotor")!.rotation.y += myFlyingUntil ? 0.6 + k * 1.5 : 0;
+  // black over the last 40% of the ride, back in over the first moments after landing
+  const fade = myFlyingUntil ? Math.max(0, (k - 0.6) / 0.4) : 0;
+  heliFadeEl.style.opacity = `${Math.min(1, fade)}`;
+  if (myFlyingUntil && k > 0.1) {
+    const t = performance.now() / 1000;
+    camera.position.x += Math.sin(t * 31) * 0.03 * k;
+    camera.position.z += Math.cos(t * 27) * 0.03 * k;
+  }
 }
 
 /**
@@ -2325,7 +2506,8 @@ function renderDebug(dt: number): void {
   debugTime += dt;
   if (debugTime < 0.5) return;
   const ms = (debugTime / debugFrames) * 1000;
-  debugEl.textContent = `${(1000 / ms).toFixed(0)} fps · ${ms.toFixed(1)} ms · ${renderer.info.render.calls} draws · ${(renderer.info.render.triangles / 1000).toFixed(0)}k tris`;
+  const at = localMesh ? ` · ${localMesh.position.x.toFixed(1)},${localMesh.position.z.toFixed(1)}` : "";
+  debugEl.textContent = `${(1000 / ms).toFixed(0)} fps · ${ms.toFixed(1)} ms · ${renderer.info.render.calls} draws · ${(renderer.info.render.triangles / 1000).toFixed(0)}k tris${at}`;
   debugFrames = 0;
   debugTime = 0;
 }

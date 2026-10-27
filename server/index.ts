@@ -579,6 +579,7 @@ const tutorial = new Tutorial({
     const c = connections.get(id);
     if (c) act(c.player, what);
   },
+  throwing: (id) => [...grenades.values()].some((g) => g.ownerId === id),
 });
 
 /** what stops this player: the world, the lift's doors, and the tutorial doors still shut to them */
@@ -614,15 +615,17 @@ function stepFlights(now: number): void {
     const to = conn.flyTo;
     conn.flyingUntil = 0;
     conn.flyTo = undefined;
+    dropHeld(conn.player);
+    // flying back to train again starts the lessons over, at the shed's first room
     if (to.to === "tutorial") {
-      dropHeld(conn.player);
-      tutorial.enrol(conn.player.id).stage = LESSONS.length - 1;
+      tutorial.enrol(conn.player.id);
+      conn.player.x = TUT_SPAWN.x;
+      conn.player.z = TUT_SPAWN.z;
     } else {
-      dropHeld(conn.player);
       tutorial.leave(conn.player.id);
+      conn.player.x = to.x;
+      conn.player.z = to.z;
     }
-    conn.player.x = to.x;
-    conn.player.z = to.z;
     warped(conn);
     act(conn.player, to.to === "tutorial" ? "landed at the tutorial" : "landed in the garden");
   }

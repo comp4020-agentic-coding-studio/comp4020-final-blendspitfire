@@ -36,6 +36,8 @@ export interface TutorialWorld {
   changed(): void;
   /** a lesson done: say so in the log */
   log(playerId: string, what: string): void;
+  /** they've a grenade in the air right now (thrown, not yet gone off) */
+  throwing(playerId: string): boolean;
 }
 
 const near = (a: { x: number; z: number }, b: { x: number; z: number }, r: number) => Math.hypot(a.x - b.x, a.z - b.z) <= r;
@@ -112,7 +114,7 @@ export class Tutorial {
       } else if (!gun) this.give(playerId, "gun", DROP_PAD);
     } else if (lesson === "grenade") {
       if (t.blasted) this.pass(playerId, t);
-      else if (!this.mine(playerId, "grenade") && roomAt(at.x, at.z) === 4) this.give(playerId, "grenade", TUT_GRENADE_AT);
+      else if (!this.mine(playerId, "grenade") && !this.world.throwing(playerId) && roomAt(at.x, at.z) === 4) this.give(playerId, "grenade", TUT_GRENADE_AT);
     }
   }
 

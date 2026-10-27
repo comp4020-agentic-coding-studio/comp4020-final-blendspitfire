@@ -97,9 +97,9 @@ export function shutTutDoors(stage: number): Obstacle[] {
 
 const centre = (i: number) => ({ x: TUT_DX, z: (TUT_ROOMS[i].minZ + TUT_ROOMS[i].maxZ) / 2 });
 /** where a newcomer appears: the first room's north end */
-export const TUT_SPAWN = { x: TUT_DX - 1.5, z: TUT_ROOMS[0].minZ + 1.2 };
+export const TUT_SPAWN = { x: TUT_DX - 1.5, z: TUT_ROOMS[0].minZ + 2.6 };
 /** move: walk onto this pad at the room's south end */
-export const MOVE_PAD = { x: TUT_DX + 2, z: TUT_ROOMS[0].maxZ - 1.6, r: 1 };
+export const MOVE_PAD = { x: TUT_DX + 1.6, z: TUT_ROOMS[0].maxZ - 1.8, r: 1.2 };
 /** pickup: a rifle lies here */
 export const TUT_GUN_AT = centre(1);
 /** shoot: three targets along the west wall (the doorway's to the south, out of the line of fire), each down after TARGET_HITS */
@@ -176,10 +176,10 @@ export const GARDEN_HELI_OBSTACLES: Obstacle[] = heliObstacles(HELIPADS.garden);
 
 /** what each room's floor and marker say */
 export const LESSON_TEXT: Record<Lesson, { title: string; how: string }> = {
-  move: { title: "walk", how: "WASD to walk · onto the pad" },
-  pickup: { title: "pick up", how: "walk to the rifle · E to pick it up" },
-  shoot: { title: "shoot", how: "aim with the mouse · click to fire · drop every target" },
-  drop: { title: "put down", how: "stand on the mat · Q to put the rifle down" },
-  grenade: { title: "grenade", how: "E: pick it up · click to throw it at the huddle" },
-  fly: { title: "fly out", how: "step into the helicopter · E to take off" },
+  move: { title: "walk", how: "WASD · onto the ring" },
+  pickup: { title: "pick up", how: "E by the rifle" },
+  shoot: { title: "shoot", how: "aim · click · drop all three" },
+  drop: { title: "put down", how: "on the ring · Q" },
+  grenade: { title: "grenade", how: "E, then click the huddle" },
+  fly: { title: "fly out", how: "step in · E" },
 };

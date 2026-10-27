@@ -58,7 +58,7 @@ describe("tutorial layout", () => {
 describe("tutorial lessons", () => {
   function setup() {
     const items = new Map<string, ItemState>();
-    const t = new Tutorial({ items, changed: () => {}, log: () => {} });
+    const t = new Tutorial({ items, changed: () => {}, log: () => {}, throwing: () => false });
     const trainee = t.enrol("p");
     const mine = (kind: string) => [...items.values()].find((i) => i.owner === "p" && i.kind === kind);
     return { items, t, trainee, mine };
