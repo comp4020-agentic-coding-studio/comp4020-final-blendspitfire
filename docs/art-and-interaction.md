@@ -20,7 +20,8 @@ the shared materials in [`client/models/kit.ts`](../client/models/kit.ts):
 `matte` (paint, concrete, fabric), `tile` (sealed floors), `glossy` (bare
 metal) and `emissive` (lamps, LEDs, screens --- unlit). No textures, no
 per-model materials. Other exceptions, and only these: projectiles, the
-hover highlight, the placement preview, the floor guide decals, and gore
+hover highlight, the placement preview, the floor guide decals (and the
+tutorial shed's lesson stencils, `client/world/tutorial.ts`), and gore
 (`client/world/gore.ts`): blood decals and hit splashes in the two blood
 colours in the palette, the one surface colour allowed past the gamut so
 it stands out on a grey floor. Bodies are the live models, darkened.
@@ -159,7 +160,11 @@ right-click (not as a left click as well).
 your own character is easy to find (a ring at your feet, and your shoulder
 lamp in the dark), the controls for what you're holding are on screen, and
 new players learn from guides painted on the floor next to the thing
-they're about. One-way things say so before you commit: the lift's prompt says
+they're about. Where to go next is never a guess: a snap marker
+(`client/ui/markers.ts`) hangs over what matters on this level, faint
+while it's just there to be found, loud while it's what to do now, and
+pinned to the screen edge as an arrow when it's off screen. A newcomer's
+first visit is the tutorial shed, one lesson per room. One-way things say so before you commit: the lift's prompt says
 where it goes, and once an attempt is on, its prompt at the bottom says
 it's locked.
 

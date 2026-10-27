@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-10-21, third playtest round: lift (surface hidden underground), flat gore, lens-flare eyes, minimap
+Synced from the draft up to: 2026-10-28, sixth round built: snap markers, ready vote, helicopters, tutorial shed
 
 ---
 
@@ -697,3 +697,91 @@ Suggested minimal topology: safe room, one main corridor (bottleneck), a fork in
 - *Minimap* (the agent's design, awaiting review): bottom right in the terminal style, the plan of the current level with the crew in their colours, the player with a facing tick, the lift car, the reactor (blinking red until started, blue once live), and the supply terminal and surface stations. No crawlers: a plan, not a radar.
 
 **Why.** The developer's list. The minimap markers were chosen to point at what the group playtest (ADR-050) showed people missing: the way down, the reactor, the terminal. Leaving crawlers off it is the agent's choice, to keep the dark tense, and is open for the developer to reverse.
+
+## ADR-052: Fourth round — wild ruins, a spitter, grenades, buy-then-place turrets
+*2026-10-21 · Status: Accepted (agent's numbers awaiting playtest)*
+
+**Context.** The developer listed six items: wilder ruins (overgrown, darker plants); an enemy variant; better equipment; turrets bought straight into placement, paid only once placed, never moved after, only destroyed; turrets easier to recognise (a small green light and a green laser, a slow idle sweep); and more difficulty, where tougher enemies could stand in for more of them. For the variant and the equipment the developer gave only a direction, so the agent asked: the developer chose a **ranged spitter** (it forces players out of cover, unlike the crawler's bite) and **throwables / grenades** (crowd clearing).
+
+**Decision.**
+- *Ruins:* weeds, moss and hanging vines over every ruin outside the fence; the garden lawn left bright.
+- *Turrets:* ordering one opens a placement preview; the server checks and charges atomically on the click; Q/Esc cancels free. A built turret can't be picked up. When asked how it is destroyed, the developer chose **players may scrap it, with no refund**. That anyone can scrap any turret is the agent's choice.
+- *Spitter:* from wave 3, a growing share of each wave (same wave size); it holds at range, backs off when close, and lobs a visible glob at where the target stood. It hits players only, not the reactor (agent's choice).
+- *Grenade:* shop item; click to throw (range 8, stops at walls), short fuse, radius 2.6, kills a spitter outright.
+- Also from the developer's asks: wall hits became sparks and chips, the minimap moved bottom left, and a version label (semantic version plus commit hash, the developer chose both) sits bottom right to confirm deploys.
+
+**Why.** The developer's six items. Prices, damage, radius and shares are the agent's numbers, to be tuned in play.
+
+## ADR-053: An enemy kind's stats never scale with the wave
+*2026-10-22 · Status: Accepted*
+
+**Context.** ADR-052 had crawlers gain health and speed in later waves.
+
+**Decision.** In the developer's words: no numeric change without a visual one. A kind of enemy keeps fixed health and speed on every wave; a tougher enemy has to look different (a differently coloured elite is fine). The per-wave health and speed scaling was removed. Difficulty still comes from what can be seen: wave size, spawn rate and the spitter share.
+
+**Why.** The developer's rule: what a player sees should tell them what they're facing.
+
+## ADR-054: A city left two hundred years on the surface
+*2026-10-22 · Status: Accepted*
+
+**Context.** The developer found the ruins far too timid and asked the agent to imagine what a city left empty for two hundred years would look like.
+
+**Decision.** The agent proposed a mostly forested view from above: roofless wall stumps with trees inside, a few concrete frames with shrubs on top, broken asphalt, sunken car hulks, reed ponds, grey showing only through the green. A switchable sample went into the gallery. On the developer's feedback, a third of the trees came out, the range got a cracked car park with weeds instead of trees, plant colours went darker, rusted masts with sagging ivy cables now pass overhead, and the playable garden itself got rank grass, an old street, house footings and weeds (all ankle-high, kept clear of paths and stations). The developer approved it ("that's it, replace the old one"), and the old ruin code was removed. The version label was also made always visible.
+
+**Why.** The developer's direction and two rounds of feedback.
+
+## ADR-055: Fifth round — muzzle shimmer, visible guns, the lift ride always plays up top
+*2026-10-22 · Status: Accepted (awaiting the developer's look)*
+
+**Context.** The developer saw wall hits as "air distortion plus fine dust" and wanted the distortion at the muzzle; found guns on the ground hard to see; and wanted the lift to shake first and switch level after.
+
+**Decision.**
+- The "distortion" was a soft glow at the hit point that the retro grade quantised into stepped rings. It now plays at the muzzle on every shot; wall hits keep sparks and chips.
+- Guns were half buried: their resting height came from the receiver, but the sights stick out further on the side. Height is now measured from the model's bounds, guns lie 15% larger, and an unhovered gun gives a faint outline glint every 2.5 s.
+- The lift ride: on the developer's clarification, the shake always plays on the surface. Going down, it shakes up top and then switches; going up, it switches as the doors shut and then shakes. The shake follows the ride's own timing so it has settled before any switch. Closed doors now overlap in the sight mask, closing a seam you could see out through.
+
+**Why.** The developer's observations, each traced to its actual cause first.
+
+## ADR-056: Shut lift doors block light
+*2026-10-25 · Status: Accepted (awaiting the developer's look)*
+
+**Context.** The developer noted that a shut lift door only blocked sight, not light, which looked fake.
+
+**Decision.** Point lights cast no shadows, so with the door shut the lamps are filtered by where the viewer is: inside the car only its own bulbs, outside none of them. In the top car the sun and sky dim with the door, and an invisible, shadow-only lid lets sunlight in only through the doorway.
+
+**Why.** The developer's prior preference: fix it without trading away an effect (no turning shadows off).
+
+## ADR-057: Sprint on Space — an idea, not a decision
+*2026-10-25 · Status: Proposed (open)*
+
+**Context.** A teammate suggested a sprint bound to Space after a playtest.
+
+**Decision.** Logged only. Open questions for the developer: hold to run or a short dash, stamina or cooldown, firing while sprinting. Space is currently grid snap while placing a turret.
+
+**Why.** Recorded so it isn't lost; nothing built.
+
+## ADR-058: Sixth round plan — tutorial and visual guidance
+*2026-10-22 · Status: Accepted*
+
+**Context.** ADR-050 found nobody reached the lift, the reactor or the comms desk unprompted. The developer described the fix: a separate area teaching movement, picking up, firing and throwing room by room, ending in a transport helicopter with an open door that flies you to the surface, unloaded when empty; Left 4 Dead–style snap markers floating by what matters, edge arrows when off screen, on the lift and the scoreboard up top and toward the reactor below; a big countdown for everyone while the lift waits; a green lamp on the comms desk lit in breaks; a key (such as X) to start early, showing who's ready; a matching helicopter on the surface.
+
+**Decision.** The agent proposed the order markers → ready vote → helicopter → tutorial, so guidance lands first and is useful even if the tutorial isn't finished. On the agent's questions the developer chose: the tutorial is compulsory on a first visit (new cookie) and can be revisited by the surface helicopter; several newcomers share one area with per-player progress (doors open per player); the next wave starts early only once **everyone** alive below is ready (then 3 s), with E at the reactor the same as X, settling the old "anyone skips vs vote" question as a vote; surface markers are always shown but faint, loud only when needed (lift countdown, the first seconds after spawning).
+
+**Why.** The developer's plan, the order agreed for the deadline.
+
+## ADR-059: Sixth round built — markers, ready vote, helicopters, the tutorial shed
+*2026-10-28 · Status: Accepted (built overnight by the agent on the developer's go-ahead; details are the agent's choices, awaiting the developer's look)*
+
+**Context.** The developer asked for ADR-058 to be built while they slept, unable to approve anything, within a token budget.
+
+**Decision.**
+- *Markers:* a terminal-style tag over each target, clamped to the screen edge as an arrow with a distance when off screen; faint or loud as ADR-058 says. Loud: the lift for 8 s after arriving or while it counts down; the reactor until it's on; the comms set in every break; the lift up after a win. A marker gives way to the E prompt once you're at the thing, and drops below the wave panel at the top. The lift countdown is a big number top-centre on every screen. A caged green lamp on the comms desk is lit through each break.
+- *Ready vote:* X toggles your vote; once everyone alive below is ready the wave comes 3 s later (or at the break's end, if sooner); taking a vote back restores the break's end; deaths and lift rides recount every tick. The panel shows n/m ready and who.
+- *Where the tutorial is:* not a third level. It sits on the surface's band of Z, 80 units east, so every existing surface rule applies to it unchanged (safe from enemies, 3 s respawn, outside any attempt and the vote). This was chosen as the smallest and safest change. The client gives it its own view (sight mask, overhead noon sun, no headlamp, no paint grade), built only while you're in it.
+- *Lessons:* six rooms: walk onto a ring, pick up the rifle, drop three targets, put the rifle down on a ring, throw a grenade at a huddle of dummies, board the helicopter. Each room's lesson is stencilled by its way in; door lamps go red to green. The server keeps a stage per player, and the doors still shut to that player are their own obstacles. The rifle and grenade are items owned by that player: only they can take or see them, they are never saved, and they're cleared when the player leaves.
+- *Newcomer* means the server has no record of the cookie. `DEV_TUTORIAL=1` (local only) forces it, for testing.
+- *Helicopters:* one model, one in the last room and one in the garden. E in the cabin: rotor winds up, a shake, a fade to black, 2.6 s, then you're out. Per player, since there's no one to wait for. The cabin roof lifts away while you're inside. The tutorial one flies only after the first five lessons; the garden one won't take you with your hands full.
+- *One departure from the developer's words:* "fly back to practise again" can't mean landing in the twin cabin (that is the last room, past every lesson), so flying back from the garden restarts the lessons in room 1.
+- Found while testing: a trainee counted as "on the surface", making the garden lift wait its full 15 s for them; now excluded, and the countdown doesn't show in the shed. Two old tests assumed a garden spawn and now rejoin as a returning player.
+
+**Why.** The developer's plan (ADR-058); the placement and the restart were chosen to keep the change small and to make revisiting actually teach.
