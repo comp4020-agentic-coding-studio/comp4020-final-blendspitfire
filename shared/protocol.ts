@@ -142,6 +142,11 @@ export interface ActivateMessage {
   type: "activate";
 }
 
+/** a break's ready vote, toggled (X, or E at the reactor) */
+export interface ReadyMessage {
+  type: "ready";
+}
+
 /** the lift button: inside the car it sends it (after a wait for the others), outside its door it calls it */
 export interface LiftMessage {
   type: "lift";
@@ -243,6 +248,7 @@ export type ClientMessage =
   | PrimaryMessage
   | DropMessage
   | ActivateMessage
+  | ReadyMessage
   | LiftMessage
   | BuyMessage
   | BuildTurretMessage
@@ -819,7 +825,7 @@ export const OBSTACLES: Obstacle[] = [
 /** how close (centre to centre) a player has to be to switch the reactor on */
 export const ACTIVATE_RANGE = REACTOR.halfX + PICKUP_RANGE;
 
-export type ActivateVerdict = "ok" | "too far" | "already active" | "skip break" | "stable" | "dead";
+export type ActivateVerdict = "ok" | "too far" | "already active" | "ready" | "stable" | "dead";
 
 /**
  * Shared, so the client's hint says exactly what the server would decide. E
@@ -834,7 +840,7 @@ export function activateVerdict(player: { x: number; z: number }, objective: Obj
   if (!objective.active) return "ok";
   if (phase === "won") return "stable";
   if (phase === "blackout") return "dead";
-  return phase === "break" ? "skip break" : "already active";
+  return phase === "break" ? "ready" : "already active";
 }
 
 const SPAWN_Z = S.maxZ - 6;

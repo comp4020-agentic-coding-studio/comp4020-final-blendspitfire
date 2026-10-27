@@ -20,6 +20,7 @@ import {
   TURRET_HIT_POINTS,
   TURRET_RANGE,
   WAVE_BREAK_MS,
+  READY_LEAD_MS,
   WAVES_TO_WIN,
   waveSize,
   blackoutSpawnInterval,
@@ -95,6 +96,8 @@ export class Defence {
   private readonly enemies = new Map<string, Enemy>();
   private readonly field = new FlowField();
   private fieldKey = "";
+  /** break: when it would have ended, while an all-ready vote has brought the next wave forward */
+  private breakEndsAt: number | undefined;
   /** the blackout's hunt: a flow field to one of the crew, rebuilt as they move */
   private readonly hunt = new FlowField();
   private huntAt = 0;
@@ -125,6 +128,7 @@ export class Defence {
     const hp = (typeof process !== "undefined" ? Number(process.env?.DEV_REACTOR) || 0 : 0) || 1;
     this.state = { reactorHealth: hp, wave: 0, phase: "break", nextWaveAt: now + FIRST_WAVE_DELAY_MS };
     this.toSpawn = 0;
+    this.breakEndsAt = undefined;
     this.world.changed();
   }
 
@@ -276,11 +280,40 @@ export class Defence {
     }
   }
 
-  /** anyone can send the break early --- the one in it, or anyone else: ok while on a break */
-  skipBreak(now: number): boolean {
-    if (this.state.phase !== "break") return false;
-    this.state.nextWaveAt = now;
-    return true;
+  /**
+   * A ready vote in a break (X, or E at the reactor): toggles this player's
+   * vote. `voters` is everyone alive below. Once all of them are ready, the
+   * next wave comes READY_LEAD_MS later (or at the break's end, if that's
+   * sooner); a vote taken back before then holds it again. Returns whether
+   * they're now ready, or undefined when there's no break to vote in.
+   */
+  vote(id: string, voters: string[], now: number): boolean | undefined {
+    const s = this.state;
+    if (s.phase !== "break") return undefined;
+    const ready = new Set(s.ready ?? []);
+    const nowReady = !ready.has(id);
+    if (nowReady) ready.add(id);
+    else ready.delete(id);
+    s.ready = [...ready];
+    this.tallyVotes(voters, now);
+    return nowReady;
+  }
+
+  /** recount the ready vote against who's below now (someone leaving or dying can complete it) */
+  tallyVotes(voters: string[], now: number): void {
+    const s = this.state;
+    if (s.phase !== "break") return;
+    const ready = (s.ready ?? []).filter((id) => voters.includes(id));
+    s.ready = ready;
+    s.voters = voters.length;
+    const all = voters.length > 0 && ready.length >= voters.length;
+    if (all && this.breakEndsAt === undefined) {
+      this.breakEndsAt = s.nextWaveAt;
+      s.nextWaveAt = Math.min(s.nextWaveAt ?? now, now + READY_LEAD_MS);
+    } else if (!all && this.breakEndsAt !== undefined) {
+      s.nextWaveAt = this.breakEndsAt;
+      this.breakEndsAt = undefined;
+    }
   }
 
   private rebuildFieldIfBoxesMoved(): void {
@@ -324,6 +357,9 @@ export class Defence {
 
   private startWave(now: number): void {
     const s = this.state;
+    s.ready = undefined;
+    s.voters = undefined;
+    this.breakEndsAt = undefined;
     s.wave += 1;
     s.phase = "spawning";
     s.nextWaveAt = undefined;

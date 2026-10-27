@@ -64,8 +64,12 @@ export interface DefenceState {
   phase: "spawning" | "break" | "won" | "blackout";
   /** blackout: server time the power went, for how long the crew held out in the dark */
   blackoutAt?: number;
-  /** server time the next wave starts (spawning: when the gap ends; break: when it ends, unless skipped) */
+  /** server time the next wave starts (spawning: when the gap ends; break: when it ends, unless the crew votes it in early) */
   nextWaveAt?: number;
+  /** break: who's voted ready for the next wave (player ids) */
+  ready?: string[];
+  /** break: how many votes it takes (everyone alive below) */
+  voters?: number;
 }
 
 export const ENEMY_RADIUS = 0.38;
@@ -126,6 +130,8 @@ export const WAVES_TO_WIN =
 export const FIRST_WAVE_DELAY_MS = 10000;
 /** the breather between a cleared wave and the next */
 export const WAVE_BREAK_MS = 30000;
+/** once everyone below is ready, how long until the next wave comes */
+export const READY_LEAD_MS = 3000;
 /** never more than this many alive at once: the 256 MB machine is the limit */
 export const MAX_ENEMIES = 50;
 /**

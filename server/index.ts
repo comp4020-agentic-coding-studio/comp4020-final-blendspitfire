@@ -681,6 +681,18 @@ function handlePrimary(conn: Connection, x: number, z: number, now: number): voi
  * player counted as alive would still be standing where they died, and
  * anything there would kill them again the moment the timer expired.
  */
+/** everyone alive below: the ones a break's ready vote waits on */
+function voterIds(): string[] {
+  return [...connections.values()].filter((c) => !isDead(c) && levelOf(c.player.z) === "bottom").map((c) => c.player.id);
+}
+
+function voteReady(conn: Connection): void {
+  const ready = defence.vote(conn.player.id, voterIds(), Date.now());
+  if (ready === undefined) return;
+  const s = defence.state;
+  act(conn.player, `${ready ? "ready" : "not ready"} (${s.ready?.length ?? 0}/${s.voters ?? 0})`);
+}
+
 function isDead(conn: Connection): boolean {
   return conn.deadUntil !== 0;
 }
@@ -884,6 +896,12 @@ wss.on("connection", (socket, req) => {
       return;
     }
 
+    if (msg.type === "ready") {
+      if (defence.state.phase === "break" && objective.active && !isDead(conn) && levelOf(conn.player.z) === "bottom") voteReady(conn);
+      else refuse(conn, "ready", "refused: ready (no break on)");
+      return;
+    }
+
     if (msg.type === "activate") {
       const verdict = activateVerdict(conn.player, objective, defence.state.phase);
       if (verdict === "ok") {
@@ -900,9 +918,8 @@ wss.on("connection", (socket, req) => {
         act(conn.player, `switched the reactor on: attempt ${attempt.number} begins`);
         announce("the reactor is live — hold it");
         markWorldDirty();
-      } else if (verdict === "skip break") {
-        defence.skipBreak(Date.now());
-        act(conn.player, "sent the next wave early");
+      } else if (verdict === "ready") {
+        voteReady(conn);
       } else {
         refuse(conn, "activate", `refused: reactor switch (${verdict})`);
       }
@@ -1262,6 +1279,7 @@ setInterval(() => {
   // room before enemies or shots get a turn at them
   processRespawns(now);
   lift.step(now);
+  defence.tallyVotes(voterIds(), now);
   defence.step(now, BROADCAST_INTERVAL_MS / 1000);
   stepProjectiles(now);
   stepGrenades(now);

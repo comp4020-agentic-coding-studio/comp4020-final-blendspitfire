@@ -14,6 +14,7 @@ import {
   spitterShare,
   TURRET_RANGE,
   WAVE_BREAK_MS,
+  READY_LEAD_MS,
   WAVES_TO_WIN,
   waveSize,
 } from "../shared/enemies.ts";
@@ -218,15 +219,27 @@ describe("waves", () => {
     expect(d.state.wave).toBe(2);
   });
 
-  it("anyone can send the next wave early during a break, but not mid-wave", () => {
+  it("the next wave comes early only once everyone below is ready, and a vote taken back holds it", () => {
     const { w } = world([]);
     const d = new Defence(w, undefined);
     d.start(0);
-    expect(d.skipBreak(10)).toBe(true);
-    run(d, 0.1, 10);
-    expect(d.state.wave).toBe(1);
+    const end = d.state.nextWaveAt!;
+    expect(d.vote("a", ["a", "b"], 10)).toBe(true);
+    expect(d.state.nextWaveAt).toBe(end);
+    expect(d.state.ready).toEqual(["a"]);
+    expect(d.vote("b", ["a", "b"], 20)).toBe(true);
+    expect(d.state.nextWaveAt).toBe(20 + READY_LEAD_MS);
+    // b changes their mind: back to the break's own end
+    expect(d.vote("b", ["a", "b"], 30)).toBe(false);
+    expect(d.state.nextWaveAt).toBe(end);
+    // b dies (drops out of the voters): a alone is everyone
+    d.tallyVotes(["a"], 40);
+    expect(d.state.nextWaveAt).toBe(40 + READY_LEAD_MS);
+    run(d, READY_LEAD_MS / 1000 + 0.1, 40);
     expect(d.state.phase).toBe("spawning");
-    expect(d.skipBreak(200)).toBe(false);
+    expect(d.state.wave).toBe(1);
+    expect(d.state.ready).toBeUndefined();
+    expect(d.vote("a", ["a"], 9000)).toBeUndefined();
   });
 
   it("clearing the last wave wins: the facility goes quiet and stays on until the crew's out", () => {
@@ -319,7 +332,8 @@ describe("turrets", () => {
     const { w, paid } = world([]);
     const d = new Defence(w, undefined);
     d.start(0);
-    d.skipBreak(0);
+    d.vote("a", ["a"], 0);
+    d.state.nextWaveAt = 0;
     let now = run(d, 0.1);
     now = run(d, (waveSize(1) * spawnInterval(1)) / 1000 + 0.5, now);
     killAll(d);

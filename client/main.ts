@@ -317,6 +317,7 @@ interface RemotePlayer {
   watchable: boolean;
   color: string;
   alive: boolean;
+  name: string;
 }
 
 let myId: string | undefined;
@@ -815,7 +816,7 @@ function hoveringReactor(): boolean {
 const ACTIVATE_TIPS: Record<string, string> = {
   ok: "activate the reactor",
   "too far": "move closer",
-  "skip break": "send the next wave now",
+  ready: "ready for the next wave",
   "already active": "already active — defend it",
   stable: "reactor stable — get to the lift",
   dead: "the reactor's dead",
@@ -965,13 +966,32 @@ setInterval(() => {
   renderShop();
 }, 150);
 
+// --- The ready vote ------------------------------------------------------------
+// In a break, X (a tap, anywhere below) says you're ready for the next wave;
+// pressed again it takes it back. Once everyone alive below is ready the
+// wave comes 3 s later; otherwise the break runs its course. E at the
+// reactor is the same vote.
+
+const amReady = (): boolean => !!myId && (defenceState.ready ?? []).includes(myId);
+const readyCount = (): string => `${defenceState.ready?.length ?? 0}/${defenceState.voters ?? 0} ready`;
+function canVote(): boolean {
+  return !!localMesh && !isDead() && objective.active && defenceState.phase === "break" && levelOf(localMesh.position.z) === "bottom";
+}
+function toggleReady(): void {
+  if (!canVote()) {
+    if (localMesh && !isDead()) flash(objective.active && defenceState.phase !== "break" ? "ready vote: only between waves" : "ready vote: only below, between waves");
+    return;
+  }
+  net.ready();
+}
+
 function useTarget(target: Target | undefined): void {
   if (!target || !localMesh) return;
   if (target.kind === "item") net.pickup(target.item.state.id);
   else if (target.kind === "scrap") net.scrap(target.item.state.id);
   else if (target.kind === "reactor") {
     const verdict = activateVerdict(localMesh.position, objective, defenceState.phase);
-    if (verdict === "ok" || verdict === "skip break") net.activate();
+    if (verdict === "ok" || verdict === "ready") net.activate();
     else prompts.nope("reactor");
   } else if (target.kind === "lift") {
     const verdict = liftVerdict(localMesh.position, lift, objective, defenceState.phase);
@@ -998,7 +1018,9 @@ function currentPrompts(): Prompt[] {
     out.push({ id: `scrap:${s.id}`, at: v3(s.x, 0.9, s.z), key: "E", label: "scrap turret", detail: "no refund" });
   } else if (target?.kind === "reactor") {
     const verdict = activateVerdict(p, objective, defenceState.phase);
-    if (verdict !== "already active") out.push({ id: "reactor", at: v3(REACTOR.x - 0.6, 1.9, REACTOR.z + 0.4), key: verdict === "stable" || verdict === "dead" ? "" : "E", label: ACTIVATE_TIPS[verdict], enabled: verdict === "ok" || verdict === "skip break" });
+    const label = verdict === "ready" && amReady() ? "not ready after all" : ACTIVATE_TIPS[verdict];
+    const detail = verdict === "ready" ? readyCount() : undefined;
+    if (verdict !== "already active") out.push({ id: "reactor", at: v3(REACTOR.x - 0.6, 1.9, REACTOR.z + 0.4), key: verdict === "stable" || verdict === "dead" ? "" : "E", label, detail, enabled: verdict === "ok" || verdict === "ready" });
   } else if (target?.kind === "terminal") {
     const t = SUPPLY_TERMINAL;
     out.push({ id: "terminal", at: v3(t.x - 0.8, 1.9, t.z + 0.3), key: "E", label: shopOpen ? "close supply uplink" : "order supply", detail: `crew quota: ${funds}` });
@@ -1036,7 +1058,7 @@ function renderPointerFeedback(): void {
   if (localMesh && !isDead()) {
     if (hoveringReactor()) {
       const verdict = activateVerdict(localMesh.position, objective, defenceState.phase);
-      if (verdict === "ok" || verdict === "skip break") cursor = "pointer";
+      if (verdict === "ok" || verdict === "ready") cursor = "pointer";
     } else if (!held) {
       if (hoveredItem()?.inReach) cursor = "pointer";
     } else if (held.state.kind === "gun") {
@@ -1163,6 +1185,7 @@ function renderControls(): void {
     parts.push(BLOCKING_KINDS.has(held.state.kind) ? "Q: place" : "Q: drop");
     text = `WASD move · ${parts.join(" · ")}`;
   }
+  if (canVote()) text += amReady() ? " · X: not ready" : " · X: ready";
   if (text !== lastControlsText) {
     controlsEl.textContent = text;
     lastControlsText = text;
@@ -1424,7 +1447,7 @@ function primary(): void {
   // a click with something in hand is that item's action (firing over the reactor is firing); E still works
   if (hoveringReactor() && !held) {
     const verdict = activateVerdict(localMesh.position, objective, defenceState.phase);
-    if (verdict === "ok" || verdict === "skip break") net.activate();
+    if (verdict === "ok" || verdict === "ready") net.activate();
     else flash(ACTIVATE_TIPS[verdict]);
     return;
   }
@@ -1537,6 +1560,7 @@ window.addEventListener("keydown", (e) => {
   if (key === " ") secondary();
   else if (key === "q") drop();
   else if (key === "e") useTarget(eTarget());
+  else if (key === "x") toggleReady();
   else if (key === "escape" && boardOpen) toggleBoard();
   else if (key === "escape" && shopOpen) toggleShop(false);
   else if (key === "escape" && placingTurret) placingTurret = false;
@@ -1549,7 +1573,7 @@ window.addEventListener("keydown", (e) => {
 function addOrUpdateRemote(p: PlayerState, t: number): void {
   let remote = remotes.get(p.id);
   if (!remote) {
-    remote = { mesh: makeCharacter(p.color, false), snaps: new SnapshotBuffer(), drawn: { x: p.x, z: p.z, rotation: p.rotation }, watchable: false, color: p.color, alive: true };
+    remote = { mesh: makeCharacter(p.color, false), snaps: new SnapshotBuffer(), drawn: { x: p.x, z: p.z, rotation: p.rotation }, watchable: false, color: p.color, alive: true, name: p.name ?? "crew" };
     remote.mesh.position.set(p.x, 0, p.z);
     remotes.set(p.id, remote);
   }
@@ -2111,10 +2135,21 @@ function renderDefenceHud(): void {
   hudNext.textContent = [
     enemies.size ? `${enemies.size} hostile` : "",
     onBreak && next ? `wave ${defenceState.wave + 1} (${waveSize(defenceState.wave + 1)} hostiles) in ${nextIn}s` : "",
-    onBreak ? "E at reactor: send now · comms set: order supply" : "",
+    onBreak ? `${readyCount()} · ${readyNames()}` : "",
+    onBreak ? (amReady() ? "you're ready · X: take it back" : "X: ready · comms set: order supply") : "",
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+/** who's ready, by codename, the ones still to vote dimmed out of the list */
+function readyNames(): string {
+  const ready = new Set(defenceState.ready ?? []);
+  const names: string[] = [];
+  if (myId && ready.has(myId)) names.push("you");
+  for (const [id, r] of remotes) if (ready.has(id)) names.push(r.name);
+  const waiting = (defenceState.voters ?? 0) - ready.size;
+  return [names.length ? names.join(", ") : "", waiting > 0 ? `waiting on ${waiting}` : "all set"].filter(Boolean).join(" · ");
 }
 
 // The scoreboard: a screen in the garden (client/world/surface.ts) that

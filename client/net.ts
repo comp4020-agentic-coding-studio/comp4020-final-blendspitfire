@@ -16,6 +16,7 @@ export interface Net {
   primary: (x: number, z: number) => void;
   drop: () => void;
   activate: () => void;
+  ready: () => void;
   buy: (item: ShopItem) => void;
   buildTurret: (x: number, z: number) => void;
   scrap: (itemId: string) => void;
@@ -110,6 +111,9 @@ export function connect(handlers: NetHandlers): Net {
     },
     activate() {
       send({ type: "activate" });
+    },
+    ready() {
+      send({ type: "ready" });
     },
     lift() {
       send({ type: "lift" });
