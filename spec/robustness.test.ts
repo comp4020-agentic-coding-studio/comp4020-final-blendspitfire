@@ -76,10 +76,11 @@ it("won't let a client teleport, but lets an honest one walk", async () => {
   await wait(200);
   expect(Math.hypot(me(s).x - start.x, me(s).z - start.z)).toBeLessThan(1);
 
-  // walking straight ahead at a normal pace, 20 steps in one second
+  // walking straight ahead at a normal pace, 20 steps in one second (east:
+  // open floor whether they joined in the garden or, new, in the tutorial)
   const from = { ...me(s) };
   for (let i = 1; i <= 20; i++) {
-    s.ws.send(JSON.stringify({ type: "move", x: from.x, z: from.z - i * 0.15, rotation: 0 }));
+    s.ws.send(JSON.stringify({ type: "move", x: from.x + i * 0.15, z: from.z, rotation: 0 }));
     await wait(50);
   }
   await wait(200);

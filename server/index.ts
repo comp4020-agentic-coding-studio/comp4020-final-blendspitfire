@@ -11,6 +11,7 @@ import {
   loadItems,
   loadObjective,
   loadOrCreatePlayer,
+  loadPlayer,
   loadRun,
   loadFunds,
   saveFunds,
@@ -25,6 +26,16 @@ import {
 } from "./db.ts";
 import { Defence } from "./defence.ts";
 import { Lift } from "./lift.ts";
+import { Tutorial } from "./tutorial.ts";
+import {
+  HELI_RIDE_MS,
+  LESSONS,
+  TUT_SPAWN,
+  heliDestination,
+  inTutorial,
+  padAt,
+  shutTutDoors,
+} from "../shared/tutorial.ts";
 import { PLAYER_COLORS, codename } from "../shared/palette.ts";
 import {
   BROADCAST_INTERVAL_MS,
@@ -91,6 +102,7 @@ import {
   type ItemKind,
   type ItemState,
   type MoveMessage,
+  type Obstacle,
   type PlayerState,
   type ProjectileState,
   type ServerMessage,
@@ -228,6 +240,9 @@ interface Connection {
   /** shots fired and enemies killed since the last shot line in the log */
   shots: number;
   kills: number;
+  /** riding a helicopter: when the ride ends and where it puts them (0 = not flying) */
+  flyingUntil: number;
+  flyTo?: { x: number; z: number; to: string };
 }
 
 /** an honest client sends a move ~20 times a second plus the odd action */
@@ -556,6 +571,71 @@ const lift = new Lift({
   },
 });
 
+// The tutorial (server/tutorial.ts): per-player lessons and props.
+const tutorial = new Tutorial({
+  items,
+  changed: markWorldDirty,
+  log: (id, what) => {
+    const c = connections.get(id);
+    if (c) act(c.player, what);
+  },
+});
+
+/** what stops this player: the world, the lift's doors, and the tutorial doors still shut to them */
+function obstaclesOf(conn: Connection): Obstacle[] {
+  const base = obstaclesFor(lift.state, lockedOut(conn), worldObstacles(items.values()));
+  const t = tutorial.trainees.get(conn.player.id);
+  return inTutorial(conn.player.x, conn.player.z) ? [...base, ...shutTutDoors(t?.stage ?? LESSONS.length)] : base;
+}
+
+/** E in a helicopter's cabin: a short ride, then the same spot in the other one */
+function takeOff(conn: Connection, now: number): void {
+  const from = padAt(conn.player.x, conn.player.z);
+  if (!from || conn.flyingUntil) return;
+  // the tutorial's door is the lessons: its helicopter only flies once the rest are done
+  const t = tutorial.trainees.get(conn.player.id);
+  if (from === "tutorial" && t && t.stage < LESSONS.length - 1) {
+    refuse(conn, "heli", "refused: helicopter (lessons not done)");
+    return;
+  }
+  if (from === "garden" && heldItem(conn.player.id)) {
+    refuse(conn, "heli", "refused: helicopter (hands full)");
+    return;
+  }
+  const dest = heliDestination(from, conn.player.x, conn.player.z);
+  conn.flyingUntil = now + HELI_RIDE_MS;
+  conn.flyTo = dest;
+  act(conn.player, `took off: ${from} -> ${dest.to}`);
+}
+
+function stepFlights(now: number): void {
+  for (const conn of connections.values()) {
+    if (!conn.flyingUntil || now < conn.flyingUntil || !conn.flyTo) continue;
+    const to = conn.flyTo;
+    conn.flyingUntil = 0;
+    conn.flyTo = undefined;
+    if (to.to === "tutorial") {
+      dropHeld(conn.player);
+      tutorial.enrol(conn.player.id).stage = LESSONS.length - 1;
+    } else {
+      dropHeld(conn.player);
+      tutorial.leave(conn.player.id);
+    }
+    conn.player.x = to.x;
+    conn.player.z = to.z;
+    warped(conn);
+    act(conn.player, to.to === "tutorial" ? "landed at the tutorial" : "landed in the garden");
+  }
+}
+
+/** a tick for everyone in the tutorial: their lesson, their props */
+function stepTutorial(): void {
+  for (const conn of connections.values()) {
+    if (isDead(conn) || !tutorial.trainees.has(conn.player.id)) continue;
+    tutorial.step(conn.player.id, conn.player, heldItem(conn.player.id));
+  }
+}
+
 /** nobody leaves a live attempt: the doors won't shut on them, so they're stood back out in the corridor */
 function standOutOfCar(conn: Connection): void {
   conn.player.z = FACILITY_HALF - 1;
@@ -606,6 +686,12 @@ function heldItem(playerId: string): ItemState | undefined {
 function dropHeld(player: PlayerState): void {
   const item = heldItem(player.id);
   if (!item) return;
+  // a tutorial prop doesn't come out with them: it's gone (the lesson hands out another)
+  if (item.owner !== undefined && !inTutorial(player.x, player.z)) {
+    items.delete(item.id);
+    markWorldDirty();
+    return;
+  }
   item.heldBy = undefined;
   item.x = player.x;
   item.z = player.z;
@@ -636,14 +722,14 @@ function handlePrimary(conn: Connection, x: number, z: number, now: number): voi
       dx = Math.sin(conn.player.rotation);
       dz = Math.cos(conn.player.rotation);
     }
-    spawnProjectile(conn.player, dx, dz, now);
+    spawnProjectile(conn.player, dx, dz, now, MUZZLE_OFFSET, obstaclesOf(conn));
   } else if (item.kind === "grenade") {
     if (!Number.isFinite(x) || !Number.isFinite(z)) return;
     if (noFireAt(conn.player.x, conn.player.z)) {
       refuse(conn, "fire", "refused: throwing in the lift");
       return;
     }
-    const land = grenadeLanding(conn.player, x, z, worldObstacles(items.values()));
+    const land = grenadeLanding(conn.player, x, z, obstaclesOf(conn));
     items.delete(item.id);
     grenades.set(item.id, {
       id: item.id,
@@ -708,7 +794,15 @@ function netPlayer(conn: Connection, now: number): PlayerState {
     wounds: conn.wounds || undefined,
     bandaged: conn.bandaged || undefined,
     name: codename(conn.player),
+    ...tutWire(conn),
+    flyingUntil: conn.flyingUntil || undefined,
   };
+}
+
+function tutWire(conn: Connection): Partial<PlayerState> {
+  const t = tutorial.trainees.get(conn.player.id);
+  if (!t) return {};
+  return { tut: t.stage, tutHits: LESSONS[t.stage] === "shoot" ? t.hits : undefined, tutBlasted: t.blasted || undefined };
 }
 
 // The arcade board goes out when something on it changed, at most once a
@@ -743,10 +837,16 @@ wss.on("headers", (headers, req) => {
 wss.on("connection", (socket, req) => {
   const playerId = pendingIds.get(req) ?? randomUUID();
 
+  // someone the server's never seen starts in the tutorial; everyone else in
+  // the garden (the saved position only matters while connected)
+  const newcomer = !loadPlayer(playerId) || TUT_ALWAYS;
   const player = loadOrCreatePlayer(playerId);
-  // Everyone starts in the yard: the saved position only matters while
-  // connected (it's what a reconnect mid-session would otherwise restore).
   respawn(player, true);
+  if (newcomer && !DEV_SPAWN && !DEV_JOIN) {
+    tutorial.enrol(playerId);
+    player.x = TUT_SPAWN.x;
+    player.z = TUT_SPAWN.z;
+  }
   // (not counting this same player's older tab, which is about to be replaced)
   const taken = [...connections.values()].filter((c) => c.player.id !== playerId).map((c) => c.player.color);
   // a tab still open for this player keeps its colour: the database copy may
@@ -774,6 +874,7 @@ wss.on("connection", (socket, req) => {
     refusalLoggedAt: new Map(),
     shots: 0,
     kills: 0,
+    flyingUntil: 0,
   };
   // the same browser in a second tab (one cookie, one person): the newer
   // tab takes over and the older is closed, never two bodies for one id
@@ -868,7 +969,8 @@ wss.on("connection", (socket, req) => {
         tz = conn.player.z + ((tz - conn.player.z) / dist) * budget;
       }
       const clamped = clampToPlayBounds(tx, tz);
-      const resolved = resolveObstacles(clamped.x, clamped.z, obstaclesFor(lift.state, lockedOut(conn), worldObstacles(items.values())));
+      if (conn.flyingUntil) return; // aboard and away: they're not walking anywhere
+      const resolved = resolveObstacles(clamped.x, clamped.z, obstaclesOf(conn));
       // walls stop a walking player, but a client could still claim a
       // jump straight to the far side of one --- or from one level to the other
       if (!isWalkable(resolved.x, resolved.z) || levelOf(resolved.z) !== levelOf(conn.player.z)) {
@@ -893,6 +995,11 @@ wss.on("connection", (socket, req) => {
       } else {
         refuse(conn, "lift", `refused: lift (${verdict})`);
       }
+      return;
+    }
+
+    if (msg.type === "heli") {
+      takeOff(conn, now);
       return;
     }
 
@@ -992,6 +1099,8 @@ wss.on("connection", (socket, req) => {
       if (!item) return;
       // a built turret never leaves the floor except by scrapping it
       if (item.kind === "turret") return;
+      // someone else's tutorial prop is for them
+      if (item.owner !== undefined && item.owner !== playerId) return;
       if (item.heldBy !== undefined && item.heldBy !== playerId) {
         const holder = connections.get(item.heldBy);
         refuse(conn, "pickup", `refused: ${item.kind} ${shortId(item.id)} is in ${holder ? codename(holder.player) : "someone else"}'s hands`);
@@ -1027,6 +1136,7 @@ wss.on("connection", (socket, req) => {
   });
 
   socket.on("close", () => {
+    if (connections.get(playerId) === conn) tutorial.leave(playerId);
     dropHeld(conn.player);
     flushShots(conn);
     // a tab replaced by a newer one mustn't take the newer one down with it
@@ -1072,14 +1182,14 @@ interface ServerProjectile extends ProjectileState {
 
 const projectiles = new Map<string, ServerProjectile>();
 
-function spawnProjectile(owner: { id: string; x: number; z: number }, aimX: number, aimZ: number, now: number, muzzle = MUZZLE_OFFSET): void {
+function spawnProjectile(owner: { id: string; x: number; z: number }, aimX: number, aimZ: number, now: number, muzzle = MUZZLE_OFFSET, solid?: Obstacle[]): void {
   const len = Math.hypot(aimX, aimZ);
   const dirX = aimX / len;
   const dirZ = aimZ / len;
   const x = owner.x + dirX * muzzle;
   const z = owner.z + dirZ * muzzle;
   // the shooter's own tile (a turret) doesn't stop its shot
-  const range = shotRange(x, z, dirX, dirZ, worldObstacles([...items.values()].filter((i) => i.id !== owner.id)));
+  const range = shotRange(x, z, dirX, dirZ, solid ?? worldObstacles([...items.values()].filter((i) => i.id !== owner.id)));
   const id = randomUUID();
   projectiles.set(id, { id, ownerId: owner.id, x, z, dirX, dirZ, firedAt: now, range, travelled: 0, hit: "wall" });
 }
@@ -1101,12 +1211,20 @@ const DEV_SPAWN = devPoint(process.env.DEV_SPAWN);
 const DEV_JOIN = devPoint(process.env.DEV_JOIN);
 /** DEV_ARMED=1: everyone joins holding a rifle (local testing only, like the rest) */
 const DEV_ARMED = process.env.DEV_ARMED === "1";
+/** DEV_TUTORIAL=1: everyone joins in the tutorial, as a newcomer would (local testing only) */
+const TUT_ALWAYS = process.env.DEV_TUTORIAL === "1";
 
 function respawn(player: PlayerState, joining = false): void {
   const dev = DEV_SPAWN ?? (joining ? DEV_JOIN : undefined);
   if (dev) {
     player.x = dev.x;
     player.z = dev.z;
+    return;
+  }
+  // still in the tutorial: back to its start (their lessons done stay done)
+  if (!joining && tutorial.trainees.has(player.id)) {
+    player.x = TUT_SPAWN.x;
+    player.z = TUT_SPAWN.z;
     return;
   }
   const spawn = SPAWN_POINTS[Math.floor(Math.random() * SPAWN_POINTS.length)];
@@ -1134,6 +1252,7 @@ function stepGrenades(now: number): void {
     if (now < g.blowsAt) continue;
     grenades.delete(g.id);
     pendingBlasts.push({ x: g.tx, z: g.tz });
+    if (inTutorial(g.tx, g.tz)) tutorial.blast(g.ownerId, g.tx, g.tz, GRENADE_RADIUS);
     const killed = defence.blast(g.tx, g.tz, GRENADE_RADIUS, GRENADE_DAMAGE);
     for (const k of killed) {
       leaveGore({ kind: "blood", who: "enemy", x: k.x, z: k.z, size: 0.7 + Math.random() * 0.3 });
@@ -1179,6 +1298,16 @@ function stepProjectiles(now: number): void {
       p.travelled = p.range;
       p.hit = "wall";
       continue;
+    }
+    // a tutorial target of the shooter's stops it (only theirs: each trainee's targets are their own)
+    if (inTutorial(p.x, p.z)) {
+      const tAt = tutorial.shot(p.ownerId, p.x, p.z, p.dirX, p.dirZ, p.travelled, at);
+      if (tAt !== undefined) {
+        p.range = tAt;
+        p.travelled = tAt;
+        p.hit = "enemy";
+        continue;
+      }
     }
     // an enemy nearer along the line than any player takes the shot instead
     const enemyHit = defence.firstHit(p.x, p.z, p.dirX, p.dirZ, p.travelled, at);
@@ -1279,6 +1408,8 @@ setInterval(() => {
   // room before enemies or shots get a turn at them
   processRespawns(now);
   lift.step(now);
+  stepFlights(now);
+  stepTutorial();
   defence.tallyVotes(voterIds(), now);
   defence.step(now, BROADCAST_INTERVAL_MS / 1000);
   stepProjectiles(now);
@@ -1350,7 +1481,7 @@ function flushWorld(): void {
   }
   if (!worldDirty) return;
   worldDirty = false;
-  saveWorld(items.values(), objective, defence.state, (id) => connections.get(id)?.player);
+  saveWorld([...items.values()].filter((i) => i.owner === undefined), objective, defence.state, (id) => connections.get(id)?.player);
 }
 
 function flushPlayers(): void {

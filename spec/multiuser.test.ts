@@ -83,13 +83,21 @@ it("the same browser coming back is the same person; a second tab replaces the f
   again.ws.close();
 });
 
+/** join as someone who's been before: a brand-new browser starts in the tutorial, a returning one in the garden */
+async function rejoin(): Promise<Session> {
+  const first = await join();
+  first.ws.close();
+  await wait(100);
+  return join(first.cookie);
+}
+
 it("won't let one player take what another is holding", async () => {
-  const a = await join();
-  const b = await join();
+  const a = await rejoin();
+  const b = await rejoin();
   await wait(200);
   // both start in the intake, next to the stations
   const me = a.last!.players.find((p) => p.id === a.id)!;
-  const near = a.items!.filter((i) => !i.heldBy).sort((i, j) => Math.hypot(i.x - me.x, i.z - me.z) - Math.hypot(j.x - me.x, j.z - me.z))[0];
+  const near = a.items!.filter((i) => !i.heldBy && !(i as { owner?: string }).owner).sort((i, j) => Math.hypot(i.x - me.x, i.z - me.z) - Math.hypot(j.x - me.x, j.z - me.z))[0];
   // walk a over to it, a step a tick
   for (let i = 0; i < 80; i++) {
     const p = a.last!.players.find((q) => q.id === a.id)!;

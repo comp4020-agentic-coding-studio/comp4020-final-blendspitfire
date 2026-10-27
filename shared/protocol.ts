@@ -1,3 +1,4 @@
+import { GARDEN_HELI_OBSTACLES, TUT_OBSTACLES } from "./tutorial.ts";
 import type { DefenceState, EnemyState, SpitState } from "./enemies.ts";
 type Phase = DefenceState["phase"];
 
@@ -27,6 +28,14 @@ export interface PlayerState {
   name?: string;
   /** wire-only: patched up at the terminal; the wounds they had then, which the next hit brings straight back */
   bandaged?: number;
+  /** wire-only: in the tutorial, how many of its lessons they've done (shared/tutorial.ts) */
+  tut?: number;
+  /** wire-only: in the tutorial's shooting room, hits on each of its targets so far */
+  tutHits?: number[];
+  /** wire-only: in the tutorial, their grenade's caught the huddle */
+  tutBlasted?: true;
+  /** wire-only: riding a helicopter: server time the ride ends (they're moved then) */
+  flyingUntil?: number;
 }
 
 /** the facility's objective: for now just whether someone has switched the reactor on */
@@ -142,6 +151,11 @@ export interface ActivateMessage {
   type: "activate";
 }
 
+/** E in a helicopter's cabin: take off for the other one */
+export interface HeliMessage {
+  type: "heli";
+}
+
 /** a break's ready vote, toggled (X, or E at the reactor) */
 export interface ReadyMessage {
   type: "ready";
@@ -249,6 +263,7 @@ export type ClientMessage =
   | DropMessage
   | ActivateMessage
   | ReadyMessage
+  | HeliMessage
   | LiftMessage
   | BuyMessage
   | BuildTurretMessage
@@ -277,6 +292,8 @@ export interface ItemState {
   wear?: number;
   /** wire-only: a placed turret's barrel heading (radians, atan2(dx, dz)), set when it fires */
   aim?: number;
+  /** a tutorial prop: only this player can take it or sees it, and it's never saved */
+  owner?: string;
 }
 
 export interface ItemKindInfo {
@@ -405,8 +422,14 @@ export const levelOf = (z: number): LiftLevel => (z > LEVEL_SPLIT_Z ? "top" : "b
 export const inCar = (level: LiftLevel, x: number, z: number, margin = 0): boolean => inRect(LIFT_CARS[level], x, z, margin);
 export const inAnyCar = (x: number, z: number): boolean => inCar("top", x, z) || inCar("bottom", x, z);
 
+/**
+ * Where the tutorial (shared/tutorial.ts) may lie: east of the garden's
+ * ruins, on the surface's band of Z. Coarse on purpose, so this file needn't
+ * import that one; spec/tutorial.test.ts checks the rooms fit inside.
+ */
+export const TUT_AREA: Rect = { minX: 74, maxX: 86, minZ: 32, maxZ: 86 };
 /** everything anyone can stand in; movement is clamped to it before walls */
-export const PLAY_BOUNDS: Rect = { minX: FACILITY.minX, maxX: FACILITY.maxX, minZ: FACILITY.minZ, maxZ: LIFT_CARS.top.maxZ };
+export const PLAY_BOUNDS: Rect = { minX: FACILITY.minX, maxX: TUT_AREA.maxX, minZ: FACILITY.minZ, maxZ: TUT_AREA.maxZ };
 /** as far as sight reaches in the facility: a little past the outer walls, so a breach shows what's just beyond it and no further */
 export const SIGHT_BOUNDS: Rect = { minX: -FACILITY_HALF - 3, maxX: FACILITY_HALF + 3, minZ: -FACILITY_HALF - 3, maxZ: CAR_BOTTOM.maxZ + 1 };
 
@@ -495,6 +518,7 @@ export const SOLID: Rect[] = [
  * are not.
  */
 export const isWalkable = (x: number, z: number): boolean =>
+  inRect(TUT_AREA, x, z) ||
   ROOM_LIST.some((r) => inRect(r, x, z)) ||
   inAnyCar(x, z) ||
   inRect(SURFACE, x, z) ||
@@ -815,6 +839,8 @@ export const SCOREBOARD = SURFACE_FIXTURES.find((f) => f.kind === "scoreboard")!
 export const SCOREBOARD_RANGE = 2.8;
 
 export const OBSTACLES: Obstacle[] = [
+  ...TUT_OBSTACLES,
+  ...GARDEN_HELI_OBSTACLES,
   ...WALLS,
   ...LIFT_HOUSE_WALLS,
   ...FENCES,
