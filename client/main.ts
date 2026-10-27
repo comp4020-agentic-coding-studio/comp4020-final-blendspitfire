@@ -1255,7 +1255,7 @@ const countdownNum = countdownEl.querySelector<HTMLDivElement>(".cd-num")!;
 const countdownText = countdownEl.querySelector<HTMLDivElement>(".cd-text")!;
 let lastCountdown = "";
 function renderCountdown(): void {
-  const on = lift.phase === "open" && lift.departAt !== undefined && !!localMesh;
+  const on = lift.phase === "open" && lift.departAt !== undefined && !!localMesh && !inTutorial(localMesh.position.x, localMesh.position.z);
   countdownEl.classList.toggle("open", on);
   if (!on) return;
   const left = Math.max(0, Math.ceil((lift.departAt! - serverClock.now()) / 1000));

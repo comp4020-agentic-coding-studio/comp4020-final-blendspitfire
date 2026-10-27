@@ -537,7 +537,8 @@ function warped(conn: Connection): void {
 const lift = new Lift({
   aboard: (level) => [...connections.values()].filter((c) => !isDead(c) && inCar(level, c.player.x, c.player.z)).map((c) => c.player.id),
   attemptOn: () => attemptLocked(),
-  onLevel: (level) => [...connections.values()].filter((c) => !isDead(c) && levelOf(c.player.z) === level).length,
+  // (someone in the tutorial isn't anywhere near the garden lift: the car doesn't wait for them)
+  onLevel: (level) => [...connections.values()].filter((c) => !isDead(c) && levelOf(c.player.z) === level && !inTutorial(c.player.x, c.player.z)).length,
   shut(level) {
     if (level !== "bottom" || !attemptLocked()) return;
     for (const conn of connections.values()) {
