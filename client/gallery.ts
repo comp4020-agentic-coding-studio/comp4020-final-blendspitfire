@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { CAMERA_ALTITUDE, CAMERA_FOV, configureRenderer, crawlerEyes, lampHalos, setupLighting } from "./look.ts";
 import { brute, character, crawler, floorSlab, runner } from "./models/index.ts";
-import { BRUTE_SCALE } from "../shared/enemies.ts";
+import { BRUTE_SCALE, EVAC_SHUT_MS, type EvacState } from "../shared/enemies.ts";
+import { EvacView } from "./world/evac.ts";
 import { ASSETS } from "./models/registry.ts";
 import { REACTOR_LIVE, REACTOR_STANDBY, buildFacility, reactorCore } from "./models/facility.ts";
 import { createPostProcess } from "./postprocess.ts";
@@ -19,6 +20,7 @@ import {
   FIXTURES,
   REACTOR,
   SIGHT_BOUNDS,
+  BLAST_DOOR,
   SOLID,
   SURFACE,
   WALLS,
@@ -60,7 +62,7 @@ function facilityView(): void {
   scene.add(
     buildFacility({
       zones: ZONE_RECTS,
-      walls: WALLS,
+      walls: WALLS.filter((w) => w !== BLAST_DOOR),
       doorways: DOORWAYS.concat(TOP_DOOR),
       solids: SOLID,
       fixtures: FIXTURES,
@@ -124,7 +126,16 @@ function facilityView(): void {
   cam.position.set(cx, close ? CAMERA_ALTITUDE : 60, cz);
   cam.lookAt(cx, 0, cz);
 
-  const visibility = new VisibilityMask(sightBlockers(WALLS, FIXTURES), SOLID, SIGHT_BOUNDS);
+  // &evac=shut|open|rise[&at=ms]: the blast door and freight lift at that stage of the way out
+  const evacView = new EvacView();
+  scene.add(evacView.group);
+  const evacMode = params.get("evac");
+  const evacAt = Number(params.get("at") ?? 0);
+  const evac: EvacState | undefined =
+    evacMode === "open" ? { doorAt: -1e9 } : evacMode === "rise" ? { doorAt: -1e9, boardBy: -1e7, shutAt: -1e7 } : evacMode === "opening" ? { doorAt: 0 } : undefined;
+  // a clock for the stage: "rise" starts the climb at &at= ms in (so its pages and shaft can be judged)
+  const evacNow = (): number => (evacMode === "rise" ? -1e7 + EVAC_SHUT_MS + evacAt + clock.getElapsedTime() * 1000 : evacMode === "opening" ? evacAt + clock.getElapsedTime() * 1000 : 0);
+  const visibility = new VisibilityMask(sightBlockers(WALLS.filter((w) => w !== BLAST_DOOR), FIXTURES), SOLID, SIGHT_BOUNDS);
   const masked = close && !params.has("nomask");
   if (masked) post.setMask(visibility.postMask(FACILITY_WALL_HALF_HEIGHT * 2 - 0.05));
   const live = params.has("live");
@@ -134,7 +145,11 @@ function facilityView(): void {
     post.setSize(window.innerWidth, window.innerHeight);
     cam.aspect = window.innerWidth / window.innerHeight;
     cam.updateProjectionMatrix();
-    if (masked) visibility.update(renderer, cx, cz);
+    evacView.update(evac, evacNow(), clock.getElapsedTime());
+    if (masked) {
+      visibility.setExtra(evacView.doorOccluders(evac, evacNow()));
+      visibility.update(renderer, cx, cz);
+    }
     // the overview is lit everywhere at once, so every lamp gets a light
     lighting.update(cx, cz, clock.getElapsedTime(), { reactorActive: live });
     post.render(scene, cam);

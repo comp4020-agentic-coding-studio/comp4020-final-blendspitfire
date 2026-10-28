@@ -16,7 +16,7 @@
         --ui-font: 400 19px/1.05 "VT323", ui-monospace, "SF Mono", Menlo, monospace; }
       html, body { margin: 0; height: 100%; background: #111; overflow: hidden; }
       canvas { display: block; }
-      .ui-frame, #leaderboard, #board .board-panel, #shop .board-panel, .ui-report, .ui-hud, .ui-ready, .ui-name, .ui-wounds, .ui-spectate, .ui-banner, #connection-lost {
+      .ui-frame, #leaderboard, #board .board-panel, #shop .board-panel, .ui-report, .ui-hud, .ui-ready, .ui-name, .ui-settle, .ui-wounds, .ui-spectate, .ui-banner, #connection-lost {
         position: fixed; color: var(--ui); font: var(--ui-font); letter-spacing: 0.06em; text-transform: uppercase;
         padding: 8px 12px; pointer-events: none; text-shadow: 0 0 6px var(--ui-glow), 0 1px 0 #000;
         border: 2px solid var(--ui-dim); border-radius: 0;
@@ -96,6 +96,33 @@
       .ui-name input { font: 400 40px/1 "VT323", ui-monospace, monospace; letter-spacing: 0.18em; text-transform: uppercase; text-align: center;
         width: 9em; color: var(--ui); background: transparent; border: none; border-bottom: 2px solid var(--ui); outline: none; caret-color: var(--ui); }
       .ui-name .why { color: #ff7a6a; min-height: 1em; }
+      /* the settlement: a big company printout over the climb */
+      .ui-settle { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(620px, 90vw); display: none; padding: 18px 26px;
+        border-color: var(--ui); background-color: rgba(8, 9, 8, 0.86); z-index: 7; }
+      .ui-settle.open { display: block; }
+      .ui-settle .title { font-size: 34px; letter-spacing: 0.16em; border-bottom: 2px dashed var(--ui-dim); padding-bottom: 4px; margin-bottom: 4px; }
+      .ui-settle .title.small { font-size: 24px; margin-top: 14px; }
+      .ui-settle .sub { color: var(--ui-dim); margin-bottom: 12px; }
+      .ui-settle .head, .ui-settle .row, .ui-settle .total { display: flex; gap: 14px; padding: 2px 0; }
+      .ui-settle .head { color: var(--ui-dim); border-bottom: 1px solid var(--ui-dim); margin-bottom: 4px; }
+      .ui-settle .head > span, .ui-settle .row > span { min-width: 3.4em; text-align: right; }
+      .ui-settle .name { flex: 1; text-align: left !important; }
+      .ui-settle .num { min-width: 7em !important; font-variant-numeric: tabular-nums; }
+      .ui-settle .row, .ui-settle .total { opacity: 0; transform: translateX(-6px); transition: opacity 0.25s steps(3), transform 0.25s steps(3); }
+      .ui-settle .row.in, .ui-settle .total.in { opacity: 1; transform: none; }
+      .ui-settle .row.me { color: #fff; text-shadow: 0 0 8px var(--ui-glow); }
+      .ui-settle .minus { color: #ff8a7a; }
+      .ui-settle .total { margin-top: 8px; padding-top: 6px; border-top: 2px solid var(--ui); font-size: 30px; }
+      .ui-settle .tag { font-weight: 400; color: #0b0c0e; background: var(--ui); padding: 0 6px; text-shadow: none; }
+      .ui-thanks { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+        color: var(--ui); font: var(--ui-font); letter-spacing: 0.2em; text-transform: uppercase; z-index: 8; pointer-events: none;
+        text-shadow: 0 0 10px var(--ui-glow); }
+      .ui-thanks.open { display: flex; animation: thanks-in 1.2s steps(6); }
+      .ui-thanks .logo { font-size: 72px; letter-spacing: 0.3em; border: 3px solid var(--ui); padding: 4px 22px 0; }
+      .ui-thanks .sub { color: var(--ui-dim); font-size: 16px; }
+      .ui-thanks .line { color: var(--ui-dim); font-size: 22px; }
+      .ui-thanks .line.big { color: var(--ui); font-size: 34px; margin-top: 18px; }
+      @keyframes thanks-in { from { opacity: 0; } }
       .ui-wounds { left: 14px; bottom: 40px; display: none; }
       .ui-wounds .pip { display: inline-block; width: 12px; height: 12px; margin-right: 4px; border: 2px solid var(--ui-dim); }
       .ui-wounds .pip.hit { background: #ff5a5a; border-color: #ff5a5a; }

@@ -21,6 +21,8 @@ import { Markers, type Marker } from "./ui/markers.ts";
 import { Minimap } from "./ui/minimap.ts";
 import { buildSurface, createSunlight, scoreboardScreen } from "./world/surface.ts";
 import { LiftDoors, liftPanelAt } from "./world/lift.ts";
+import { Settlement } from "./ui/settlement.ts";
+import { EvacView } from "./world/evac.ts";
 import { Gore, Impacts } from "./world/gore.ts";
 import { buildTutorial, type TutorialView } from "./world/tutorial.ts";
 import { helicopter } from "./models/heli.ts";
@@ -60,9 +62,18 @@ import {
 import { REACTOR_LIVE, REACTOR_STANDBY, buildFacility, reactorCore } from "./models/facility.ts";
 import { mesh } from "./models/kit.ts";
 import { LAMPS, LAMP_SPECS, lampSource } from "./world/dressing.ts";
-import { STENCIL, DANGER, OK, EMIT_AMBER, EMIT_GREEN, EMIT_TRACER, EMIT_ACID, EMIT_SPARK, AMBIENT_SKY } from "../shared/palette.ts";
+import { STENCIL, DANGER, OK, EMIT_AMBER, EMIT_GREEN, EMIT_TRACER, EMIT_ACID, EMIT_SPARK, AMBIENT_SKY, codename } from "../shared/palette.ts";
 import { INTERP_DELAY_MS, ServerClock, SnapshotBuffer, Tracer } from "./netsync.ts";
-import { BRUTE_SCALE, ENEMY_RADIUS, SPIT_SPLASH, WAVES_TO_WIN, waveSize, type DefenceState, type EnemyKind, type EnemyState, type SpitState } from "../shared/enemies.ts";
+import {
+  BRUTE_SCALE,
+  ENEMY_RADIUS,
+  FREIGHT_BOARD_MS,
+  SPIT_SPLASH,
+  WAVES_TO_WIN,
+  blastDoorOpen,
+  evacStage,
+  waveSize,
+  type DefenceState, type EnemyKind, type EnemyState, type SpitState } from "../shared/enemies.ts";
 import {
   BREACHES,
   DOORWAYS,
@@ -72,6 +83,13 @@ import {
   FIXTURES,
   REACTOR,
   BUILT_WALLS,
+  BLAST_DOOR,
+  FREIGHT,
+  FREIGHT_PANEL,
+  freightVerdict,
+  FREIGHT_PANEL_RANGE,
+  type FreightVerdict,
+  inFreight,
   SURFACE,
   SURFACE_FIXTURES,
   SURFACE_VIEW_MARGIN,
@@ -218,7 +236,8 @@ const torch = createTorch(scene);
 scene.add(
   buildFacility({
     zones: ZONE_RECTS,
-    walls: BUILT_WALLS,
+    // (the blast door is its own moving model: client/world/evac.ts)
+    walls: BUILT_WALLS.filter((w) => w !== BLAST_DOOR),
     doorways: DOORWAYS.concat(TOP_DOOR),
     solids: SOLID,
     fixtures: FIXTURES,
@@ -236,6 +255,8 @@ scene.add(surface);
 const sunlight = createSunlight(scene);
 const liftDoors = new LiftDoors();
 scene.add(liftDoors.group);
+const evacView = new EvacView();
+scene.add(evacView.group);
 const gore = new Gore();
 scene.add(gore.group);
 const impacts = new Impacts();
@@ -267,7 +288,8 @@ let objective: ObjectiveState = { active: false };
 // Line of sight, one mask per level: the facility's walls below; up top the
 // lift house and the tall ruins (trees, the scoreboard and the chain-link
 // fence are seen through, out to the ruins past it).
-const visibility = new VisibilityMask(sightBlockers(WALLS, FIXTURES), SOLID, SIGHT_BOUNDS);
+// (the blast door comes and goes as it opens: updateSightDoors adds it while it's there)
+const visibility = new VisibilityMask(sightBlockers(WALLS.filter((w) => w !== BLAST_DOOR), FIXTURES), SOLID, SIGHT_BOUNDS);
 const SURFACE_SIGHT = {
   minX: SURFACE.minX - SURFACE_VIEW_MARGIN,
   maxX: SURFACE.maxX + SURFACE_VIEW_MARGIN,
@@ -341,10 +363,12 @@ function updateSightDoors(): void {
       leaves.push({ x: side * (gap + outer) / 2, z: door.z, halfX: (outer - gap) / 2, halfZ: door.halfZ, halfHeight: door.halfHeight });
     }
   }
+  const blast = Math.round(blastDoorOpen(defenceState.evac, now) * 40) / 40;
+  key.push(`blast${blast}`);
   const k = key.join(",");
   if (k === lastDoorKey) return;
   lastDoorKey = k;
-  visibility.setExtra(leaves.filter((o) => o.z < SURFACE.minZ));
+  visibility.setExtra([...leaves.filter((o) => o.z < SURFACE.minZ), ...evacView.doorOccluders(defenceState.evac, now)]);
   surfaceVisibility.setExtra(leaves.filter((o) => o.z > SURFACE.minZ));
 }
 
@@ -908,7 +932,7 @@ const ACTIVATE_TIPS: Record<string, string> = {
   "too far": "move closer",
   ready: "ready for the next wave",
   "already active": "already active — defend it",
-  stable: "reactor stable — get to the lift",
+  stable: "reactor stable — out by the freight lift, north",
   dead: "the reactor's dead",
 };
 
@@ -930,7 +954,8 @@ type Target =
   | { kind: "lift" }
   | { kind: "terminal" }
   | { kind: "board" }
-  | { kind: "heli" };
+  | { kind: "heli" }
+  | { kind: "freight" };
 
 const prompts = new Prompts();
 /** the scoreboard overlay is open */
@@ -975,6 +1000,7 @@ function eTarget(): Target | undefined {
   const p = localMesh.position;
   if (padAt(p.x, p.z)) return { kind: "heli" };
   if (nearLiftButton()) return { kind: "lift" };
+  if (Math.hypot(p.x - FREIGHT_PANEL.x, p.z - FREIGHT_PANEL.z) <= FREIGHT_PANEL_RANGE) return { kind: "freight" };
   const held = myHeldItem();
   if (!held) {
     const item = nearestItem();
@@ -986,6 +1012,16 @@ function eTarget(): Target | undefined {
   if (Math.hypot(p.x - REACTOR.x, p.z - REACTOR.z) <= REACTOR.halfX + PICKUP_RANGE) return { kind: "reactor" };
   if (Math.hypot(p.x - SCOREBOARD.x, p.z - SCOREBOARD.z) <= SCOREBOARD_RANGE) return { kind: "board" };
   return undefined;
+}
+
+const FREIGHT_LABELS: Record<FreightVerdict, string> = {
+  start: "start the freight lift",
+  "too far": "move closer",
+  "not yet": "freight lift: no power",
+  "already going": "freight lift going up",
+};
+function freightNow(): FreightVerdict {
+  return freightVerdict(localMesh!.position, defenceState.phase, blastDoorOpen(defenceState.evac, serverClock.now()), defenceState.evac?.boardBy !== undefined);
 }
 
 function shopVerdict(item: ShopItem): BuyVerdict {
@@ -1085,6 +1121,9 @@ function useTarget(target: Target | undefined): void {
     const verdict = activateVerdict(localMesh.position, objective, defenceState.phase);
     if (verdict === "ok" || verdict === "ready") net.activate();
     else prompts.nope("reactor");
+  } else if (target.kind === "freight") {
+    if (freightNow() === "start") net.freight();
+    else prompts.nope("freight");
   } else if (target.kind === "lift") {
     const verdict = liftVerdict(localMesh.position, lift, objective, defenceState.phase);
     if (verdict === "send" || verdict === "call") net.lift();
@@ -1143,10 +1182,16 @@ function currentPrompts(): Prompt[] {
     const verdict = liftVerdict(p, lift, objective, defenceState.phase);
     let detail: string | undefined;
     if (verdict === "already leaving" && lift.departAt) detail = `doors close in ${Math.max(0, Math.ceil((lift.departAt - now) / 1000))}s`;
-    if (verdict === "send") detail = level === "top" ? "down to the facility" : defenceState.phase === "won" ? "evacuate to the surface" : "back up — leaves this attempt";
+    if (verdict === "send") detail = level === "top" ? "down to the facility" : "back up — leaves this attempt";
+    if (verdict === "attempt on" && defenceState.phase === "won") detail = "the way out's the freight lift, north";
     if (verdict === "attempt on" && defenceState.phase === "blackout") detail = "no power — no way out";
     if (verdict === "busy" && lift.phase === "moving") detail = `${Math.max(0, Math.ceil(((lift.until ?? now) - now) / 1000))}s`;
     out.push({ id: "lift", at: liftPanelAt(level), key: "E", label: LIFT_LABELS[verdict], enabled: verdict === "send" || verdict === "call", detail });
+  } else if (target?.kind === "freight") {
+    const v = freightNow();
+    const e = defenceState.evac;
+    const detail = v === "already going" && e?.boardBy ? `leaving in ${Math.max(0, Math.ceil((e.boardBy - now) / 1000))}s` : v === "start" ? `the rest get ${FREIGHT_BOARD_MS / 1000}s to board` : undefined;
+    out.push({ id: "freight", at: v3(FREIGHT_PANEL.x - 0.8, 1.9, FREIGHT_PANEL.z), key: v === "start" ? "E" : "", label: FREIGHT_LABELS[v], enabled: v === "start", detail });
   }
   // the lift's countdown hangs over its door for everyone on that level, button or not
   if (lift.phase === "open" && lift.departAt && levelOf(p.z) === lift.at && target?.kind !== "lift") {
@@ -1223,11 +1268,17 @@ function currentMarkers(): Marker[] {
   } else if (phase === "break" && breakPrompts()) {
     add({ id: "m-comms", at: v3(SUPPLY_TERMINAL.x, 2.2, SUPPLY_TERMINAL.z), near: SUPPLY_TERMINAL, label: "comms · order supply", detail: `quota ${funds}`, loud: true });
   } else if (phase === "won") {
-    add({ id: "m-lift", at: v3(door.x, 2.4, door.z), near: door, label: "evacuate · lift up", detail: leaving ? `leaves in ${leavesIn}s` : undefined, loud: true });
+    // the way out: the blast door, then the freight lift's panel behind it
+    const e = defenceState.evac;
+    const st = e ? evacStage(e, now) : undefined;
+    const panel = { x: FREIGHT_PANEL.x, z: FREIGHT_PANEL.z };
+    if (st?.stage === "lights" || st?.stage === "opening") add({ id: "m-evac", at: v3(BLAST_DOOR.x, 2.8, BLAST_DOOR.z), near: { x: BLAST_DOOR.x, z: BLAST_DOOR.z + 2 }, label: "blast door opening", loud: true });
+    else if (st?.stage === "open") add({ id: "m-evac", at: v3(panel.x, 2.2, panel.z), near: panel, label: "freight lift · start it", loud: true });
+    else if (st?.stage === "boarding" && !inFreight(p.x, p.z)) add({ id: "m-evac", at: v3(FREIGHT_PANEL.x, 2.2, (FREIGHT.minZ + FREIGHT.maxZ) / 2), near: { x: FREIGHT_PANEL.x, z: FREIGHT.maxZ }, label: "get on the freight lift", detail: `${Math.ceil(st.left / 1000)}s`, loud: true });
   }
   // underground the lift is always findable before the attempt locks it in
-  if (!objective.active || phase === "won") {
-    if (phase !== "won") add({ id: "m-lift", at: v3(door.x, 2.4, door.z), near: door, label: "lift · back up", detail: leaving ? `leaves in ${leavesIn}s` : undefined, loud: leaving });
+  if (!objective.active) {
+    add({ id: "m-lift", at: v3(door.x, 2.4, door.z), near: door, label: "lift · back up", detail: leaving ? `leaves in ${leavesIn}s` : undefined, loud: leaving });
   }
   return out;
 }
@@ -1274,9 +1325,9 @@ function tutorialMarkers(p: THREE.Vector3, from: { x: number; z: number }): Mark
   return out;
 }
 
-/** mirrors the server's attemptLocked(): an attempt is on and not yet won */
+/** mirrors the server's attemptLocked(): an attempt is on (a won one leaves by the freight lift) */
 function attemptLocked(): boolean {
-  return objective.active && defenceState.phase !== "won";
+  return objective.active;
 }
 
 // The lift's prep countdown, big and top-centre on every screen whatever
@@ -1409,7 +1460,10 @@ const net = connect({
     }
     renderLeaderboard(players);
   },
-  onBoard: renderBoard,
+  onBoard(b) {
+    lastBoard = b;
+    renderBoard(b);
+  },
   onNameReply,
   onReplaced() {
     connectionLostEl.textContent = "open in another tab — this one is paused";
@@ -1992,9 +2046,9 @@ function animate(): void {
           localMesh.position.z + dz * woundedSpeed(myWounds) * dt,
         );
         const p = localMesh.position;
-        // (as the server's attemptLocked(): once the attempt's won the lift door opens to everyone)
-        const lockedOut = objective.active && defenceState.phase !== "won" && levelOf(p.z) === "bottom" && !inCar("bottom", p.x, p.z);
-        const solid = obstaclesFor(lift, lockedOut, obstacles);
+        // (as the server's attemptLocked(): a live attempt, won ones too, leaves by the freight lift)
+        const lockedOut = objective.active && levelOf(p.z) === "bottom" && !inCar("bottom", p.x, p.z);
+        const solid = obstaclesFor(lift, lockedOut, obstacles, blastDoorOpen(defenceState.evac, serverClock.now()) > 0.6);
         const resolved = resolveObstacles(next.x, next.z, inTutorial(p.x, p.z) ? [...solid, ...shutTutDoors(myTut ?? LESSONS.length)] : solid);
         localMesh.position.x = resolved.x;
         localMesh.position.z = resolved.z;
@@ -2058,6 +2112,7 @@ function animate(): void {
   coreHalo.material.opacity = power === "full" ? 0.95 : objective.active ? 0.7 + 0.2 * Math.sin(time * 2) : 0.3 + 0.15 * Math.sin(time * 1.3);
   stepWipe(dt);
   liftDoors.update(lift, serverClock.now());
+  stepEvac(time);
   updateSightDoors();
   stepRide();
   stepHeliRide();
@@ -2182,6 +2237,34 @@ let rotorSpin = 0;
 const heliFadeEl = document.createElement("div");
 heliFadeEl.className = "ui-wipe";
 document.body.appendChild(heliFadeEl);
+// The way out after a win (client/world/evac.ts draws it; ADR-060): the
+// door and the shaft move on the server's clock, the camera rumbles with
+// them, and the settlement plays over the climb, then black and the thanks
+// card until the server brings everyone up.
+const settlement = new Settlement();
+const evacFadeEl = document.createElement("div");
+evacFadeEl.className = "ui-wipe";
+document.body.appendChild(evacFadeEl);
+/** the last won attempt's report, for the settlement's pages */
+let wonReport: Extract<Report, { type: "attempt" }> | undefined;
+let lastBoard: BoardMessage | undefined;
+function stepEvac(time: number): void {
+  const now = serverClock.now();
+  const e = objective.active && defenceState.phase === "won" ? defenceState.evac : undefined;
+  const fx = evacView.update(e, now, time);
+  const st = e ? evacStage(e, now) : undefined;
+  settlement.set(wonReport, lastBoard, myHandle ?? (myId ? codename({ id: myId, color: myColor, handle: myHandle }) : ""));
+  const black = settlement.update(st);
+  evacFadeEl.style.opacity = `${black}`;
+  // the rumble: only felt down there (and by whoever's watching from down there)
+  if (fx.shake > 0 && levelOf(viewPoint.z) === "bottom") {
+    const t = performance.now() / 1000;
+    camera.position.x += Math.sin(t * 29) * 0.03 * fx.shake;
+    camera.position.z += Math.sin(t * 23 + 2) * 0.025 * fx.shake;
+    camera.position.y += Math.sin(t * 11) * 0.1 * fx.shake;
+  }
+}
+
 function stepHeliRide(): void {
   const left = myFlyingUntil ? Math.max(0, myFlyingUntil - serverClock.now()) : 0;
   const k = myFlyingUntil ? 1 - left / HELI_RIDE_MS : 0;
@@ -2341,7 +2424,10 @@ function renderDefenceHud(): void {
     hudWave.textContent = `${WAVES_TO_WIN}/${WAVES_TO_WIN} · stable`;
     hudHp.style.width = "100%";
     hudHp.classList.remove("low");
-    hudNext.textContent = "evacuate";
+    const e = defenceState.evac;
+    const st = e ? evacStage(e, serverClock.now()) : undefined;
+    hudNext.textContent =
+      st?.stage === "boarding" ? `freight lift leaves in ${Math.ceil(st.left / 1000)}s` : st?.stage === "open" ? "evacuate · freight lift, north" : st?.stage === "rising" ? "ascending" : "evacuate";
     return;
   }
   if (defenceState.phase === "blackout") {
@@ -2506,6 +2592,11 @@ const secs = (ms: number): string => `${Math.round(ms / 1000)}s`;
 let reportQueue: Report[] = [];
 let reportBusyUntil = 0;
 function queueReport(r: Report): void {
+  // a win's report is the settlement's, played on the way up
+  if (r.type === "attempt" && r.outcome === "won") {
+    wonReport = r;
+    return;
+  }
   // a lost attempt's wipe runs on the server's clock, not the panel's queue
   if (r.type === "attempt" && r.outcome === "lost" && (myOut || (localMesh && levelOf(localMesh.position.z) === "bottom"))) startWipe();
   reportQueue.push(r);
@@ -2561,7 +2652,7 @@ function showReport(r: Report): void {
             )
             .join("")
         : '<div class="row dim">nobody</div>') +
-      (r.outcome === "won" ? '<div class="legend">power restored · take the lift up</div>' : "");
+      "";
   }
   reportEl.innerHTML = html;
   reportEl.classList.add("open");

@@ -39,6 +39,7 @@ import {
   shutTutDoors,
 } from "../shared/tutorial.ts";
 import { PLAYER_COLORS, codename } from "../shared/palette.ts";
+import { EVAC_DOOR_DELAY_MS, FREIGHT_BOARD_MS, blastDoorOpen, evacStage } from "../shared/enemies.ts";
 import {
   BROADCAST_INTERVAL_MS,
   DEATH_DURATION_MS,
@@ -102,6 +103,9 @@ import {
   type GoreMark,
   type ClientMessage,
   type CrewLine,
+  FREIGHT,
+  inFreight,
+  freightVerdict,
   attemptScore,
   cleanName,
   type NameMessage,
@@ -457,7 +461,53 @@ function winRun(): void {
   boardDirty = true;
 }
 
-/** after a win, once the crew's all out of the facility: start the run over */
+/**
+ * The way out after a win (shared/enemies.ts evacStage): the door opens on
+ * its own; once someone's started the freight lift and the boarding time's
+ * up, whoever living below isn't on the platform is put on it, and the
+ * door shuts. The rise and the settlement are the clients' to show; when
+ * the thanks card's over, everyone's back on the surface and it all resets.
+ */
+function stepEvac(now: number): void {
+  if (!objective.active || defence.state.phase !== "won") return;
+  const e = defence.state.evac;
+  if (!e) {
+    // a won state from before evacuations existed (or a restart): start one now
+    defence.state.evac = { doorAt: now + EVAC_DOOR_DELAY_MS };
+    markWorldDirty();
+    return;
+  }
+  if (e.boardBy !== undefined && e.shutAt === undefined && now >= e.boardBy) {
+    e.shutAt = now;
+    const aboard: { x: number; z: number }[] = [];
+    for (const conn of connections.values()) if (!isDead(conn) && inFreight(conn.player.x, conn.player.z)) aboard.push(conn.player);
+    for (const conn of connections.values()) {
+      const p = conn.player;
+      if (isDead(conn) || levelOf(p.z) !== "bottom" || inFreight(p.x, p.z)) continue;
+      const spot = freightSpot(aboard);
+      p.x = spot.x;
+      p.z = spot.z;
+      aboard.push(p);
+      warped(conn);
+      act(p, "put on the freight lift as it left");
+    }
+    console.log(`[attempt ${attempt.number}] freight lift leaving with ${aboard.length} aboard`);
+    markWorldDirty();
+  }
+  if (evacStage(e, now).stage === "done") resetAfterWin();
+}
+
+/** somewhere free on the freight platform, back from the door */
+function freightSpot(taken: { x: number; z: number }[]): { x: number; z: number } {
+  for (let z = FREIGHT.minZ + 2.5; z <= FREIGHT.maxZ - 2; z += 1.2) {
+    for (let x = FREIGHT.minX + 2; x <= FREIGHT.maxX - 2; x += 1.2) {
+      if (taken.every((t) => Math.hypot(t.x - x, t.z - z) > 1)) return { x, z };
+    }
+  }
+  return { x: (FREIGHT.minX + FREIGHT.maxX) / 2, z: (FREIGHT.minZ + FREIGHT.maxZ) / 2 };
+}
+
+/** after a win, once the crew's ridden the freight lift out: start the run over */
 function resetAfterWin(): void {
   console.log(`[attempt ${attempt.number}] crew evacuated: the facility resets`);
   defence.finish();
@@ -551,10 +601,13 @@ function reviveAt(conn: Connection): void {
   warped(conn);
 }
 
-/** an attempt's on and not yet won: the lift won't carry anyone up out of it */
+/** an attempt's on (won ones too: they leave by the freight lift): the old lift won't carry anyone up out of it */
 function attemptLocked(): boolean {
-  return objective.active && defence.state.phase !== "won";
+  return objective.active;
 }
+
+/** how open the blast door is now (0 unless a won crew's on its way out) */
+const blastOpenNow = (now = Date.now()): number => (objective.active && defence.state.phase === "won" ? blastDoorOpen(defence.state.evac, now) : 0);
 
 /** in the facility, outside the car, while an attempt's on: the lift won't let them back in */
 function lockedOut(conn: Connection): boolean {
@@ -635,7 +688,7 @@ const tutorial = new Tutorial({
 
 /** what stops this player: the world, the lift's doors, and the tutorial doors still shut to them */
 function obstaclesOf(conn: Connection): Obstacle[] {
-  const base = obstaclesFor(lift.state, lockedOut(conn), worldObstacles(items.values()));
+  const base = obstaclesFor(lift.state, lockedOut(conn), worldObstacles(items.values()), blastOpenNow() > 0.6);
   const t = tutorial.trainees.get(conn.player.id);
   return inTutorial(conn.player.x, conn.player.z) ? [...base, ...shutTutDoors(t?.stage ?? LESSONS.length)] : base;
 }
@@ -1060,6 +1113,21 @@ wss.on("connection", (socket, req) => {
       conn.player.z = resolved.z;
       conn.player.rotation = move.rotation;
       conn.dirty = true;
+      return;
+    }
+
+    if (msg.type === "freight") {
+      const e = defence.state.evac;
+      const verdict = freightVerdict(conn.player, defence.state.phase, blastOpenNow(now), e?.boardBy !== undefined);
+      if (verdict !== "start" || !e) {
+        refuse(conn, "freight", `refused: freight lift (${verdict})`);
+        return;
+      }
+      e.boardBy = now + FREIGHT_BOARD_MS;
+      e.startedBy = codename(conn.player);
+      act(conn.player, `started the freight lift: ${FREIGHT_BOARD_MS / 1000}s to board`);
+      announce(`freight lift going up in ${FREIGHT_BOARD_MS / 1000}s — get on`);
+      markWorldDirty();
       return;
     }
 
@@ -1544,8 +1612,7 @@ setInterval(() => {
     bringUpAt = 0;
     everyoneUp();
   }
-  // won: once nobody alive is left below, the facility starts over (the fallen come back up with it)
-  if (objective.active && defence.state.phase === "won" && ![...connections.values()].some((c) => !isDead(c) && levelOf(c.player.z) === "bottom")) resetAfterWin();
+  stepEvac(now);
   restockStations(now);
   const players = [...connections.values()].map((c) => netPlayer(c, now));
   const projectileList: ProjectileState[] = [...projectiles.values()].map((p) => ({
@@ -1633,7 +1700,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
-// a restart in the middle of an ending: nobody's below any more, so finish it now
+// a restart in the middle of an ending: everyone was dropped, so finish it now
 if (objective.active && defence.state.phase === "won") resetAfterWin();
 else if (objective.active && defence.state.phase === "blackout") defence.fail("the server restarted in the dark");
 

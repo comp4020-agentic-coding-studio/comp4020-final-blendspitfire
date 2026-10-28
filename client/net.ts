@@ -25,6 +25,7 @@ export interface Net {
   scrap: (itemId: string) => void;
   lift: () => void;
   name: (name: string) => void;
+  freight: () => void;
 }
 
 const RECONNECT_BASE_MS = 500;
@@ -128,6 +129,9 @@ export function connect(handlers: NetHandlers): Net {
     },
     name(name) {
       send({ type: "name", name });
+    },
+    freight() {
+      send({ type: "freight" });
     },
   };
 }

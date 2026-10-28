@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { Lift } from "../server/lift.ts";
 import {
   FACILITY_HALF,
+  FREIGHT_PANEL,
+  freightVerdict,
   LIFT_CARS,
   LIFT_DOOR_MS,
   LIFT_DZ,
@@ -18,6 +20,8 @@ import {
   resolveObstacles,
   type LiftLevel,
 } from "../shared/protocol.ts";
+import { EVAC_DOOR_MS, EVAC_SHUT_MS, RISE_MS, SETTLE_PAGES_MS, THANKS_MS, blastDoorOpen, evacStage } from "../shared/enemies.ts";
+import { payslip } from "../client/ui/settlement.ts";
 
 // The lift between the garden and the facility: a state machine on the
 // server (server/lift.ts) and the rules every client shares
@@ -148,9 +152,9 @@ describe("the lift's rules", () => {
     expect(liftVerdict(carMid("top"), { at: "top", phase: "open" }, on, "spawning")).toBe("send");
   });
 
-  it("takes the crew up once the run's won, and not in a blackout", () => {
+  it("takes nobody up out of a live attempt, won or in a blackout (a won crew leaves by the freight lift)", () => {
     const atBottom = { at: "bottom" as const, phase: "open" as const };
-    expect(liftVerdict(carMid("bottom"), atBottom, on, "won")).toBe("send");
+    expect(liftVerdict(carMid("bottom"), atBottom, on, "won")).toBe("attempt on");
     expect(liftVerdict(carMid("bottom"), atBottom, on, "blackout")).toBe("attempt on");
   });
 
@@ -175,5 +179,47 @@ describe("the lift's rules", () => {
     expect(isWalkable(carMid("top").x, carMid("top").z)).toBe(true);
     expect(isWalkable(carMid("bottom").x, carMid("bottom").z)).toBe(true);
     expect(isWalkable(0, (LIFT_CARS.bottom.maxZ + LIFT_CARS.top.minZ) / 2 - 8)).toBe(false);
+  });
+});
+
+describe("the way out after a win", () => {
+  const e = { doorAt: 1000 };
+  it("the door grinds open on its own, then waits for someone to start the freight lift", () => {
+    expect(evacStage(e, 500).stage).toBe("lights");
+    expect(blastDoorOpen(e, 500)).toBe(0);
+    expect(evacStage(e, 1000 + EVAC_DOOR_MS / 2).stage).toBe("opening");
+    expect(blastDoorOpen(e, 1000 + EVAC_DOOR_MS / 2)).toBeCloseTo(0.5);
+    // nobody's pressed it: it stays open as long as it takes
+    expect(evacStage(e, 1e9).stage).toBe("open");
+    expect(blastDoorOpen(e, 1e9)).toBe(1);
+  });
+
+  it("then boarding, the door shutting, the climb through every page, the thanks card, done", () => {
+    const go = { doorAt: 0, boardBy: 50_000, shutAt: 50_000 };
+    expect(evacStage(go, 40_000).stage).toBe("boarding");
+    expect(evacStage(go, 51_000).stage).toBe("shutting");
+    const riseAt = 50_000 + EVAC_SHUT_MS;
+    const pages = [0, SETTLE_PAGES_MS[0], SETTLE_PAGES_MS[0] + SETTLE_PAGES_MS[1]].map((ms) => evacStage(go, riseAt + ms + 10));
+    expect(pages.map((p) => (p.stage === "rising" ? p.page : -1))).toEqual([0, 1, 2]);
+    expect(evacStage(go, riseAt + RISE_MS + 10).stage).toBe("thanks");
+    expect(evacStage(go, riseAt + RISE_MS + THANKS_MS + 10).stage).toBe("done");
+    // shut again for the climb
+    expect(blastDoorOpen(go, riseAt + 10)).toBe(0);
+  });
+
+  it("the freight panel starts it once, only with the door open and from close by", () => {
+    const at = { x: FREIGHT_PANEL.x, z: FREIGHT_PANEL.z + 0.5 };
+    expect(freightVerdict(at, "won", 1, false)).toBe("start");
+    expect(freightVerdict(at, "won", 0.5, false)).toBe("not yet");
+    expect(freightVerdict(at, "spawning", 1, false)).toBe("not yet");
+    expect(freightVerdict(at, "won", 1, true)).toBe("already going");
+    expect(freightVerdict({ x: 0, z: 0 }, "won", 1, false)).toBe("too far");
+  });
+
+  it("the payslip always comes to twenty dollars", () => {
+    for (const me of [undefined, { shots: 0, wounds: 0, turrets: 0 }, { shots: 1234, wounds: 9, turrets: 3 }]) {
+      const lines = payslip(me as never, 3);
+      expect(lines.reduce((a, [, v]) => a + v, 0)).toBe(20);
+    }
   });
 });

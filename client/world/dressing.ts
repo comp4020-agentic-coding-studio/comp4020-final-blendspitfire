@@ -145,7 +145,8 @@ export const LAMPS: Lamp[] = [
   ceiling("sodium", -6, -11.5),
   ceiling("sodium", 6, -11.5),
   ceiling("fluoro", 0, -6),
-  wall("fluoro", -10, -17.95, "south", { flicker: true }),
+  // (the north wall west of the shaft is the blast door: nothing hangs on it)
+  wall("fluoro", -13.65, -14.5, "east", { flicker: true }),
   wall("fluoro", 10, -17.95, "south"),
   wall("fluoro", -13.65, -7, "east"),
   wall("fluoro", 13.65, -7, "west", { dead: true }),
@@ -153,9 +154,12 @@ export const LAMPS: Lamp[] = [
   wall("emergency", 0, FACILITY_HALF - 0.05, "north"),
   wall("emergency", -17.95, 12.5, "east"),
   wall("emergency", 17.95, 11, "west"),
-  wall("emergency", 3.6, -17.95, "south"),
+  wall("emergency", 7.6, -17.95, "south"),
   wall("emergency", -12, -4.35, "south"),
   wall("emergency", 12, -4.35, "south"),
+  // the freight lift: work lights on its back wall over the cargo, tubes down the deck
+  ...[-10, 0].map((x) => wall("sodium", x, -29.95, "south")),
+  ...[-10, -5, 0].map((x) => ceiling("fluoro", x, -23.5)),
 ];
 
 /**

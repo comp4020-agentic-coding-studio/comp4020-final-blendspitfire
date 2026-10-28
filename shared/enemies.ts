@@ -58,7 +58,7 @@ export interface DefenceState {
   /**
    * "spawning": the current wave's enemies are still coming or still alive.
    * "break": cleared, waiting (or sent early) to start the next.
-   * "won": every wave cleared: the facility's lit and quiet, the lift takes the crew up.
+   * "won": every wave cleared: the facility's lit and quiet, and the crew leaves by the blast door and the freight lift (evac).
    * "blackout": the reactor's dead: the lights are out and they keep coming, faster, until nobody's left.
    */
   phase: "spawning" | "break" | "won" | "blackout";
@@ -70,6 +70,79 @@ export interface DefenceState {
   ready?: string[];
   /** break: how many votes it takes (everyone alive below) */
   voters?: number;
+  /** won: the way out, by blast door and freight lift (server times; see evacStage) */
+  evac?: EvacState;
+}
+
+// --- The way out after a win ---------------------------------------------------
+// Every stage is a server time, so every screen (and the server) reads the
+// same stage off the clock. The numbers are the agent's (ADR-060).
+
+export interface EvacState {
+  /** the blast door starts to open */
+  doorAt: number;
+  /** someone started the freight lift: the rest have until boardBy to get on */
+  boardBy?: number;
+  /** who started it (their name), for the log and the screen */
+  startedBy?: string;
+  /** boarding's over: anyone not on is put on, the door shuts behind them */
+  shutAt?: number;
+}
+/** from the win to the door starting to move: the lights come up first */
+export const EVAC_DOOR_DELAY_MS = 3000;
+/** the door grinding open, end to end */
+export const EVAC_DOOR_MS = 9000;
+/** from the button to the forced boarding */
+export const FREIGHT_BOARD_MS = 20000;
+/** the door shutting again behind the platform */
+export const EVAC_SHUT_MS = 4000;
+/** the settlement's pages, played while the platform rises */
+export const SETTLE_PAGES_MS = [11000, 13000, 9000] as const;
+export const RISE_MS = SETTLE_PAGES_MS.reduce((a, b) => a + b, 0);
+/** the screen fading to black at the end of the rise */
+export const EVAC_FADE_MS = 2500;
+/** the thanks card, on black */
+export const THANKS_MS = 5000;
+
+export type EvacStage =
+  | { stage: "lights" }
+  | { stage: "opening"; k: number }
+  | { stage: "open" }
+  | { stage: "boarding"; left: number }
+  | { stage: "shutting"; k: number }
+  /** page 0..2 of the settlement, `k` 0..1 through it; `fade` 0..1 at the end */
+  | { stage: "rising"; ms: number; page: number; k: number; fade: number }
+  | { stage: "thanks"; k: number }
+  | { stage: "done" };
+
+/** where the evacuation stands at server time `now` */
+export function evacStage(e: EvacState, now: number): EvacStage {
+  if (now < e.doorAt) return { stage: "lights" };
+  if (now < e.doorAt + EVAC_DOOR_MS) return { stage: "opening", k: (now - e.doorAt) / EVAC_DOOR_MS };
+  if (e.boardBy === undefined) return { stage: "open" };
+  if (now < e.boardBy) return { stage: "boarding", left: e.boardBy - now };
+  const shutAt = e.shutAt ?? e.boardBy;
+  if (now < shutAt + EVAC_SHUT_MS) return { stage: "shutting", k: (now - shutAt) / EVAC_SHUT_MS };
+  const rise = now - (shutAt + EVAC_SHUT_MS);
+  if (rise < RISE_MS) {
+    let page = 0;
+    let start = 0;
+    while (page < SETTLE_PAGES_MS.length - 1 && rise >= start + SETTLE_PAGES_MS[page]) start += SETTLE_PAGES_MS[page++];
+    return { stage: "rising", ms: rise, page, k: (rise - start) / SETTLE_PAGES_MS[page], fade: Math.max(0, 1 - (RISE_MS - rise) / EVAC_FADE_MS) };
+  }
+  const thanks = rise - RISE_MS;
+  if (thanks < THANKS_MS) return { stage: "thanks", k: thanks / THANKS_MS };
+  return { stage: "done" };
+}
+/** how open the blast door is, 0..1, at server time `now` (0 with no evacuation on) */
+export function blastDoorOpen(e: EvacState | undefined, now: number): number {
+  if (!e) return 0;
+  const st = evacStage(e, now);
+  if (st.stage === "lights") return 0;
+  if (st.stage === "opening") return st.k;
+  if (st.stage === "open" || st.stage === "boarding") return 1;
+  if (st.stage === "shutting") return 1 - st.k;
+  return 0;
 }
 
 export const ENEMY_RADIUS = 0.38;

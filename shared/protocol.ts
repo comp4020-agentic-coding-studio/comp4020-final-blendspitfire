@@ -311,7 +311,13 @@ export type ClientMessage =
   | BuyMessage
   | BuildTurretMessage
   | ScrapMessage
-  | NameMessage;
+  | NameMessage
+  | FreightMessage;
+
+/** E at the freight lift's panel: start it (the crew then has FREIGHT_BOARD_MS to get on) */
+export interface FreightMessage {
+  type: "freight";
+}
 
 /**
  * The name to play (and score) under, arcade style: typed on joining, no
@@ -489,9 +495,9 @@ export const inAnyCar = (x: number, z: number): boolean => inCar("top", x, z) ||
  */
 export const TUT_AREA: Rect = { minX: 74, maxX: 86, minZ: 32, maxZ: 86 };
 /** everything anyone can stand in; movement is clamped to it before walls */
-export const PLAY_BOUNDS: Rect = { minX: FACILITY.minX, maxX: TUT_AREA.maxX, minZ: FACILITY.minZ, maxZ: TUT_AREA.maxZ };
+export const PLAY_BOUNDS: Rect = { minX: FACILITY.minX, maxX: TUT_AREA.maxX, minZ: FACILITY.minZ - 12, maxZ: TUT_AREA.maxZ };
 /** as far as sight reaches in the facility: a little past the outer walls, so a breach shows what's just beyond it and no further */
-export const SIGHT_BOUNDS: Rect = { minX: -FACILITY_HALF - 3, maxX: FACILITY_HALF + 3, minZ: -FACILITY_HALF - 3, maxZ: CAR_BOTTOM.maxZ + 1 };
+export const SIGHT_BOUNDS: Rect = { minX: -FACILITY_HALF - 3, maxX: FACILITY_HALF + 3, minZ: -FACILITY_HALF - 13.5, maxZ: CAR_BOTTOM.maxZ + 1 };
 
 export const inRect = (r: Rect, x: number, z: number, margin = 0): boolean =>
   x >= r.minX + margin && x <= r.maxX - margin && z >= r.minZ + margin && z <= r.maxZ - margin;
@@ -583,6 +589,9 @@ export const isWalkable = (x: number, z: number): boolean =>
   inAnyCar(x, z) ||
   inRect(SURFACE, x, z) ||
   inRect(TOP_DOOR, x, z) ||
+  inRect(FREIGHT, x, z) ||
+  // the blast door's own thickness, to cross once it's open (shut, it's solid like any wall)
+  inRect({ minX: FREIGHT.minX, maxX: FREIGHT.maxX, minZ: BLAST_DOOR.z - BLAST_DOOR.halfZ, maxZ: BLAST_DOOR.z + BLAST_DOOR.halfZ }, x, z) ||
   DOORWAYS.some((r) => inRect(r, x, z));
 
 /**
@@ -646,9 +655,19 @@ export function liftDoorObstacles(lift: LiftState, lockedOut: boolean): Obstacle
   return shut;
 }
 
-/** what a given player collides with: the world, plus whichever lift doors are shut to them */
-export function obstaclesFor(lift: LiftState, lockedOut: boolean, base: Obstacle[]): Obstacle[] {
-  return [...base, ...liftDoorObstacles(lift, lockedOut)];
+/** what a given player collides with: the world, plus whichever lift doors are shut to them, less the blast door once it's open */
+export function obstaclesFor(lift: LiftState, lockedOut: boolean, base: Obstacle[], blastOpen = false): Obstacle[] {
+  const world = blastOpen ? base.filter((o) => o !== BLAST_DOOR) : base;
+  return [...world, ...liftDoorObstacles(lift, lockedOut)];
+}
+
+/** the freight lift's start panel: within reach of it on the platform, with the door open and nobody having started it yet */
+export const FREIGHT_PANEL_RANGE = 2.2;
+export type FreightVerdict = "start" | "too far" | "not yet" | "already going";
+export function freightVerdict(player: { x: number; z: number }, phase: Phase, doorOpen: number, started: boolean): FreightVerdict {
+  if (Math.hypot(player.x - FREIGHT_PANEL.x, player.z - FREIGHT_PANEL.z) > FREIGHT_PANEL_RANGE) return "too far";
+  if (phase !== "won" || doorOpen < 1) return "not yet";
+  return started ? "already going" : "start";
 }
 
 export interface Obstacle {
@@ -694,7 +713,7 @@ export const FACILITY_WALLS: Obstacle[] = [
   facilityWall(-O, ventTo, -O, O),
   facilityWall(O, 1.7, O, collapseFrom),
   facilityWall(O, collapseTo, O, O),
-  facilityWall(-14.3, -O, shaftFrom, -O),
+  // (the core's north wall west of the shaft is the blast door: BLAST_DOOR)
   facilityWall(shaftTo, -O, 14.3, -O),
   // the corridor's sides, which carry on north as the airlock's
   facilityWall(-2.3, -4.3, -2.3, 9),
@@ -724,8 +743,29 @@ export const LIFT_WALLS: Obstacle[] = [
   facilityWall(-C - WALL_HALF, CAR_BOTTOM.maxZ + WALL_HALF, C + WALL_HALF, CAR_BOTTOM.maxZ + WALL_HALF), // back
 ];
 
-/** the facility's walls, drawn and sight-blocking as the facility */
-export const WALLS: Obstacle[] = [...FACILITY_WALLS, ...LIFT_WALLS];
+// --- The way out after a win: blast door and freight lift (ADR-060) -----------
+// The core's north wall west of the shaft is one huge blast door, so big it
+// reads as wall until it moves. Behind it, a freight lift's open platform.
+// On a win the door grinds open, someone starts the lift, everyone else has
+// FREIGHT_BOARD_MS to get on (then they're put on), the door shuts and the
+// platform "rises": the shaft walls scroll past while the settlement plays.
+
+/** the door: a wall-thick slab from the core's west wall to the shaft breach */
+export const BLAST_DOOR: Obstacle = wallBetween(ROOMS.core.minX - WALL_HALF, -O, shaftFrom, -O, FACILITY_WALL_HALF_HEIGHT);
+/** the freight lift's platform, behind the door: as wide as the door's opening, and deep */
+export const FREIGHT: Rect = { minX: ROOMS.core.minX, maxX: shaftFrom - 0.3, minZ: -FACILITY_HALF - 12, maxZ: -FACILITY_HALF - 2 * WALL_HALF };
+/** the shaft round the platform: its sides and back */
+export const FREIGHT_WALLS: Obstacle[] = [
+  facilityWall(FREIGHT.minX - WALL_HALF, FREIGHT.minZ - 2 * WALL_HALF, FREIGHT.minX - WALL_HALF, -O),
+  facilityWall(FREIGHT.maxX + WALL_HALF, FREIGHT.minZ - 2 * WALL_HALF, FREIGHT.maxX + WALL_HALF, -O),
+  facilityWall(FREIGHT.minX - 2 * WALL_HALF, FREIGHT.minZ - WALL_HALF, FREIGHT.maxX + 2 * WALL_HALF, FREIGHT.minZ - WALL_HALF),
+];
+/** the freight lift's start panel, on the platform's back wall */
+export const FREIGHT_PANEL = { x: (FREIGHT.minX + FREIGHT.maxX) / 2, z: FREIGHT.minZ + 0.6 };
+export const inFreight = (x: number, z: number, margin = 0): boolean => inRect(FREIGHT, x, z, margin);
+
+/** the facility's walls, drawn and sight-blocking as the facility (the blast door included: it's drawn by its own model) */
+export const WALLS: Obstacle[] = [...FACILITY_WALLS, BLAST_DOOR, ...LIFT_WALLS, ...FREIGHT_WALLS];
 
 const shiftObstacle = (o: Obstacle, dz: number): Obstacle => ({ ...o, z: o.z + dz });
 const S = SURFACE;
@@ -943,8 +983,8 @@ export function liftVerdict(player: { x: number; z: number }, lift: LiftState, o
   const door = LIFT_DOORS[level];
   const aboard = inCar(level, player.x, player.z);
   if (!aboard && Math.hypot(player.x - door.x, player.z - door.z) > LIFT_CALL_RANGE) return "too far";
-  // won, the lift's the way out; otherwise nobody leaves a live attempt
-  if (level === "bottom" && objective.active && phase !== "won") return "attempt on";
+  // nobody leaves a live attempt by this lift (a won one leaves by the freight lift)
+  if (level === "bottom" && objective.active) return "attempt on";
   if (lift.phase !== "open") return "busy";
   if (aboard && lift.at === level) return lift.departAt !== undefined ? "already leaving" : "send";
   if (!aboard && lift.at !== level) return "call";

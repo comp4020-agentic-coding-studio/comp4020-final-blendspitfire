@@ -26,6 +26,7 @@ import {
   spitterShare,
   eliteShare,
   speedOf,
+  EVAC_DOOR_DELAY_MS,
   SPIT_INTERVAL_MS,
   SPIT_MIN_RANGE,
   SPIT_RANGE,
@@ -343,9 +344,11 @@ export class Defence {
     if (this.toSpawn === 0 && this.enemies.size === 0) {
       this.world.cleared(s.wave, this.waveSizeNow, now - this.waveStartedAt);
       if (s.wave >= WAVES_TO_WIN) {
-        // the reactor's stable: the attempt stays on (the crew's still below) until they've ridden up
+        // the reactor's stable: the attempt stays on (the crew's still below)
+        // until they've left by the blast door and the freight lift
         s.phase = "won";
         s.nextWaveAt = undefined;
+        s.evac = { doorAt: now + EVAC_DOOR_DELAY_MS };
         this.world.changed();
         this.world.won();
         return;
