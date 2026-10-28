@@ -797,5 +797,6 @@ Suggested minimal topology: safe room, one main corridor (bottleneck), a fork in
 - *Wave end.* When a wave is cleared, the report on the right, the next-wave warning, the prompt to go and buy, and more all appear in the same instant, which is too much at once. The developer's fix is to show them in batches.
 
 - *A serious bug seen in the same session.* After a win, a teammate who had died was revived on the surface while the rest were still below. The crew below couldn't call the lift down, and when the revived player rode it down, they couldn't walk through its door and were trapped. On a first reading of the code, the agent found the door half likely comes from the client still treating the bottom door as locked once the attempt is won (the server doesn't); the other half is not yet explained and needs reproducing.
+- *The developer's decision on that bug:* after a win, the fallen are revived only once everyone still alive has ridden up, not at the moment of the win. That also removes the situation the bug needs, with players on both levels during the won phase.
 
 **Why.** In the developer's judgement from watching the play, the information is there but either buried or arriving all at once.
