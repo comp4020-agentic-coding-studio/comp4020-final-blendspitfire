@@ -112,7 +112,7 @@ db.exec(`
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     kills INTEGER NOT NULL DEFAULT 0,
-    boxes INTEGER NOT NULL DEFAULT 0,
+    boxes INTEGER NOT NULL DEFAULT 0, -- retired stat, kept so older databases stay compatible
     attempts INTEGER NOT NULL DEFAULT 0,
     wins INTEGER NOT NULL DEFAULT 0
   );
@@ -128,7 +128,6 @@ export interface PlayerStats {
   id: string;
   name: string;
   kills: number;
-  boxes: number;
   attempts: number;
   wins: number;
 }
@@ -146,17 +145,17 @@ export interface RunProgress {
 }
 
 const bumpStmt = db.prepare(`
-  INSERT INTO stats (id, name, kills, boxes, attempts, wins) VALUES (?, ?, ?, ?, ?, ?)
+  INSERT INTO stats (id, name, kills, attempts, wins) VALUES (?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET name = excluded.name, kills = kills + excluded.kills,
-    boxes = boxes + excluded.boxes, attempts = attempts + excluded.attempts, wins = wins + excluded.wins
+    attempts = attempts + excluded.attempts, wins = wins + excluded.wins
 `);
-const topStatsStmt = db.prepare("SELECT id, name, kills, boxes, attempts, wins FROM stats ORDER BY wins DESC, kills DESC LIMIT ?");
+const topStatsStmt = db.prepare("SELECT id, name, kills, attempts, wins FROM stats ORDER BY wins DESC, kills DESC LIMIT ?");
 const listRunsStmt = db.prepare("SELECT n, won_at, attempts, crew FROM runs ORDER BY n DESC LIMIT ?");
 const insertRunStmt = db.prepare("INSERT INTO runs (won_at, attempts, crew) VALUES (?, ?, ?)");
 
 /** add to a player's lifetime totals (and record the name they're shown under now) */
 export function bumpStats(id: string, name: string, add: Partial<Omit<PlayerStats, "id" | "name">>): void {
-  bumpStmt.run(id, name, add.kills ?? 0, add.boxes ?? 0, add.attempts ?? 0, add.wins ?? 0);
+  bumpStmt.run(id, name, add.kills ?? 0, add.attempts ?? 0, add.wins ?? 0);
 }
 export function topStats(limit: number): PlayerStats[] {
   return topStatsStmt.all(limit) as unknown as PlayerStats[];

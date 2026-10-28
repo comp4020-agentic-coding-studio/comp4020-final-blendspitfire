@@ -163,17 +163,6 @@ export function buildYardGuides(): THREE.Group {
           text(ctx, "drop", 1.0, 1.15);
         }),
       );
-    } else {
-      group.add(
-        decal(3.4, 1.5, x, station.z + 3.0, (ctx) => {
-          mouse(ctx, 0.35, 0.05, "left");
-          text(ctx, "place", 1.0, 0.38);
-          mouse(ctx, 0.08, 0.8, "right");
-          trackpad(ctx, 0.6, 0.88);
-          key(ctx, "Space", 1.42, 0.88, 0.9);
-          text(ctx, "grid", 2.45, 1.13);
-        }),
-      );
     }
   }
 

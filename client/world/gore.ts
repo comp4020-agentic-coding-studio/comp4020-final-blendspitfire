@@ -144,7 +144,7 @@ export class Gore {
 
 // --- Impacts ------------------------------------------------------------------
 // Where a round lands: a burst of short-lived bits flying out from the hit,
-// sparks off walls and boxes, a splash off whatever bleeds. Pooled sprites,
+// sparks off walls and turrets, a splash off whatever bleeds. Pooled sprites,
 // so a long burst of fire allocates nothing.
 
 interface Bit {
@@ -157,7 +157,7 @@ interface Bit {
   size: number;
 }
 
-/** a chip of debris kicked off a wall or box: a tumbling little chunk, not a glow */
+/** a chip of debris kicked off a wall or turret: a tumbling little chunk, not a glow */
 interface Chip {
   mesh: THREE.Mesh;
   vx: number;
@@ -170,7 +170,7 @@ interface Chip {
 }
 
 const IMPACT_COLOUR: Record<ShotHit, number> = { wall: EMIT_SPARK, enemy: BLOOD_CRAWLER, player: BLOOD_HUMAN };
-/** debris chips off a wall or box: concrete, not an emitter, so it reads as matter rather than light */
+/** debris chips off a wall or turret: concrete, not an emitter, so it reads as matter rather than light */
 const DEBRIS_COLOURS = [CONCRETE.base, CONCRETE.shade, CONCRETE.light];
 const chipGeometry = new THREE.BoxGeometry(1, 1, 1);
 

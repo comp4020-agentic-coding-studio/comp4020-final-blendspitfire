@@ -167,13 +167,13 @@ describe("blasts", () => {
   });
 });
 
-describe("chewing through boxes", () => {
-  it("wears a box that seals the way, step by step, until it breaks", () => {
-    // an enemy in the open core, boxed in on all sides: no route anywhere, so it has to chew out
+describe("chewing through turrets", () => {
+  it("wears a turret that seals the way, step by step, until it breaks", () => {
+    // an enemy in the open core, walled in by turrets on all sides: no route anywhere, so it has to chew out
     const { w } = world([]);
     const ring: [number, number][] = [];
     for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) if (dx || dz) ring.push([-8 + dx, -12 + dz]);
-    ring.forEach(([x, z], i) => w.items.set(`b${i}`, { id: `b${i}`, kind: "box", x, z }));
+    ring.forEach(([x, z], i) => w.items.set(`b${i}`, { id: `b${i}`, kind: "turret", x, z }));
     const d = new Defence(w, { reactorHealth: 1, wave: 1, phase: "spawning", nextWaveAt: 1e12 });
     d.spawnAt(-8, -12);
     const wears: number[] = [];
@@ -185,7 +185,7 @@ describe("chewing through boxes", () => {
       if (worst !== wears[wears.length - 1]) wears.push(worst);
     }
     expect(w.items.size).toBe(ring.length - 1);
-    // wear went up in steps before the box gave way (the last reading is after it broke)
+    // wear went up in steps before the turret gave way (the last reading is after it broke)
     const before = wears.slice(0, -1);
     expect(before.length).toBeGreaterThan(2);
     expect(before).toEqual([...before].sort((a, b) => a - b));

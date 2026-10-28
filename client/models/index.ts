@@ -200,7 +200,7 @@ export function heldGun(): THREE.Mesh {
 export const HELD_GUN_OFFSET = { x: 0.06, y: 1.08, z: 0.55 };
 
 /**
- * The buildable box: a 1×1×1 hard-shell equipment case. Off-white plastic
+ * A 1×1×1 hard-shell equipment case (set dressing: the facility's crates). Off-white plastic
  * body, worn hazard-yellow corner bumpers (the corners are what matters
  * when lining up a wall, so they're what stands out), a dark lid seam,
  * latches front and back, and a stencilled band across the lid.
@@ -231,13 +231,9 @@ export function equipmentCaseGeometry(): THREE.BufferGeometry {
   return merge(parts, "ground", 0.12);
 }
 
-export function equipmentCase(): THREE.Mesh {
-  return outlined(mesh(equipmentCaseGeometry()));
-}
-
 /**
  * The sentry turret the corp sells: a squat steel tripod on a hazard-yellow
- * footplate (the tile it holds, so it lines up with boxes), a rubber-booted
+ * footplate (the tile it holds, so it lines up with the grid), a rubber-booted
  * swivel, and a stubby boxy gun with a magazine drum. The head is its own
  * child (`turretHead`) so it can swing to face what it's shooting (or sweep
  * on its own, idle) --- a green indicator light on top and a thin green

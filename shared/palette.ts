@@ -181,7 +181,7 @@ export const EMIT_REACTOR = 0x5aa8ff;
 /** a round in flight: hot, warm white, so it reads as a tracer and not as a UI signal */
 export const EMIT_TRACER = 0xffd9a0;
 
-/** sparks off a wall or a box where a round lands */
+/** sparks off a wall or a turret where a round lands */
 export const EMIT_SPARK = 0xffe08a;
 /** a spitter's acid: a sour yellow-green, kept well off the turrets' clean green so hostile never reads as friendly */
 export const EMIT_ACID = 0xc8ff3a;

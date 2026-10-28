@@ -70,11 +70,11 @@ describe("building a turret", () => {
   const placer = { x: 0, z: -11.5 };
   const spot = { x: placer.x, z: placer.z - 2 };
 
-  it("builds where a box could, with the quota and under the corp's cap", () => {
+  it("builds where any blocker could, with the quota and under the corp's cap", () => {
     expect(buildTurretVerdict(spot.x, spot.z, placer, [], [], TURRET_COST, 0)).toBe("ok");
   });
 
-  it("refuses without the quota, at the cap, or somewhere a box couldn't go", () => {
+  it("refuses without the quota, at the cap, or somewhere a blocker couldn't go", () => {
     expect(buildTurretVerdict(spot.x, spot.z, placer, [], [], TURRET_COST - 1, 0)).toBe("can't afford");
     expect(buildTurretVerdict(spot.x, spot.z, placer, [], [], TURRET_COST, ITEM_CAPS.turret)).toBe("sold out");
     expect(buildTurretVerdict(placer.x + PLACE_RANGE + 2, placer.z, placer, [], [], TURRET_COST, 0)).toBe("too far");
@@ -88,7 +88,7 @@ describe("scrapping a turret", () => {
 
   it("refuses out of reach, or anything that isn't a turret", () => {
     expect(scrapVerdict({ kind: "turret", x: 20, z: 20 }, { x: 0, z: 0 })).toBe("too far");
-    expect(scrapVerdict({ kind: "box", x: 2, z: 2 }, { x: 2, z: 2 })).toBe("not a turret");
+    expect(scrapVerdict({ kind: "gun", x: 2, z: 2 }, { x: 2, z: 2 })).toBe("not a turret");
     expect(scrapVerdict(undefined, { x: 0, z: 0 })).toBe("not a turret");
   });
 });

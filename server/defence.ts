@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
   AGGRO_RANGE,
-  BOX_HIT_POINTS,
   ENEMY_ATTACK_INTERVAL_MS,
   ENEMY_RADIUS,
   ENEMY_REACH,
@@ -101,7 +100,7 @@ export class Defence {
   /** the blackout's hunt: a flow field to one of the crew, rebuilt as they move */
   private readonly hunt = new FlowField();
   private huntAt = 0;
-  private readonly boxDamage = new Map<string, number>();
+  private readonly blockerDamage = new Map<string, number>();
   state: DefenceState;
   private toSpawn = 0;
   private nextSpawnAt = 0;
@@ -193,7 +192,7 @@ export class Defence {
       this.spitsInFlight.clear();
       return;
     }
-    this.rebuildFieldIfBoxesMoved();
+    this.rebuildFieldIfBlockersMoved();
     if (this.state.phase === "blackout") this.runBlackout(now);
     else this.runWaves(now);
     this.moveAndAttack(now, dt);
@@ -210,8 +209,8 @@ export class Defence {
       const players = this.world.players();
       if (players.length) {
         const prey = players[Math.floor(now / 4000) % players.length];
-        const boxes = [...this.world.items.values()].filter(isBlocking);
-        this.hunt.build([...OBSTACLES, ...boxes.map(boxObstacle)], prey);
+        const blockers = [...this.world.items.values()].filter(isBlocking);
+        this.hunt.build([...OBSTACLES, ...blockers.map(boxObstacle)], prey);
       }
     }
     const since = now - (this.state.blackoutAt ?? now);
@@ -316,12 +315,12 @@ export class Defence {
     }
   }
 
-  private rebuildFieldIfBoxesMoved(): void {
-    const boxes = [...this.world.items.values()].filter(isBlocking);
-    const key = boxes.map((b) => `${b.id}:${b.x.toFixed(2)},${b.z.toFixed(2)}`).join("|");
+  private rebuildFieldIfBlockersMoved(): void {
+    const blockers = [...this.world.items.values()].filter(isBlocking);
+    const key = blockers.map((b) => `${b.id}:${b.x.toFixed(2)},${b.z.toFixed(2)}`).join("|");
     if (key === this.fieldKey) return;
     this.fieldKey = key;
-    this.field.build([...OBSTACLES, ...boxes.map(boxObstacle)]);
+    this.field.build([...OBSTACLES, ...blockers.map(boxObstacle)]);
   }
 
   private runWaves(now: number): void {
@@ -372,11 +371,11 @@ export class Defence {
   }
 
   private moveAndAttack(now: number, dt: number): void {
-    const boxes = [...this.world.items.values()].filter(isBlocking);
-    const solid = [...OBSTACLES, ...boxes.map(boxObstacle)];
+    const blockers = [...this.world.items.values()].filter(isBlocking);
+    const solid = [...OBSTACLES, ...blockers.map(boxObstacle)];
     const players = this.world.players();
     for (const e of this.enemies.values()) {
-      if (e.kind === "spitter" && this.spitterAct(e, players, solid, boxes, now, dt)) continue;
+      if (e.kind === "spitter" && this.spitterAct(e, players, solid, blockers, now, dt)) continue;
       // a player within reach is attacked first: they're in the way
       const victim = players.find((p) => Math.hypot(p.x - e.x, p.z - e.z) < ENEMY_REACH + PLAYER_RADIUS + ENEMY_RADIUS * 0.5);
       if (victim) {
@@ -397,7 +396,7 @@ export class Defence {
       // after a player: walk straight at them, or to where they were last seen
       const chase = this.chasePoint(e, players, now);
       if (chase) {
-        this.walk(e, chase.x - e.x, chase.z - e.z, dt, solid, boxes, now, false);
+        this.walk(e, chase.x - e.x, chase.z - e.z, dt, solid, blockers, now, false);
         continue;
       }
       // at the reactor: attack it (not in the dark: it's dead, they're hunting)
@@ -410,24 +409,24 @@ export class Defence {
         continue;
       }
       // otherwise walk the flow field (in the dark, the hunt's); sealed in,
-      // head straight at the reactor and chew through whatever box is in the way
+      // head straight at the reactor and chew through whatever turret is in the way
       let dir = (this.state.phase === "blackout" ? this.hunt : this.field).direction(e.x, e.z);
       let sealed = false;
       if (!dir) {
         dir = { dx: REACTOR.x - e.x, dz: REACTOR.z - e.z };
         sealed = true;
       }
-      this.walk(e, dir.dx, dir.dz, dt, solid, boxes, now, sealed);
+      this.walk(e, dir.dx, dir.dz, dt, solid, blockers, now, sealed);
     }
   }
 
-  /** one step along (dx, dz); stuck (or sealed in), chew whatever box is in the way */
-  private walk(e: Enemy, dx: number, dz: number, dt: number, solid: typeof OBSTACLES, boxes: ItemState[], now: number, sealed: boolean): void {
+  /** one step along (dx, dz); stuck (or sealed in), chew whatever turret is in the way */
+  private walk(e: Enemy, dx: number, dz: number, dt: number, solid: typeof OBSTACLES, blockers: ItemState[], now: number, sealed: boolean): void {
     const len = Math.hypot(dx, dz) || 1;
     const step = ENEMY_SPEED * (e.kind === "spitter" ? SPITTER_SPEED_FACTOR : 1) * dt;
     e.rotation = Math.atan2(dx, dz);
     const moved = this.collide(e, e.x + (dx / len) * step, e.z + (dz / len) * step, solid);
-    if (sealed || Math.hypot(moved.x - e.x, moved.z - e.z) < step * 0.25) this.chewNearestBox(e, boxes, now);
+    if (sealed || Math.hypot(moved.x - e.x, moved.z - e.z) < step * 0.25) this.chewNearestBlocker(e, blockers, now);
     e.x = moved.x;
     e.z = moved.z;
   }
@@ -438,7 +437,7 @@ export class Defence {
    * false and it moves like a crawler (toward the reactor, or the player
    * it's lost sight of).
    */
-  private spitterAct(e: Enemy, players: { id: string; x: number; z: number }[], solid: typeof OBSTACLES, boxes: ItemState[], now: number, dt: number): boolean {
+  private spitterAct(e: Enemy, players: { id: string; x: number; z: number }[], solid: typeof OBSTACLES, blockers: ItemState[], now: number, dt: number): boolean {
     let target: { id: string; x: number; z: number } | undefined;
     let bestD = SPIT_RANGE;
     for (const p of players) {
@@ -450,7 +449,7 @@ export class Defence {
     }
     if (!target) return false;
     e.rotation = Math.atan2(target.x - e.x, target.z - e.z);
-    if (bestD < SPIT_MIN_RANGE) this.walk(e, e.x - target.x, e.z - target.z, dt, solid, boxes, now, false);
+    if (bestD < SPIT_MIN_RANGE) this.walk(e, e.x - target.x, e.z - target.z, dt, solid, blockers, now, false);
     if (now >= e.nextAttackAt) {
       e.nextAttackAt = now + SPIT_INTERVAL_MS;
       const d = Math.hypot(target.x - e.x, target.z - e.z);
@@ -471,7 +470,7 @@ export class Defence {
     }
   }
 
-  /** a glob's straight line: only walls and boxes stop it (thinner than an enemy's body) */
+  /** a glob's straight line: only walls and turrets stop it (thinner than an enemy's body) */
   private clearShot(x: number, z: number, tx: number, tz: number, solid: typeof OBSTACLES): boolean {
     const d = Math.hypot(tx - x, tz - z);
     if (d < 1e-6) return true;
@@ -532,7 +531,7 @@ export class Defence {
     return e.lastSeen;
   }
 
-  /** move, pushed out of walls/boxes and gently apart from each other so a crowd doesn't stack */
+  /** move, pushed out of walls/turrets and gently apart from each other so a crowd doesn't stack */
   private collide(e: Enemy, nx: number, nz: number, solid: typeof OBSTACLES): { x: number; z: number } {
     let x = nx;
     let z = nz;
@@ -551,21 +550,21 @@ export class Defence {
     return resolveObstacles(x, z, solid);
   }
 
-  private chewNearestBox(e: Enemy, boxes: ItemState[], now: number): void {
+  private chewNearestBlocker(e: Enemy, blockers: ItemState[], now: number): void {
     if (now < e.nextAttackAt) return;
-    const near = boxes.find((b) => Math.abs(b.x - e.x) < 0.5 + ENEMY_RADIUS + 0.3 && Math.abs(b.z - e.z) < 0.5 + ENEMY_RADIUS + 0.3);
+    const near = blockers.find((b) => Math.abs(b.x - e.x) < 0.5 + ENEMY_RADIUS + 0.3 && Math.abs(b.z - e.z) < 0.5 + ENEMY_RADIUS + 0.3);
     if (!near) return;
     e.nextAttackAt = now + ENEMY_ATTACK_INTERVAL_MS;
-    const hp = near.kind === "turret" ? TURRET_HIT_POINTS : BOX_HIT_POINTS;
-    const dmg = (this.boxDamage.get(near.id) ?? 0) + 1;
+    const hp = TURRET_HIT_POINTS;
+    const dmg = (this.blockerDamage.get(near.id) ?? 0) + 1;
     if (dmg >= hp) {
       this.world.items.delete(near.id);
-      this.boxDamage.delete(near.id);
+      this.blockerDamage.delete(near.id);
       this.turretReadyAt.delete(near.id);
-      if (near.kind === "turret") this.world.announce("a turret's been torn down");
+      this.world.announce("a turret's been torn down");
       this.world.changed();
     } else {
-      this.boxDamage.set(near.id, dmg);
+      this.blockerDamage.set(near.id, dmg);
       near.wear = Math.round((dmg / hp) * 100) / 100;
     }
   }
@@ -588,7 +587,7 @@ export class Defence {
 
   /**
    * The attempt has failed: everyone defending the reactor is dead (in the
-   * blackout, or before it). The attack stops, but every box players built
+   * blackout, or before it). The attack stops, but every turret players built
    * stays for the next attempt.
    */
   fail(reason: string, now = Date.now()): void {

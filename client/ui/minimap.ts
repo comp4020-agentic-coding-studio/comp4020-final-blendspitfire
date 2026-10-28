@@ -19,7 +19,7 @@ import { EMIT_REACTOR, EMIT_RED } from "../../shared/palette.ts";
 // pixelated, so it has the same chunky steps as the rest of the UI. Over it,
 // each frame: the crew in their colours, you with a tick for where you face,
 // the lift car, and what there is to find (reactor, supply terminal, the
-// gun and box stations up top). No crawlers: it's a plan, not a radar.
+// gun station up top). No crawlers: it's a plan, not a radar.
 // Sits above the hint line and the wound pips, which also anchor bottom left.
 
 const PX_PER_UNIT = 2;

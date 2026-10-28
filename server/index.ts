@@ -311,12 +311,6 @@ const INITIAL_ITEMS: { kind: ItemKind; x: number; z: number }[] = [
   { kind: "gun", x: 0.8, z: 9 }, // corridor
   { kind: "gun", x: -6, z: 15 }, // lab
   { kind: "gun", x: 10, z: -10 }, // core
-  { kind: "box", x: -15, z: 5 }, // lab, near the vent
-  { kind: "box", x: -16, z: 5 },
-  { kind: "box", x: 4, z: 16.8 }, // hall
-  { kind: "box", x: 5, z: 16.8 },
-  { kind: "box", x: -6, z: -6 }, // core
-  { kind: "box", x: 6, z: -6 },
 ];
 /**
  * Somewhere this item can legitimately lie in the current layout. A saved
@@ -325,6 +319,7 @@ const INITIAL_ITEMS: { kind: ItemKind; x: number; z: number }[] = [
  * stranded or blocking a doorway.
  */
 function stillPlaceable(item: ItemState, placed: ItemState[]): boolean {
+  if ((item.kind as string) === "box") return false; // the retired box kind, still in older saves
   if (!isWalkable(item.x, item.z)) return false;
   if (!BLOCKING_KINDS.has(item.kind)) return !overlapsAnyObstacle(item.x, item.z, 0.1, OBSTACLES);
   return placementVerdict(item.x, item.z, item, worldObstacles(placed), []) !== "blocked";
@@ -747,21 +742,6 @@ function handlePrimary(conn: Connection, x: number, z: number, now: number): voi
     });
     act(conn.player, `threw grenade ${shortId(item.id)} at ${pos(land.x, land.z)}`);
     markWorldDirty();
-  } else if (BLOCKING_KINDS.has(item.kind)) {
-    if (!Number.isFinite(x) || !Number.isFinite(z)) return;
-    const verdict = placementVerdict(x, z, conn.player, worldObstacles(items.values()), livingPlayers(now));
-    if (verdict !== "ok") {
-      refuse(conn, "place", `refused: ${item.kind} at ${pos(x, z)} (${verdict})`);
-      return;
-    }
-    item.heldBy = undefined;
-    item.x = x;
-    item.z = z;
-    item.wear = undefined;
-    act(conn.player, `placed ${item.kind} ${shortId(item.id)} at ${pos(x, z)}`);
-    if (item.kind === "box") bumpStats(conn.player.id, codename(conn.player), { boxes: 1 });
-    boardDirty = true;
-    markWorldDirty();
   }
 }
 
@@ -817,7 +797,7 @@ function boardMessage(): string {
   return JSON.stringify({
     type: "board",
     run: { attempts: run.attempts, best: run.best },
-    top: topStats(BOARD_SIZE).map(({ name, kills, boxes, attempts, wins }) => ({ name, kills, boxes, attempts, wins })),
+    top: topStats(BOARD_SIZE).map(({ name, kills, attempts, wins }) => ({ name, kills, attempts, wins })),
     wins: recentRuns(5),
   } satisfies ServerMessage);
 }
@@ -1134,10 +1114,8 @@ wss.on("connection", (socket, req) => {
     }
 
     if (msg.type === "drop") {
-      // A box goes down through its primary action (it needs a valid spot);
-      // only items that don't block anything can just be let go of.
       const item = heldItem(playerId);
-      if (item && !BLOCKING_KINDS.has(item.kind)) {
+      if (item) {
         act(conn.player, `dropped ${item.kind} ${shortId(item.id)} at ${pos(conn.player.x, conn.player.z)}`);
         dropHeld(conn.player);
       }
@@ -1188,7 +1166,7 @@ function leastUsedColor(taken: string[]): string {
 
 /**
  * A shot in flight. Its path is a straight line known the moment it's
- * fired: how far it gets before a wall or box (`range`) is ray-cast then.
+ * fired: how far it gets before a wall or turret (`range`) is ray-cast then.
  * Each tick only checks the stretch covered since the last one against
  * players, so even a very fast shot can't skip past anyone or through
  * anything.

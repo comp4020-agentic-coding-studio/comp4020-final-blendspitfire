@@ -113,7 +113,7 @@ export const WIPE_HOLD_MS = 4500;
 export interface BoardMessage {
   type: "board";
   run: { attempts: number; best: number };
-  top: { name: string; kills: number; boxes: number; attempts: number; wins: number }[];
+  top: { name: string; kills: number; attempts: number; wins: number }[];
   wins: { n: number; wonAt: number; attempts: number; crew: string[] }[];
 }
 
@@ -134,7 +134,7 @@ export interface PickupMessage {
 /**
  * The held item's primary action. What it does is up to the item's kind;
  * (x, z) is where the player is pointing on the ground, for kinds that need
- * a target (a box's placement spot) --- kinds that don't just ignore it.
+ * a target (a grenade's landing spot) --- kinds that don't just ignore it.
  */
 export interface PrimaryMessage {
   type: "primary";
@@ -191,7 +191,7 @@ export interface ScrapMessage {
 
 /**
  * A shot, sent once rather than every tick: where it started, which way it
- * flies and when, and how far it gets before it stops (a wall, a box, or
+ * flies and when, and how far it gets before it stops (a wall, a turret, or
  * someone it hit). Every client plays the same straight line forward from
  * those, so a fast bullet looks identical everywhere without streaming its
  * position. `range` can shrink once (when it hits a player mid-flight); the
@@ -275,10 +275,10 @@ export type ClientMessage =
  * secondary) action does. The "equipment slot" is just `heldBy` --- a
  * player holds at most one item, and nothing on screen shows a slot.
  */
-export type ItemKind = "gun" | "box" | "turret" | "grenade";
+export type ItemKind = "gun" | "turret" | "grenade";
 
-/** kinds that stand on a 1×1 tile once put down: placed like a box, block like a box, get chewed like a box */
-export const BLOCKING_KINDS: ReadonlySet<ItemKind> = new Set<ItemKind>(["box", "turret"]);
+/** kinds that stand on a 1×1 tile once put down: they block players, shots and enemies, and enemies chew them */
+export const BLOCKING_KINDS: ReadonlySet<ItemKind> = new Set<ItemKind>(["turret"]);
 export const isBlocking = (item: { kind: ItemKind; heldBy?: string }): boolean => BLOCKING_KINDS.has(item.kind) && item.heldBy === undefined;
 
 export interface ItemState {
@@ -288,7 +288,7 @@ export interface ItemState {
   z: number;
   /** id of the player holding it; absent while it's lying in the world */
   heldBy?: string;
-  /** wire-only: a box being chewed, 0..1 of the way to breaking (absent = intact) */
+  /** wire-only: a turret being chewed, 0..1 of the way to breaking (absent = intact) */
   wear?: number;
   /** wire-only: a placed turret's barrel heading (radians, atan2(dx, dz)), set when it fires */
   aim?: number;
@@ -305,7 +305,6 @@ export interface ItemKindInfo {
 
 export const ITEM_KINDS: Record<ItemKind, ItemKindInfo> = {
   gun: { primaryLabel: "fire" },
-  box: { primaryLabel: "place", secondaryLabel: "grid snap" },
   turret: { primaryLabel: "place", secondaryLabel: "grid snap" },
   grenade: { primaryLabel: "throw" },
 };
@@ -348,7 +347,7 @@ export function grenadeLanding(from: { x: number; z: number }, ax: number, az: n
 
 /** how far (center to center) a player can reach to pick something up */
 export const PICKUP_RANGE = 2.2;
-/** how far from the player a box can be put down */
+/** how far from the player a turret can be built */
 export const PLACE_RANGE = 3.5;
 export const BOX_HALF_EXTENT = 0.5;
 export const GRID_SIZE = 1;
@@ -892,9 +891,9 @@ export function liftVerdict(player: { x: number; z: number }, lift: LiftState, o
 }
 
 /**
- * Where boxes can't be put down: the lift car and both its doors (so
+ * Where turrets can't be built: the lift car and both its doors (so
  * nobody can wall the lift shut) and the spawn strip (so nobody spawns
- * inside a box). Doorways inside the facility are fair game --- holding a
+ * inside a turret). Doorways inside the facility are fair game --- holding a
  * chokepoint is what they're for.
  */
 export const NO_BUILD: Rect[] = [
@@ -919,11 +918,9 @@ export const SPAWN_POINTS: { x: number; z: number }[] = [
  */
 export const STATIONS: { kind: ItemKind; x: number; z: number }[] = [
   { kind: "gun", x: -7, z: SPAWN_Z - 1 },
-  { kind: "box", x: 7, z: SPAWN_Z - 1 },
 ];
 export const STATION_RESTOCK_MS = 3000;
-/** boxes are capped higher than a single attempt needs: they're what carries over between attempts */
-export const ITEM_CAPS: Record<ItemKind, number> = { gun: 12, box: 60, turret: 8, grenade: 20 };
+export const ITEM_CAPS: Record<ItemKind, number> = { gun: 12, turret: 8, grenade: 20 };
 
 // The quota: a shared supply credit the corp issues the crew for every wave
 // they clear (faster = more), spent at the supply terminal on kit. Shared,
@@ -978,7 +975,7 @@ export function buyVerdict(
 }
 
 /**
- * Where a turret can be built: same footprint rules as a box (not in reach,
+ * Where a turret can be built: same footprint rules as any placed blocker (not in reach,
  * not walkable, in a no-build zone, or overlapping something), plus the
  * quota and the corp's cap on how many stand at once. Checked again at the
  * moment of building --- funds or the cap can have moved since the order
@@ -1018,13 +1015,13 @@ export const PLAYER_RADIUS = 0.4;
 /** walking speed, units/second: the client moves at it and the server won't accept faster */
 export const PLAYER_SPEED = 6;
 
-/** a box resting in the world, as an obstacle: it blocks players and projectiles */
+/** a placed turret, as an obstacle: it blocks players and projectiles */
 export function boxObstacle(item: { x: number; z: number }): Obstacle {
   return { x: item.x, z: item.z, halfX: BOX_HALF_EXTENT, halfZ: BOX_HALF_EXTENT, halfHeight: BOX_HALF_EXTENT };
 }
 
 /**
- * What a shot stops at besides walls and boxes: the edge of the world, just
+ * What a shot stops at besides walls and turrets: the edge of the world, just
  * past the outer walls. The breaches are open, so without these a shot
  * through one would fly on into nothing.
  */
@@ -1038,7 +1035,7 @@ export const SHOT_BOUNDS: Obstacle[] = [
 
 /**
  * How far a shot fired from (x, z) along (dirX, dirZ) gets before a wall, a
- * box or the world's edge stops it. Shared so your own shot is drawn
+ * turret or the world's edge stops it. Shared so your own shot is drawn
  * stopping exactly where the server will stop it.
  */
 export function shotRange(x: number, z: number, dirX: number, dirZ: number, obstacles: Obstacle[]): number {
@@ -1046,7 +1043,7 @@ export function shotRange(x: number, z: number, dirX: number, dirZ: number, obst
   return rayToObstacles(x, z, dirX, dirZ, [...obstacles, ...SHOT_BOUNDS], PROJECTILE_MAX_RANGE);
 }
 
-/** the fixed walls and fixtures plus every box currently sitting on the ground */
+/** the fixed walls and fixtures plus every turret currently standing */
 export function worldObstacles(items: Iterable<ItemState>): Obstacle[] {
   const result = [...OBSTACLES];
   for (const item of items) {
@@ -1062,9 +1059,9 @@ export function snapToGrid(v: number): number {
 export type PlacementVerdict = "ok" | "too far" | "blocked" | "no building here";
 
 /**
- * Whether a box may be put down centered at (x, z), and if not, why: in
+ * Whether a turret may be put down centered at (x, z), and if not, why: in
  * reach of the placer, somewhere walkable (a room, a doorway, the yard),
- * outside the no-build zones, and not overlapping a wall, fixture, box, or
+ * outside the no-build zones, and not overlapping a wall, fixture, turret, or
  * anyone's body. Shared so
  * the client's preview refuses exactly what the server would --- and can
  * say why.
@@ -1077,7 +1074,7 @@ export function placementVerdict(
   players: { x: number; z: number }[],
 ): PlacementVerdict {
   if (Math.hypot(x - placer.x, z - placer.z) > PLACE_RANGE) return "too far";
-  // the box's own overlap with walls is caught below; this just keeps its
+  // the turret's own overlap with walls is caught below; this just keeps its
   // centre out of solid structure and off the outdoor margins
   if (!isWalkable(x, z)) return "blocked";
   if (NO_BUILD.some((r) => inRect(r, x, z))) return "no building here";
@@ -1227,7 +1224,7 @@ export function resolveObstacles(
 ): { x: number; z: number } {
   let px = x;
   let pz = z;
-  // Boxes can sit edge to edge, so pushing out of one can land inside its
+  // Turrets can sit edge to edge, so pushing out of one can land inside its
   // neighbour; a few passes settles any arrangement a player can build.
   for (let pass = 0; pass < 3; pass++) {
     for (const obs of obstacles) {

@@ -48,7 +48,6 @@ import {
   SHOULDER_LAMP,
   character,
   crawler,
-  equipmentCase,
   grenade,
   gun,
   heldGun,
@@ -63,7 +62,6 @@ import { STENCIL, DANGER, OK, EMIT_GREEN, EMIT_TRACER, EMIT_ACID, EMIT_SPARK, AM
 import { INTERP_DELAY_MS, ServerClock, SnapshotBuffer, Tracer } from "./netsync.ts";
 import { ENEMY_RADIUS, SPIT_SPLASH, WAVES_TO_WIN, waveSize, type DefenceState, type EnemyState, type SpitState } from "../shared/enemies.ts";
 import {
-  BOX_HALF_EXTENT,
   BREACHES,
   DOORWAYS,
   TOP_DOOR,
@@ -134,7 +132,6 @@ import {
   type ItemState,
   type ObjectiveState,
   type Obstacle,
-  type PlacementVerdict,
   type BoardMessage,
   type PlayerState,
   type ProjectileState,
@@ -358,7 +355,7 @@ interface RemotePlayer {
   mesh: THREE.Object3D;
   /** their recent positions, played back INTERP_DELAY_MS in the past */
   snaps: SnapshotBuffer;
-  /** where they are drawn this frame (also what box placement keeps clear of) */
+  /** where they are drawn this frame (also what turret placement keeps clear of) */
   drawn: { x: number; z: number; rotation: number };
   /** alive and down in the facility: someone a spectator can watch */
   watchable: boolean;
@@ -495,7 +492,7 @@ interface ClientItem {
   lying: THREE.Object3D;
   held: THREE.Object3D;
   outline: THREE.Mesh;
-  /** a box: shudders until this (performance.now()) after a bite */
+  /** a turret: shudders until this (performance.now()) after a bite */
   bittenUntil: number;
   /** a turret: performance.now() it last got a fresh aim --- idles (slow sweep) once this goes stale */
   lastAimAt: number;
@@ -506,9 +503,9 @@ const TURRET_IDLE_AFTER_MS = 1500;
 const TURRET_IDLE_SPEED = 0.6;
 
 const items = new Map<string, ClientItem>();
-/** walls, rocks, and boxes on the ground, as of the last state broadcast */
+/** walls, rocks, and turrets on the ground, as of the last state broadcast */
 let obstacles: Obstacle[] = OBSTACLES;
-/** a box's secondary action toggles this; it stays put between boxes */
+/** the secondary action toggles this while ordering a turret; it stays put between orders */
 let gridSnap = false;
 
 const outlineInReach = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.BackSide, transparent: true });
@@ -546,14 +543,10 @@ function makeItem(state: ItemState): ClientItem {
     held = grenade();
     held.position.set(0.32, 0.8, 0.2);
   } else {
-    if (state.kind === "turret") {
-      lying = sentryTurret();
-      shape = lying.children[0] as THREE.Mesh;
-      held = sentryTurret();
-    } else {
-      lying = shape = equipmentCase();
-      held = equipmentCase();
-    }
+    // a turret: the only blocking kind
+    lying = sentryTurret();
+    shape = lying.children[0] as THREE.Mesh;
+    held = sentryTurret();
     // carried in front, in both arms, at a smaller size so it doesn't hide the carrier
     held.scale.setScalar(0.55);
     held.position.set(0, 0.62, 0.5);
@@ -572,11 +565,11 @@ function removeItem(item: ClientItem): void {
   item.held.removeFromParent();
 }
 
-// A box that's chewed shows it: it shudders at each bite, and slumps and
+// A turret that's chewed shows it: it shudders at each bite, and slumps and
 // tilts further the closer it is to giving way. When it breaks, a puff of
 // dust where it stood, so it doesn't just vanish.
 const dustPuffs: { sprite: THREE.Sprite; born: number }[] = [];
-function boxBroke(x: number, z: number): void {
+function turretBroke(x: number, z: number): void {
   const sprite = glow(STENCIL, 1.2, 0.6);
   sprite.position.set(x, 0.4, z);
   scene.add(sprite);
@@ -612,8 +605,8 @@ function updateItems(all: ItemState[]): void {
   }
   for (const [id, item] of items) {
     if (!seen.has(id)) {
-      // a chewed box that's gone from the ground broke (rather than being picked up, which keeps it in the list)
-      if (BLOCKING_KINDS.has(item.state.kind) && item.state.heldBy === undefined && item.state.wear) boxBroke(item.state.x, item.state.z);
+      // a chewed turret that's gone from the ground was torn down (rather than scrapped, which keeps it in the list)
+      if (BLOCKING_KINDS.has(item.state.kind) && item.state.heldBy === undefined && item.state.wear) turretBroke(item.state.x, item.state.z);
       removeItem(item);
       items.delete(id);
     }
@@ -654,12 +647,12 @@ function hoveredItem(): { item: ClientItem; inReach: boolean } | undefined {
 }
 
 /**
- * Where a held box would land: the cursor's ground point, pulled in to
+ * Where a turret being ordered would land: the cursor's ground point, pulled in to
  * placement range, then snapped if grid snap is on. Pulled in a bit
  * further when snapping, so rounding to the grid can't push a spot that
  * looked in range back out of it.
  */
-function boxTarget(): { x: number; z: number } {
+function placeTarget(): { x: number; z: number } {
   const origin = localMesh!.position;
   let dx = aimPoint.x - origin.x;
   let dz = aimPoint.z - origin.z;
@@ -687,29 +680,17 @@ function livingBodies(): { x: number; z: number }[] {
   return bodies;
 }
 
-function boxVerdict(target: { x: number; z: number }): PlacementVerdict {
-  return placementVerdict(target.x, target.z, localMesh!.position, obstacles, livingBodies());
-}
-
 function turretCount(): number {
   return [...items.values()].filter((i) => i.state.kind === "turret").length;
 }
 
-/** where a turret being ordered would go, and whether it can: same spot and footprint as a box, plus the quota and the corp's cap */
+/** where a turret being ordered would go, and whether it can: same spot and footprint as any placed blocker, plus the quota and the corp's cap */
 function turretVerdict(target: { x: number; z: number }): BuildTurretVerdict {
   return buildTurretVerdict(target.x, target.z, localMesh!.position, obstacles, livingBodies(), funds, turretCount());
 }
 
 /** true while a turret's been ordered and is waiting for a spot: click to build it there, Q/Esc to cancel */
 let placingTurret = false;
-
-const previewMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.45, depthWrite: false });
-const placementPreview = new THREE.Mesh(
-  new THREE.BoxGeometry(BOX_HALF_EXTENT * 2, BOX_HALF_EXTENT * 2, BOX_HALF_EXTENT * 2),
-  previewMaterial,
-);
-placementPreview.visible = false;
-scene.add(placementPreview);
 
 const throwRing = new THREE.Mesh(
   new THREE.RingGeometry(GRENADE_RADIUS - 0.12, GRENADE_RADIUS, 32).rotateX(-Math.PI / 2),
@@ -718,8 +699,8 @@ const throwRing = new THREE.Mesh(
 throwRing.visible = false;
 scene.add(throwRing);
 
-// the turret's own shape, tinted OK/DANGER like the box preview, so what's
-// about to be built is unmistakable rather than a stand-in box
+// the turret's own shape, tinted OK/DANGER, so what's about to be built is
+// unmistakable rather than a stand-in block
 const turretPreviewMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.55, depthWrite: false });
 const turretPreview = sentryTurret();
 turretPreview.traverse((o) => {
@@ -815,15 +796,6 @@ function stepItemVisuals(time: number): void {
   }
 
   const held = myHeldItem();
-  const showPreview = !dead && !!localMesh && held !== undefined && BLOCKING_KINDS.has(held.state.kind);
-  placementPreview.visible = showPreview;
-  if (showPreview) {
-    const target = boxTarget();
-    const sinceRefused = time - refusedAt;
-    const shake = sinceRefused < 0.3 ? Math.sin(sinceRefused * 60) * 0.12 : 0;
-    placementPreview.position.set(target.x + shake, BOX_HALF_EXTENT, target.z);
-    previewMaterial.color.setHex(boxVerdict(target) === "ok" ? OK : DANGER);
-  }
   // holding a grenade: a ring on the floor where it'll land, the blast's size
   const showThrow = !dead && !!localMesh && held?.state.kind === "grenade";
   throwRing.visible = showThrow;
@@ -834,16 +806,14 @@ function stepItemVisuals(time: number): void {
   }
   const showTurretPreview = !dead && !!localMesh && placingTurret;
   turretPreview.visible = showTurretPreview;
-  snapGrid.visible = (showPreview || showTurretPreview) && gridSnap;
+  snapGrid.visible = showTurretPreview && gridSnap;
   if (showTurretPreview) {
-    const target = boxTarget();
+    const target = placeTarget();
     const sinceRefused = time - refusedAt;
     const shake = sinceRefused < 0.3 ? Math.sin(sinceRefused * 60) * 0.12 : 0;
     turretPreview.position.set(target.x + shake, 0, target.z);
     turretPreviewMaterial.color.setHex(turretVerdict(target) === "ok" ? OK : DANGER);
     snapGrid.position.set(target.x, 0.02, target.z);
-  } else if (showPreview) {
-    snapGrid.position.set(placementPreview.position.x, 0.02, placementPreview.position.z);
   }
 }
 
@@ -1112,13 +1082,6 @@ function currentPrompts(): Prompt[] {
     const d = LIFT_DOORS[lift.at];
     out.push({ id: "lift-count", at: v3(d.x - 1.6, 2.4, d.z), label: `lift leaves in ${Math.max(0, Math.ceil((lift.departAt - now) / 1000))}s` });
   }
-  // the held box: where it'll go, or why it can't
-  const held = myHeldItem();
-  if ((held !== undefined && BLOCKING_KINDS.has(held.state.kind))) {
-    const t = boxTarget();
-    const verdict = boxVerdict(t);
-    if (verdict !== "ok") out.push({ id: "place", at: v3(t.x, 0.9, t.z), key: "", label: verdict, enabled: false });
-  }
   return out;
 }
 
@@ -1294,10 +1257,9 @@ function renderControls(): void {
     const info = ITEM_KINDS[held.state.kind];
     const parts = [held.state.kind === "gun" ? "click / hold: fire" : `click: ${info.primaryLabel}`];
     if (info.secondaryLabel) {
-      const state = BLOCKING_KINDS.has(held.state.kind) ? ` (${gridSnap ? "on" : "off"})` : "";
-      parts.push(`right-click / Space: ${info.secondaryLabel}${state}`);
+      parts.push(`right-click / Space: ${info.secondaryLabel}`);
     }
-    parts.push(BLOCKING_KINDS.has(held.state.kind) ? "Q: place" : "Q: drop");
+    parts.push("Q: drop");
     text = `WASD move · ${parts.join(" · ")}`;
   }
   if (canVote()) text += amReady() ? " · X: not ready" : " · X: ready";
@@ -1491,7 +1453,7 @@ function stepTracers(): void {
 /**
  * Your own shot, drawn the moment you click: the same muzzle, direction
  * and stopping point the server will compute (towards the aim point,
- * ray-cast against walls and boxes), so when its copy arrives the swap is
+ * ray-cast against walls and turrets), so when its copy arrives the swap is
  * invisible.
  */
 function firePredictedShot(aimX: number, aimZ: number): void {
@@ -1552,7 +1514,7 @@ function primary(): void {
   }
   if (isDead() || !localMesh) return;
   if (placingTurret) {
-    const target = boxTarget();
+    const target = placeTarget();
     const verdict = turretVerdict(target);
     if (verdict === "ok") {
       net.buildTurret(target.x, target.z);
@@ -1587,15 +1549,6 @@ function primary(): void {
       return;
     }
     net.primary(aimPoint.x, aimPoint.z);
-  } else if (BLOCKING_KINDS.has(held.state.kind)) {
-    const target = boxTarget();
-    const verdict = boxVerdict(target);
-    if (verdict === "ok") {
-      net.primary(target.x, target.z);
-    } else {
-      refusedAt = clock.elapsedTime;
-      flash(`can't place: ${verdict}`);
-    }
   }
 }
 
@@ -1640,8 +1593,7 @@ function stepTrigger(): void {
 
 function secondary(): void {
   if (isDead()) return;
-  const held = myHeldItem();
-  if (placingTurret || (held !== undefined && BLOCKING_KINDS.has(held.state.kind))) gridSnap = !gridSnap;
+  if (placingTurret) gridSnap = !gridSnap;
 }
 
 function drop(): void {
@@ -1652,10 +1604,7 @@ function drop(): void {
   }
   const held = myHeldItem();
   if (!held) return;
-  // a box can't just be let go of where you stand --- it'd land on you ---
-  // so dropping one means putting it down at the preview spot
-  if (BLOCKING_KINDS.has(held.state.kind)) primary();
-  else net.drop();
+  net.drop();
 }
 
 window.addEventListener("pointerdown", (e) => {
@@ -1723,7 +1672,7 @@ const enemies = new Map<string, ClientEnemy>();
 let defenceState: DefenceState = { reactorHealth: 1, wave: 0, phase: "spawning" };
 /** the crew's shared quota, as the server last said */
 let funds = 0;
-const ITEM_NAMES: Record<ItemKind, string> = { gun: "rifle", box: "box", turret: "turret", grenade: "grenade" };
+const ITEM_NAMES: Record<ItemKind, string> = { gun: "rifle", turret: "turret", grenade: "grenade" };
 const enemyBarGeometry = new THREE.PlaneGeometry(0.7, 0.07).rotateX(-Math.PI / 2);
 
 function updateEnemies(incoming: EnemyState[], t: number): void {
@@ -2351,7 +2300,7 @@ function renderBoard(b: BoardMessage): void {
     ? `run: attempt ${b.run.attempts}${b.run.best ? ` · best ${b.run.best}/${WAVES_TO_WIN} waves` : ""}`
     : "run: no attempts yet";
   const rows = b.top
-    .map((p, i) => `<div class="row"><span class="rank">${i + 1}</span><span>${escapeText(p.name)}</span><span class="score">${p.wins ? `★${p.wins} ` : ""}${p.kills}k ${p.boxes}b</span></div>`)
+    .map((p, i) => `<div class="row"><span class="rank">${i + 1}</span><span>${escapeText(p.name)}</span><span class="score">${p.wins ? `★${p.wins} ` : ""}${p.kills}k</span></div>`)
     .join("");
   const wins = b.wins
     .map((w) => `<div class="row won"><span>#${w.n}</span><span>${w.attempts} attempt(s)</span><span class="score">${escapeText(w.crew.slice(0, 3).join(", "))}${w.crew.length > 3 ? "…" : ""}</span></div>`)
@@ -2361,7 +2310,7 @@ function renderBoard(b: BoardMessage): void {
     `<div class="title">high scores</div><div class="run">${runLine}</div>` +
     (rows || '<div class="row dim">nobody yet</div>') +
     (wins ? `<div class="title">reactor stabilised</div>${wins}` : "") +
-    '<div class="legend">★ runs won · k kills · b boxes placed</div>' +
+    '<div class="legend">★ runs won · k kills</div>' +
     '<div class="legend">E / Esc to close</div></div>';
 }
 // walking away closes it

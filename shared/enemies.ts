@@ -16,9 +16,9 @@ import {
 //
 // They find their way with a flow field: one breadth-first search outward
 // from the reactor over a grid of the facility's walkable floor, giving
-// every cell the step that leads closer. Boxes count as walls in that
+// every cell the step that leads closer. Turrets count as walls in that
 // grid, so what players build really does reroute them --- and when a
-// box seals a route completely, enemies stuck against it chew through it.
+// turret seals a route completely, enemies stuck against it chew through it.
 
 /**
  * "crawler": the original --- melee, straight at whatever it's after.
@@ -103,9 +103,7 @@ export const SEARCH_MS = 2000;
 export const THINK_MS = 400;
 /** within this of the reactor's footprint an enemy is committed to it */
 export const REACTOR_COMMIT = 2.5;
-/** hits it takes an enemy to break a box blocking its way */
-export const BOX_HIT_POINTS = 6;
-/** ...and a turret: tougher, since it cost quota */
+/** hits it takes an enemy to break a turret blocking its way */
 export const TURRET_HIT_POINTS = 10;
 /**
  * A placed turret fires at the nearest enemy it can see within range, a
@@ -120,7 +118,7 @@ export const TURRET_FIRE_INTERVAL_MS = 450;
  * in it is down; a WAVE_BREAK_MS breather follows (buy time), then the next
  * wave starts --- sooner if someone sends it early. A failed attempt (the
  * reactor destroyed, or everyone out) starts the wave count again from
- * zero, boxes and turrets left standing. Waves grow in size as the count
+ * zero, turrets left standing. Waves grow in size as the count
  * climbs toward the win; six waves to the win (ten was too long in playtest, ADR-060).
  */
 export const WAVES_TO_WIN =
@@ -220,8 +218,8 @@ export class FlowField {
   private goal?: { x: number; z: number };
 
   /**
-   * Rebuild for this set of obstacles (walls, fixtures, boxes); cheap
-   * enough to run whenever a box moves. Leads to the reactor, or to `goal`
+   * Rebuild for this set of obstacles (walls, fixtures, turrets); cheap
+   * enough to run whenever a turret goes up or comes down. Leads to the reactor, or to `goal`
    * when given (the blackout's hunt for whoever's left).
    */
   build(obstacles: Obstacle[], goal?: { x: number; z: number }): void {
@@ -278,7 +276,7 @@ export class FlowField {
   /**
    * Which way to walk from (x, z) to get closer to the reactor: toward the
    * centre of the best neighbouring cell. Undefined when there's no route
-   * (sealed in by boxes) --- the caller then heads straight for the reactor
+   * (sealed in by turrets) --- the caller then heads straight for the reactor
    * and chews through whatever's in the way.
    */
   direction(x: number, z: number): { dx: number; dz: number } | undefined {
