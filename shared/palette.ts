@@ -222,14 +222,20 @@ export const STENCIL = oklch(0.22, 0.01, MOTHER_H);
 
 // --- Players: vivid, but only as UI and as their lamp (an emitter) -----------------
 
-export const PLAYER_COLORS = ["#ff7a1f", "#ffc21a", "#5fd35f", "#ff4fa3", "#8f6bff", "#3d7bff"] as const;
+/**
+ * The crew is all cool hues, ice to violet; everything hostile (crawler
+ * eyes, spitter acid, their blood) is warm or sour yellow-green. A
+ * teammate never reads as an enemy at a glance (playtest, ADR-060). Six
+ * hues in a narrow band, so lightness varies too to keep them apart.
+ */
+export const PLAYER_COLORS = ["#a8ebfb", "#37ccac", "#55c4fe", "#3d7efc", "#735fe9", "#ba7afb"] as const;
 const PLAYER_COLOR_NAMES: Record<string, string> = {
-  "#ff7a1f": "Orange",
-  "#ffc21a": "Yellow",
-  "#5fd35f": "Green",
-  "#ff4fa3": "Pink",
-  "#8f6bff": "Violet",
-  "#3d7bff": "Blue",
+  "#a8ebfb": "Ice",
+  "#37ccac": "Teal",
+  "#55c4fe": "Sky",
+  "#3d7efc": "Blue",
+  "#735fe9": "Indigo",
+  "#ba7afb": "Violet",
 };
 
 /**
