@@ -12,6 +12,8 @@ export interface PlayerState {
   respawnAt?: number;
   /** wire-only: dead for the rest of this attempt (died while the reactor was live): spectating */
   out?: true;
+  /** wire-only: out only because they joined while an attempt was on (they watch the crew until it ends) */
+  late?: true;
   /** wire-only: in-memory for the current connection, not persisted */
   score?: number;
   /** wire-only: out of the lift into the facility since they came down; during an attempt the lift's shut to them */

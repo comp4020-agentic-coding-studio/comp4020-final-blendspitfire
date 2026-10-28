@@ -71,6 +71,7 @@ import {
   noFireAt,
   LIFT_DZ,
   FACILITY_HALF,
+  LIFT_CARS,
   type LiftLevel,
   obstaclesFor,
   overlapsAnyObstacle,
@@ -242,6 +243,8 @@ interface Connection {
   kills: number;
   /** riding a helicopter: when the ride ends and where it puts them (0 = not flying) */
   flyingUntil: number;
+  /** joined while an attempt was on: out and watching until it ends (not a death) */
+  late: boolean;
   flyTo?: { x: number; z: number; to: string };
 }
 
@@ -502,6 +505,7 @@ function everyoneUp(): void {
 }
 
 function reviveAt(conn: Connection): void {
+  conn.late = false;
   respawn(conn.player);
   conn.wounds = 0;
   conn.bandaged = 0;
@@ -535,7 +539,21 @@ const lift = new Lift({
   // (someone in the tutorial isn't anywhere near the garden lift: the car doesn't wait for them)
   onLevel: (level) => [...connections.values()].filter((c) => !isDead(c) && levelOf(c.player.z) === level && !inTutorial(c.player.x, c.player.z)).length,
   shut(level) {
-    if (level !== "bottom" || !attemptLocked()) return;
+    // going down takes the whole surface along: one level in play at a time
+    // (ADR-060). Anyone up top who didn't get in is put in the car now.
+    if (level === "top") {
+      for (const conn of connections.values()) {
+        const p = conn.player;
+        if (isDead(conn) || levelOf(p.z) !== "top" || inTutorial(p.x, p.z) || conn.flyingUntil || inCar("top", p.x, p.z)) continue;
+        const spot = carSpot("top", [...connections.values()].filter((c) => c !== conn && inCar("top", c.player.x, c.player.z)).map((c) => c.player));
+        p.x = spot.x;
+        p.z = spot.z;
+        warped(conn);
+        act(p, "pulled into the lift as it left");
+      }
+      return;
+    }
+    if (!attemptLocked()) return;
     for (const conn of connections.values()) {
       if (!isDead(conn) && inCar("bottom", conn.player.x, conn.player.z)) standOutOfCar(conn);
     }
@@ -636,6 +654,24 @@ function stepTutorial(): void {
 }
 
 /** nobody leaves a live attempt: the doors won't shut on them, so they're stood back out in the corridor */
+/** a free spot standing in the car at this level: the first on a grid with nobody too close */
+function carSpot(level: LiftLevel, taken: { x: number; z: number }[]): { x: number; z: number } {
+  const car = LIFT_CARS[level];
+  let best = { x: (car.minX + car.maxX) / 2, z: (car.minZ + car.maxZ) / 2 };
+  let bestGap = -1;
+  for (let x = car.minX + 0.8; x <= car.maxX - 0.8; x += 0.9) {
+    for (let z = car.minZ + 0.8; z <= car.maxZ - 0.8; z += 0.9) {
+      const gap = Math.min(Infinity, ...taken.map((t) => Math.hypot(t.x - x, t.z - z)));
+      if (gap > 1.2) return { x, z };
+      if (gap > bestGap) {
+        best = { x, z };
+        bestGap = gap;
+      }
+    }
+  }
+  return best;
+}
+
 function standOutOfCar(conn: Connection): void {
   conn.player.z = FACILITY_HALF - 1;
   conn.player.x = Math.max(-1.5, Math.min(1.5, conn.player.x));
@@ -772,6 +808,7 @@ function netPlayer(conn: Connection, now: number): PlayerState {
     ...conn.player,
     respawnAt: isDead(conn) && conn.deadUntil !== Infinity ? conn.deadUntil : undefined,
     out: conn.deadUntil === Infinity ? true : undefined,
+    late: conn.late && conn.deadUntil === Infinity ? true : undefined,
     score: conn.score,
     entered: levelOf(conn.player.z) === "bottom" ? true : undefined,
     warp: conn.warp,
@@ -859,6 +896,7 @@ wss.on("connection", (socket, req) => {
     shots: 0,
     kills: 0,
     flyingUntil: 0,
+    late: false,
   };
   // the same browser in a second tab (one cookie, one person): the newer
   // tab takes over and the older is closed, never two bodies for one id
@@ -873,6 +911,13 @@ wss.on("connection", (socket, req) => {
     setTimeout(() => previous.socket.terminate(), 2000);
   }
   const back = carried.get(playerId);
+  // an attempt's on below and they weren't part of it: they watch the crew
+  // until it ends, rather than walk the garden alone (one level in play at
+  // a time, ADR-060; the developer means to find something better later)
+  if (!back && attemptLocked() && !tutorial.trainees.has(playerId)) {
+    conn.deadUntil = Infinity;
+    conn.late = true;
+  }
   if (back) {
     carried.delete(playerId);
     conn.wounds = back.wounds;

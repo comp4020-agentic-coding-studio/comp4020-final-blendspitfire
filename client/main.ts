@@ -371,6 +371,8 @@ let localMesh: THREE.Object3D | undefined;
 let myRespawnAt = 0;
 /** out for the rest of this attempt (died while the reactor was live): spectating */
 let myOut = false;
+/** out only because we joined mid-attempt: watching, not fallen */
+let myLate = false;
 /** whose view we're watching while out */
 let watchingId: string | undefined;
 /** wounds taken since we last (re)spawned, as the server sees it */
@@ -1250,7 +1252,7 @@ function renderControls(): void {
   const held = myHeldItem();
   let text: string;
   if (myOut) {
-    text = "you're out until this attempt ends";
+    text = myLate ? "watching the crew until this attempt ends" : "you're out until this attempt ends";
   } else if (placingTurret) {
     text = `WASD move · click: build turret (${TURRET_COST} quota) · right-click / Space: grid snap (${gridSnap ? "on" : "off"}) · Q / Esc: cancel`;
   } else if (!held) {
@@ -1324,6 +1326,7 @@ const net = connect({
     myId = you.id;
     myRespawnAt = you.respawnAt ?? 0;
     myOut = !!you.out;
+    myLate = !!you.late;
     myWounds = you.wounds ?? 0;
     myBandaged = you.bandaged ?? 0;
     myWarp = you.warp ?? 0;
@@ -1357,6 +1360,7 @@ const net = connect({
       if (p.id === myId) {
         myRespawnAt = p.respawnAt ?? 0;
         myOut = !!p.out;
+        myLate = !!p.late;
         const wounds = p.wounds ?? 0;
         if (wounds > myWounds) onWounded(wounds, myBandaged > 0);
         else if (wounds < myWounds && (p.bandaged ?? 0) > 0) showBanner("patched up — the next hit tears it open");
@@ -2236,10 +2240,11 @@ function renderSpectating(dt: number): void {
   spectateEl.style.display = myOut ? "block" : "none";
   if (!myOut) return;
   const ids = watchableIds();
+  const who = myLate ? "an attempt's on below · you're in for the next one" : "you're down";
   spectateEl.textContent =
     ids.length === 0
-      ? "you're down · nobody left standing"
-      : `you're down · watching ${ids.indexOf(watchingId ?? "") + 1}/${ids.length}${ids.length > 1 ? " · click: next" : ""}`;
+      ? `${who} · nobody left standing`
+      : `${who} · watching ${ids.indexOf(watchingId ?? "") + 1}/${ids.length}${ids.length > 1 ? " · click: next" : ""}`;
 }
 
 // The defence HUD: while the reactor is live, one slim strip across the
