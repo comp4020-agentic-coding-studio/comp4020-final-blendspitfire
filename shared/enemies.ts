@@ -121,12 +121,11 @@ export const TURRET_FIRE_INTERVAL_MS = 450;
  * wave starts --- sooner if someone sends it early. A failed attempt (the
  * reactor destroyed, or everyone out) starts the wave count again from
  * zero, boxes and turrets left standing. Waves grow in size as the count
- * climbs toward the win; tuned so a run takes a dozen or so attempts, the
- * defences piling up from one to the next.
+ * climbs toward the win; six waves to the win (ten was too long in playtest, ADR-060).
  */
 export const WAVES_TO_WIN =
   // DEV_WAVES: local testing only (never set in fly.toml), to see a whole run end quickly
-  (typeof process !== "undefined" ? Number(process.env?.DEV_WAVES) || 0 : 0) || 10;
+  (typeof process !== "undefined" ? Number(process.env?.DEV_WAVES) || 0 : 0) || 6;
 export const FIRST_WAVE_DELAY_MS = 10000;
 /** the breather between a cleared wave and the next */
 export const WAVE_BREAK_MS = 30000;
@@ -136,8 +135,8 @@ export const READY_LEAD_MS = 3000;
 export const MAX_ENEMIES = 50;
 /**
  * How many come in the wave numbered `wave` (1-based): quadratic, so the
- * late waves are a different fight from the early ones (9, 32, 81 at waves
- * 1, 5, 10). Past the last wave it stays at the last wave's size.
+ * late waves are a different fight from the early ones (9, 19, 40 at waves
+ * 1, 3, 6). Past the last wave it stays at the last wave's size.
  */
 export const waveSize = (wave: number): number => {
   const w = Math.min(wave, WAVES_TO_WIN);

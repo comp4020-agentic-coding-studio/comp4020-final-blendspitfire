@@ -298,7 +298,7 @@ describe("waves", () => {
   });
 
   it("waves grow faster than linearly toward the last one", () => {
-    expect(waveSize(WAVES_TO_WIN)).toBeGreaterThan(waveSize(1) * 6);
+    expect(waveSize(WAVES_TO_WIN)).toBeGreaterThan(waveSize(1) * 4);
     const half = Math.round(WAVES_TO_WIN / 2);
     // the second half adds more than the first: the curve bends upward
     expect(waveSize(WAVES_TO_WIN) - waveSize(half)).toBeGreaterThan(waveSize(half) - waveSize(1));
