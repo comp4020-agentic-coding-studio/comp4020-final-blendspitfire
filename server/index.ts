@@ -269,7 +269,10 @@ const shortId = (id: string): string => id.slice(0, 6);
  * who leaves mid-attempt and comes back gets them back, rather than a fresh
  * body. Cleared when the attempt ends.
  */
-const carried = new Map<string, { wounds: number; bandaged: number; out: boolean }>();
+const carried = new Map<string, { wounds: number; bandaged: number; out: boolean; below?: { x: number; z: number; at: number } }>();
+
+/** how long someone who drops out of the facility mid-attempt keeps their place before they count as out */
+const DISCONNECT_GRACE_MS = 30_000;
 
 /**
  * A refused action is logged too --- it's the server holding a line --- but
@@ -431,7 +434,8 @@ const crewNames = (): string[] =>
 /**
  * The last wave's down: the reactor's stable and the facility lights up.
  * The win is recorded now, but the crew is left to walk out: the lift
- * takes them up, and once nobody's left below the facility resets.
+ * takes them up, and once nobody alive is left below the facility resets
+ * and the fallen are back with them.
  */
 function winRun(): void {
   const crew = crewNames();
@@ -442,13 +446,9 @@ function winRun(): void {
     if (c) bumpStats(id, codename(c.player), { wins: 1 });
   }
   report({ type: "attempt", outcome: "won", reason: "reactor stable", attempt: attempt.number, waves: defence.state.wave, blackoutMs: 0, crew: crewReport() });
-  // the fallen are back up at the garden: the crew that's left walks out
-  for (const conn of connections.values()) {
-    if (conn.deadUntil === Infinity) {
-      dropHeld(conn.player);
-      reviveAt(conn);
-    }
-  }
+  // the fallen stay down until the crew that's left has walked out:
+  // resetAfterWin() brings them back with everyone (two levels with people
+  // on both, mid-win, is what trapped a revived player at the lift door)
   carried.clear();
   boardDirty = true;
 }
@@ -897,7 +897,13 @@ wss.on("connection", (socket, req) => {
     carried.delete(playerId);
     conn.wounds = back.wounds;
     conn.bandaged = back.bandaged;
+    if (back.below && Date.now() - back.below.at > DISCONNECT_GRACE_MS) back.out = true;
     if (back.out) conn.deadUntil = Infinity;
+    // back within the grace: where they were, in the fight
+    else if (back.below) {
+      player.x = back.below.x;
+      player.z = back.below.z;
+    }
   }
   connections.set(playerId, conn);
   if (DEV_ARMED && !heldItem(playerId)) {
@@ -1146,8 +1152,16 @@ wss.on("connection", (socket, req) => {
     // a tab replaced by a newer one mustn't take the newer one down with it
     if (connections.get(playerId) === conn) {
       connections.delete(playerId);
-      if (conn.deadUntil === Infinity || (objective.active && (conn.wounds > 0 || conn.bandaged > 0))) {
-        carried.set(playerId, { wounds: conn.wounds, bandaged: conn.bandaged, out: conn.deadUntil === Infinity });
+      // alive in the facility mid-attempt: their place is held for a while,
+      // then they count as out (else an empty facility never ends its attempt)
+      const below = attemptLocked() && !isDead(conn) && levelOf(conn.player.z) === "bottom";
+      if (below || conn.deadUntil === Infinity || (objective.active && (conn.wounds > 0 || conn.bandaged > 0))) {
+        carried.set(playerId, {
+          wounds: conn.wounds,
+          bandaged: conn.bandaged,
+          out: conn.deadUntil === Infinity,
+          below: below ? { x: conn.player.x, z: conn.player.z, at: Date.now() } : undefined,
+        });
       }
       act(conn.player, `left (${connections.size} online)`);
     }
@@ -1388,8 +1402,20 @@ function kill(conn: Connection, now: number): void {
  */
 function checkWipe(): void {
   if (bringUpAt) return; // already over: holding on where they fell before the cut
+  // won: only the fallen are left below once the crew's out, and that's resetAfterWin()'s to end
+  if (objective.active && defence.state.phase === "won") return;
   const below = [...connections.values()].filter((c) => c.deadUntil === Infinity || (!isDead(c) && levelOf(c.player.z) === "bottom"));
-  if (below.length === 0 || !below.every((c) => c.deadUntil === Infinity)) return;
+  // someone who dropped out below still holds their place until the grace runs out
+  const t = Date.now();
+  for (const c of carried.values()) if (c.below && !c.out && t - c.below.at > DISCONNECT_GRACE_MS) c.out = true;
+  const holding = [...carried.values()].some((c) => c.below && !c.out);
+  if (holding || !below.every((c) => c.deadUntil === Infinity)) return;
+  if (below.length === 0) {
+    // nobody's below at all: only an attempt that's on (everyone who was
+    // down there left, or the server restarted mid-attempt) has to end
+    if (attemptLocked()) defence.fail("nobody's left down there");
+    return;
+  }
   if (objective.active) {
     defence.fail(defence.state.phase === "blackout" ? "everyone's down in the dark" : "everyone's down");
   } else {
@@ -1423,8 +1449,8 @@ setInterval(() => {
     bringUpAt = 0;
     everyoneUp();
   }
-  // won: once nobody's left below, the facility starts over
-  if (objective.active && defence.state.phase === "won" && ![...connections.values()].some((c) => levelOf(c.player.z) === "bottom")) resetAfterWin();
+  // won: once nobody alive is left below, the facility starts over (the fallen come back up with it)
+  if (objective.active && defence.state.phase === "won" && ![...connections.values()].some((c) => !isDead(c) && levelOf(c.player.z) === "bottom")) resetAfterWin();
   restockStations(now);
   const players = [...connections.values()].map((c) => netPlayer(c, now));
   const projectileList: ProjectileState[] = [...projectiles.values()].map((p) => ({

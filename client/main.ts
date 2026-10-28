@@ -1937,7 +1937,8 @@ function animate(): void {
           localMesh.position.z + dz * woundedSpeed(myWounds) * dt,
         );
         const p = localMesh.position;
-        const lockedOut = objective.active && levelOf(p.z) === "bottom" && !inCar("bottom", p.x, p.z);
+        // (as the server's attemptLocked(): once the attempt's won the lift door opens to everyone)
+        const lockedOut = objective.active && defenceState.phase !== "won" && levelOf(p.z) === "bottom" && !inCar("bottom", p.x, p.z);
         const solid = obstaclesFor(lift, lockedOut, obstacles);
         const resolved = resolveObstacles(next.x, next.z, inTutorial(p.x, p.z) ? [...solid, ...shutTutDoors(myTut ?? LESSONS.length)] : solid);
         localMesh.position.x = resolved.x;
