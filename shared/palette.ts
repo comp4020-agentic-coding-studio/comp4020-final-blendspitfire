@@ -115,18 +115,18 @@ export function swatch(L: number, C: number, h: number, step = 0.09): Ramp {
 }
 
 /**
- * The mother hue every neutral leans toward: a slightly cool blue-grey, so
+ * The mother hue every neutral leans toward: a warm, faintly red ash-grey, so
  * the "greys" of concrete, steel and plastic share one undertone and the
  * scene holds together even as the painted hues vary room to room.
  */
-const MOTHER_H = 250;
+const MOTHER_H = 25;
 
 // structure
 export const CONCRETE = swatch(0.56, 0.008, MOTHER_H);
 export const CONCRETE_DARK = swatch(0.4, 0.008, MOTHER_H);
 /** sealed floor concrete: a touch darker than walls, so floors don't bounce light back up */
 export const FLOOR = swatch(0.46, 0.01, 75, 0.035);
-export const LINOLEUM = swatch(0.5, 0.03, 160, 0.035);
+export const LINOLEUM = swatch(0.5, 0.012, 40, 0.035);
 export const RAISED_FLOOR = swatch(0.52, 0.006, MOTHER_H, 0.04);
 
 // painted block walls, one per zone: the "many hues, one family" part
@@ -135,6 +135,9 @@ export const PAINT_STEEL_BLUE = swatch(0.56, 0.045, 240);
 export const PAINT_OXIDE = swatch(0.44, 0.06, 30);
 export const PAINT_OCHRE = swatch(0.62, 0.055, 85);
 export const PAINT_PUTTY = swatch(0.66, 0.025, 70);
+/** ash and charcoal: the near-monochrome paint the lab and server hall share (after Dust Front RTS) */
+export const PAINT_ASH = swatch(0.58, 0.014, 40);
+export const PAINT_CHARCOAL = swatch(0.42, 0.012, 30);
 /** hazard yellow, worn: still reads as a warning by pattern, not by shouting */
 export const HAZARD = swatch(0.66, 0.06, 92);
 
@@ -194,15 +197,16 @@ export const BLOOD_CRAWLER = 0x74b81a;
 
 // --- 3. Lights (by colour temperature) ---------------------------------------
 
-export const LIGHT_FLUORO_COOL = kelvin(5200);
-export const LIGHT_LED = kelvin(6800);
+/** tubes and LEDs sit near the 4500K white point: neutral, so the light never pulls the ash back to blue */
+export const LIGHT_FLUORO_COOL = kelvin(4300);
+export const LIGHT_LED = kelvin(4500);
 export const LIGHT_INCANDESCENT = kelvin(2700);
 export const LIGHT_SODIUM = kelvin(2300);
 export const LIGHT_EMERGENCY = 0xff1e1e;
 /** fluorescent tubes run slightly green; the tint the tubes add on top of their kelvin */
 export const LIGHT_FLUORO_TINT = 0xeaffea;
-/** the faint everywhere-light so pitch dark still has shape: cold and very dim */
-export const AMBIENT_SKY = 0x5a6a80;
+/** the faint everywhere-light so pitch dark still has shape: ash-warm and very dim */
+export const AMBIENT_SKY = 0x7e605c;
 export const AMBIENT_GROUND = 0x1c1a18;
 
 // --- UI signals ----------------------------------------------------------------

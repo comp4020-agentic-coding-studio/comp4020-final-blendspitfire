@@ -32,16 +32,19 @@ it stands out on a grey floor. Bodies are the live models, darkened.
   OKLCH chroma ≤ 0.06 (about Munsell chroma 2--3) and lightness 0.26--0.82
   (real-world albedo, about sRGB 45--200). Many hues, none loud: an oxide
   wall is a greyed deep red. Each swatch is one hue at three lightness
-  steps with hue and chroma held still; neutrals lean toward one cool
-  "mother" grey so they hold together. (Gamut masking after James Gurney;
+  steps with hue and chroma held still; neutrals lean toward one warm,
+  faintly red ash "mother" grey so they hold together. Underground the
+  painted walls stay near-monochrome (ash and charcoal, oxide red the one
+  accent), after the RTS *Dust Front*: hue there comes from emitters, fire
+  and blood, not paint. (Gamut masking after James Gurney;
   albedo range from PBR practice; real surfaces can't be very saturated.)
 - *Emitters* --- lamps, indicator LEDs, screens, the reactor, a player's
   shoulder lamp --- are the only things allowed outside the gamut.
 - *Lights* are set by colour temperature, white-balanced to 4500K. Each
-  zone has one dominant temperature (lift car: warm tungsten; corridor and
-  lab: cool fluorescent; server hall: cold LED; core: sodium by the
-  reactor against cool tubes), so most of the scene's hue variety comes
-  from the light, not the paint.
+  zone has one dominant light (lift car: warm tungsten; corridor, lab and
+  server hall: near-neutral tubes and LEDs, 4300--4500K, so nothing pulls
+  the ash back to blue; core: sodium by the reactor), so what warmth
+  varies room to room comes from the light, not the paint.
 - UI signals (cyan "can act", red "can't", green "will work") and player
   colours only ever appear as UI or as an emitter.
 

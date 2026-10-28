@@ -37,8 +37,8 @@ export interface Grade {
 export const GRADE: Grade = {
   exposure: 1.15,
   contrast: 1.08,
-  saturation: 0.92,
-  shadowTint: [0.06, 0.075, 0.09],
+  saturation: 0.8,
+  shadowTint: [0.09, 0.07, 0.065],
   highlightTint: [1.0, 0.97, 0.92],
   tintStrength: 0.35,
   blackLift: 0.012,

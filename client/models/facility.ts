@@ -14,6 +14,7 @@ import {
   LINOLEUM,
   PAINT_OCHRE,
   PAINT_OXIDE,
+  PAINT_CHARCOAL,
   PAINT_SAGE,
   PAINT_STEEL_BLUE,
   PAPER,
@@ -149,13 +150,13 @@ const lockers: Builder = (len, depth, h) => {
   const parts = [part(box(len, h - 0.03, depth - 0.06), RUBBER.base, 0, (h - 0.03) / 2, 0)];
   for (let i = 0; i < n; i++) {
     const x = -len / 2 + w * (i + 0.5);
-    const tone = i % 3 === 1 ? PAINT_STEEL_BLUE.shade : PAINT_STEEL_BLUE.base;
+    const tone = i % 3 === 1 ? PAINT_CHARCOAL.shade : PAINT_CHARCOAL.base;
     parts.push(part(box(w - 0.05, h, depth), tone, x, h / 2, 0));
     for (let v = 0; v < 3; v++) parts.push(part(box(w - 0.2, 0.025, 0.02), RUBBER.light, x, h - 0.2 - v * 0.06, depth / 2 + 0.005));
     parts.push(part(box(0.03, 0.12, 0.03), ALUMINIUM.light, x + w / 2 - 0.1, h * 0.55, depth / 2 + 0.01));
   }
   // one hanging open
-  parts.push(part(box(w - 0.05, h - 0.05, 0.03), PAINT_STEEL_BLUE.light, -len / 2 + w * 1.5 + 0.18, h / 2, depth / 2 + 0.2, 0, -1.1, 0));
+  parts.push(part(box(w - 0.05, h - 0.05, 0.03), PAINT_CHARCOAL.light, -len / 2 + w * 1.5 + 0.18, h / 2, depth / 2 + 0.2, 0, -1.1, 0));
   return [matte(merge(parts, "ground", 0.3))];
 };
 
@@ -338,7 +339,7 @@ const gasRack: Builder = (len, depth, h) => {
   for (let i = 0; i < n; i++) {
     const x = -len / 2 + (len / n) * (i + 0.5);
     parts.push(part(cyl(0.14, 0.14, h * 1.6, 8), i % 2 ? PAINT_OCHRE.base : STEEL.light, x, h * 0.8, 0));
-    parts.push(part(cyl(0.08, 0.12, 0.14, 6), i % 2 ? PAINT_OXIDE.base : PAINT_STEEL_BLUE.base, x, h * 1.6 + 0.07, 0));
+    parts.push(part(cyl(0.08, 0.12, 0.14, 6), i % 2 ? PAINT_OXIDE.base : PAINT_CHARCOAL.base, x, h * 1.6 + 0.07, 0));
   }
   return [matte(merge(parts, "ground", 0.3))];
 };

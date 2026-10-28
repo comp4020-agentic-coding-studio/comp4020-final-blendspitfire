@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-10-28, seventh round: the developer's playtest observations (ready hint, top panel, wave-end overload)
+Synced from the draft up to: 2026-10-28, the red-grey repaint and the answers given before the seventh round was built
 
 ---
 
@@ -811,3 +811,17 @@ Suggested minimal topology: safe room, one main corridor (bottleneck), a fork in
 - *Leaderboard names, arcade style.* Players type their own name, perhaps with a forced four-digit suffix to avoid collisions, with no login. Entering a name already on the board overwrites that record: it is a leaderboard mechanism only. A name that someone currently in the game is using is refused. Answering the agent's questions, the developer settled that the name is entered on joining and replaces the generated in-game name; a record is overwritten only when the same name scores higher; there is no numeric suffix for now; and the settlement, after the scores, shows where you now stand on the board.
 
 **Why.** In the developer's judgement from watching the play, the information is there but either buried or arriving all at once.
+
+## ADR-061: Underground repainted red-grey, after Dust Front
+*2026-10-28 · Status: Accepted*
+
+**Context.** ADR-060 asked for the underground to move from blue-grey to red-grey, a lean of hue rather than a red cast, with a sample shown first. The agent's first sample only regraded: the neutrals' mother hue moved from blue to red-brown, with the ambient light and shadow tint following. The developer found it not enough and asked for the colours to be repainted outright, and asked whether the agent had looked at the reference game; it hadn't.
+
+**Decision.** The agent then studied the store screenshots of *Dust Front RTS* (灰烬战争, which the developer had called 灰烬前线): almost monochrome ash to charcoal, with red only in lights, UI and fire. The underground was repainted to match: lab walls in ash over a charcoal wainscot, the server hall's walls and lockers charcoal, the lab's green linoleum a warm grey, tubes and LEDs moved near the 4500K white point (4300K and 4500K) so the light stops pulling toward blue, and overall saturation lowered to 0.8. Emitters (reactor blue, crawler eyes, hazard stripes, sodium lamps) were left alone. The developer approved the second sample as is ("perfect"). The art rules now describe a warm ash mother grey and near-monochrome walls.
+
+**Why.** The developer wanted the mood of the reference. The blue had come from paint and lights as much as the grade, so regrading alone couldn't remove it.
+
+## ADR-062: Seventh round — the answers given before building
+*2026-10-28 · Status: Accepted*
+
+**Decision.** Before the agent built the rest of ADR-060 unattended, the developer chose, from the agent's options: sound is deferred to a later round; both elites appear from wave 3, rising from about a tenth of each wave to a quarter by wave 6, split evenly; a player who disconnects below is held for 30 seconds and then counts as out, so an empty facility ends in a wipe; the freight lift's boarding timer is 20 seconds, and the fallen revive with everyone on the surface after the thanks card. The evacuation is to be built last and as completely as possible in one go, for the developer to review afterwards. Turret sealing stays pending.
