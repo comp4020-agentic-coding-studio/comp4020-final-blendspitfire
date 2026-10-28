@@ -1149,7 +1149,7 @@ function currentMarkers(): Marker[] {
   const phase = defenceState.phase;
   if (!objective.active) {
     add({ id: "m-reactor", at: v3(REACTOR.x, 2.4, REACTOR.z), near: REACTOR, label: "activate the reactor", loud: true });
-  } else if (phase === "break") {
+  } else if (phase === "break" && breakPrompts()) {
     add({ id: "m-comms", at: v3(SUPPLY_TERMINAL.x, 2.2, SUPPLY_TERMINAL.z), near: SUPPLY_TERMINAL, label: "comms · order supply", detail: `quota ${funds}`, loud: true });
   } else if (phase === "won") {
     add({ id: "m-lift", at: v3(door.x, 2.4, door.z), near: door, label: "evacuate · lift up", detail: leaving ? `leaves in ${leavesIn}s` : undefined, loud: true });
@@ -1262,7 +1262,6 @@ function renderControls(): void {
     parts.push("Q: drop");
     text = `WASD move · ${parts.join(" · ")}`;
   }
-  if (canVote()) text += amReady() ? " · X: not ready" : " · X: ready";
   if (text !== lastControlsText) {
     controlsEl.textContent = text;
     lastControlsText = text;
@@ -1346,6 +1345,7 @@ const net = connect({
     serverClock.observe(t);
     const seenPlayers = new Set<string>();
     objective = state.objective;
+    if (state.defence.phase === "break" && defenceState.phase !== "break") breakSince = defenceState.phase === "spawning" && defenceState.wave > 0 ? performance.now() : -Infinity;
     defenceState = state.defence;
     funds = state.funds;
     if (state.lift) lift = state.lift;
@@ -1670,6 +1670,16 @@ interface ClientEnemy {
 }
 const enemies = new Map<string, ClientEnemy>();
 let defenceState: DefenceState = { reactorHealth: 1, wave: 0, phase: "spawning" };
+/**
+ * When this break began (performance.now()), so a wave's end arrives in
+ * steps rather than all at once (ADR-060): the banner first, the report
+ * BREAK_REPORT_MS later, then the ready card and the comms marker once
+ * it's been read. A break you joined part-way through counts as long begun.
+ */
+let breakSince = -Infinity;
+const BREAK_REPORT_MS = 1500;
+const BREAK_PROMPTS_MS = 5000;
+const breakPrompts = (): boolean => defenceState.phase === "break" && performance.now() - breakSince >= BREAK_PROMPTS_MS;
 /** the crew's shared quota, as the server last said */
 let funds = 0;
 const ITEM_NAMES: Record<ItemKind, string> = { gun: "rifle", turret: "turret", grenade: "grenade" };
@@ -2214,63 +2224,78 @@ function renderSpectating(dt: number): void {
       : `you're down · watching ${ids.indexOf(watchingId ?? "") + 1}/${ids.length}${ids.length > 1 ? " · click: next" : ""}`;
 }
 
-// The defence HUD: while the reactor is live, its health and the wave
-// across the top of the screen --- the one number the whole room is
-// fighting over --- and a countdown between waves.
+// The defence HUD: while the reactor is live, one slim strip across the
+// top --- the wave, the reactor's health as a thin bar, what's left to
+// fight --- and nothing that needs reading twice (ADR-060: it was too big).
+// Between waves, the ready vote gets a card of its own at the bottom.
 const hudEl = document.createElement("div");
 hudEl.className = "ui-hud";
 hudEl.innerHTML =
-  '<div class="line"><span>waves</span><span id="hud-charge-pct"></span></div>' +
-  '<div class="bar"><div id="hud-charge" style="width:0"></div></div>' +
-  '<div class="line"><span>reactor</span><span id="hud-wave"></span></div>' +
-  '<div class="bar hp"><div id="hud-hp" style="width:100%"></div></div>' +
-  '<div id="hud-next" class="next"></div>';
+  '<div class="line"><span id="hud-wave"></span><span class="bar hp"><span id="hud-hp" style="width:100%"></span></span><span id="hud-next" class="next"></span></div>';
 document.body.appendChild(hudEl);
-const hudHp = hudEl.querySelector<HTMLDivElement>("#hud-hp")!;
+const hudHp = hudEl.querySelector<HTMLSpanElement>("#hud-hp")!;
 const hudWave = hudEl.querySelector<HTMLSpanElement>("#hud-wave")!;
-const hudNext = hudEl.querySelector<HTMLDivElement>("#hud-next")!;
-const hudCharge = hudEl.querySelector<HTMLDivElement>("#hud-charge")!;
-const hudChargePct = hudEl.querySelector<HTMLSpanElement>("#hud-charge-pct")!;
+const hudNext = hudEl.querySelector<HTMLSpanElement>("#hud-next")!;
 function renderDefenceHud(): void {
   hudEl.style.display = objective.active ? "block" : "none";
+  renderReadyCard();
   if (!objective.active) return;
   if (defenceState.phase === "won") {
-    hudChargePct.textContent = `${WAVES_TO_WIN} / ${WAVES_TO_WIN} cleared · quota ${funds}`;
-    hudCharge.style.width = "calc(100% - 2px)";
-    hudWave.textContent = "stable";
-    hudHp.style.width = "calc(100% - 2px)";
+    hudWave.textContent = `${WAVES_TO_WIN}/${WAVES_TO_WIN} · stable`;
+    hudHp.style.width = "100%";
     hudHp.classList.remove("low");
-    hudNext.textContent = "power restored · evacuate: take the lift up";
+    hudNext.textContent = "evacuate";
     return;
   }
   if (defenceState.phase === "blackout") {
     const held = Math.max(0, Math.floor((serverClock.now() - (defenceState.blackoutAt ?? serverClock.now())) / 1000));
-    hudChargePct.textContent = `${defenceState.wave} / ${WAVES_TO_WIN} cleared`;
-    hudWave.textContent = "dead";
+    hudWave.textContent = "blackout";
     hudHp.style.width = "0";
-    hudNext.textContent = `blackout · held ${held}s · ${enemies.size} hostile · no way out`;
+    hudNext.textContent = `${held}s · ${enemies.size} hostile`;
     return;
   }
   const onBreak = defenceState.phase === "break";
-  // waves fully cleared: the one being fought doesn't count until it's down
-  const cleared = onBreak ? defenceState.wave : Math.max(0, defenceState.wave - 1);
-  hudCharge.style.width = `calc(${((cleared / WAVES_TO_WIN) * 100).toFixed(1)}% - 2px)`;
-  hudChargePct.textContent = `${cleared} / ${WAVES_TO_WIN} cleared · quota ${funds}`;
   const hp = defenceState.reactorHealth;
-  hudHp.style.width = `calc(${Math.round(hp * 100)}% - 2px)`;
+  hudHp.style.width = `${Math.round(hp * 100)}%`;
   // white until it's in danger, then alarm red
   hudHp.classList.toggle("low", hp <= 0.3);
-  hudWave.textContent = !onBreak && defenceState.wave > 0 ? `wave ${defenceState.wave}` : "";
   const next = defenceState.nextWaveAt;
   const nextIn = next ? Math.max(0, Math.ceil((next - serverClock.now()) / 1000)) : 0;
-  hudNext.textContent = [
-    enemies.size ? `${enemies.size} hostile` : "",
-    onBreak && next ? `wave ${defenceState.wave + 1} (${waveSize(defenceState.wave + 1)} hostiles) in ${nextIn}s` : "",
-    onBreak ? `${readyCount()} · ${readyNames()}` : "",
-    onBreak ? (amReady() ? "you're ready · X: take it back" : "X: ready · comms set: order supply") : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  if (onBreak) {
+    hudWave.textContent = `wave ${defenceState.wave}/${WAVES_TO_WIN} clear`;
+    hudNext.textContent = next ? `next in ${nextIn}s` : "";
+  } else {
+    hudWave.textContent = defenceState.wave > 0 ? `wave ${defenceState.wave}/${WAVES_TO_WIN}` : "reactor live";
+    hudNext.textContent = enemies.size ? `${enemies.size} hostile` : "";
+  }
+  hudNext.textContent += funds ? `${hudNext.textContent ? " · " : ""}quota ${funds}` : "";
+}
+
+// The ready vote's own card, bottom centre, in a break once the wave's
+// report has had its moment: a key cap to press, who's in, and how long
+// until it comes anyway. One of two players never found X when it was a
+// line in the HUD and the controls (ADR-060).
+const readyEl = document.createElement("div");
+readyEl.className = "ui-ready";
+readyEl.innerHTML = '<span class="key">X</span><span class="what"></span><span class="who"></span>';
+document.body.appendChild(readyEl);
+const readyWhat = readyEl.querySelector<HTMLSpanElement>(".what")!;
+const readyWho = readyEl.querySelector<HTMLSpanElement>(".who")!;
+let lastReady = "";
+function renderReadyCard(): void {
+  const on = canVote() && breakPrompts();
+  readyEl.classList.toggle("open", on);
+  if (!on) return;
+  const mine = amReady();
+  readyEl.classList.toggle("done", mine);
+  const nextWave = defenceState.wave + 1;
+  const what = mine ? "you're ready · X: take it back" : `ready for wave ${nextWave} · ${waveSize(nextWave)} hostiles`;
+  const who = `${readyCount()} · ${readyNames()}`;
+  const key = `${what}|${who}`;
+  if (key === lastReady) return;
+  lastReady = key;
+  readyWhat.textContent = what;
+  readyWho.textContent = who;
 }
 
 /** who's ready, by codename, the ones still to vote dimmed out of the list */
@@ -2390,6 +2415,12 @@ function pumpReports(): void {
   const wait = reportBusyUntil - performance.now();
   if (wait > 0) {
     setTimeout(pumpReports, wait + 10);
+    return;
+  }
+  // a wave's report lets the banner have the screen first
+  const early = BREAK_REPORT_MS - (performance.now() - breakSince);
+  if (reportQueue[0].type === "wave" && early > 0) {
+    setTimeout(pumpReports, early + 10);
     return;
   }
   const r = reportQueue.shift()!;
