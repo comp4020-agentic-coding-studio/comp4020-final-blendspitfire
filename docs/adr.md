@@ -805,5 +805,6 @@ Suggested minimal topology: safe room, one main corridor (bottleneck), a fork in
 - *Teammate colours.* A player reported mistaking some teammates' colours for enemies. The developer's decision: teammates all in one family of hues (cool, say), enemies in the other.
 - *An attempt that never ends.* Playing alone, the developer sometimes joined on the surface with waves still running below, and in a blackout enemies kept spawning until they went down and died. On reading the code, the agent found an attempt ends only by a win or when everyone below is out; a player who simply closes the tab while below leaves no one below and no one out, so nothing ends it.
 - *Sound.* The game has none. It should: immersive, with reverb. The developer's teacher suggested the film *Alien* as a reference. How it is sourced and what comes first is still to be agreed.
+- *Underground colour.* From the current blue-grey to a red-grey: not a red cast, only the hue leaning that way, perhaps by regrading alone. The developer pointed at an RTS still in testing, *灰烬前线*, for mood rather than its colours, and asked to see a rendered sample before the change goes any further.
 
 **Why.** In the developer's judgement from watching the play, the information is there but either buried or arriving all at once.
