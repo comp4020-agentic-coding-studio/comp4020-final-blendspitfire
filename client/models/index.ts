@@ -9,6 +9,7 @@ import {
   FLOOR,
   HAIR,
   HAZARD,
+  PAINT_PUTTY,
   PLASTIC,
   RUBBER,
   SHOE,
@@ -411,6 +412,92 @@ export function spitter(): THREE.Group {
   ];
   const g = multiMesh({ matte: [body], emissive: glow });
   outlined(g.children[0] as THREE.Mesh, 0.025);
+  return g;
+}
+
+/**
+ * The brute: a crawler grown huge and plated. Bone-grey armour plates down
+ * its back are what you see from overhead --- a big pale shape among the
+ * dark crawlers --- and three pairs of red eyes, not one. Drawn at
+ * BRUTE_SCALE by whoever places it. Slow, and it takes a magazine.
+ */
+export function brute(): THREE.Group {
+  const flesh = surfaceVersion(0x8a4a3a, 0.36);
+  const hide = surfaceVersion(0x5a5048, 0.3);
+  // old bone and lime: pale, so the plates carry from above in the dark
+  const plate = PAINT_PUTTY;
+  const body = merge(
+    [
+      // a deep barrel of a torso, hunched up at the shoulders
+      part(new THREE.CylinderGeometry(0.3, 0.38, 0.72, 7, 1), hide.base, 0, 0.46, -0.04, PI / 2, 0, 0, 1.15, 0.9),
+      part(new THREE.IcosahedronGeometry(0.36, 0), flesh.base, 0, 0.58, 0.2, 0, 0, 0, 1.2, 0.95),
+      // the plates: overlapping down the spine, widest at the shoulders
+      part(box(0.5, 0.08, 0.26), plate.light, 0, 0.86, 0.2, -0.15, 0, 0),
+      part(box(0.44, 0.08, 0.24), plate.base, 0, 0.8, -0.04, -0.1, 0, 0),
+      part(box(0.36, 0.07, 0.22), plate.base, 0, 0.72, -0.26, -0.05, 0, 0),
+      part(box(0.24, 0.06, 0.16), plate.shade, 0, 0.6, -0.44),
+      // shoulder plates
+      ...[-1, 1].map((s) => part(box(0.16, 0.06, 0.3), plate.shade, s * 0.32, 0.72, 0.24, 0, 0, s * 0.5)),
+      // a heavy head, low, jaw jutting
+      part(new THREE.IcosahedronGeometry(0.2, 0), flesh.light, 0, 0.44, 0.56, 0, 0, 0, 1.1, 1.2),
+      part(box(0.28, 0.08, 0.18), hide.shade, 0, 0.32, 0.66),
+      // thick legs, the front pair bigger
+      ...[
+        [-1, 1, 1.25],
+        [1, 1, 1.25],
+        [-1, -1, 1],
+        [1, -1, 1],
+      ].flatMap(([sx, sz, k]) => [
+        part(box(0.13 * k, 0.32, 0.13 * k), hide.base, sx * 0.34, 0.32, sz * 0.24, sz * 0.25, 0, -sx * 0.5),
+        part(box(0.12 * k, 0.3, 0.12 * k), hide.shade, sx * 0.48, 0.13, sz * 0.3, 0, 0, sx * 0.15),
+      ]),
+    ],
+    "ground",
+    0.25,
+  );
+  const eyes = [0.07, 0.15, 0.22].flatMap((dx, i) => [-1, 1].map((s) => glowPart(box(0.045, 0.035, 0.03), EMIT_RED, s * dx, 0.5 - i * 0.04, 0.74 - i * 0.04)));
+  const g = multiMesh({ matte: [body], emissive: eyes });
+  outlined(g.children[0] as THREE.Mesh, 0.03);
+  return g;
+}
+
+/**
+ * The runner: thin, long and low, all legs, built to get past whoever's
+ * holding a breach. A strip of amber light down its spine (child "spine",
+ * which the game pulses) is what you track: warm, like everything hostile,
+ * never one of the crew's cool colours.
+ */
+export function runner(): THREE.Group {
+  const flesh = surfaceVersion(0x7a4a3a, 0.36);
+  const hide = surfaceVersion(0x4a4440, 0.28);
+  const body = merge(
+    [
+      // a long narrow body, stretched out flat
+      part(new THREE.CylinderGeometry(0.15, 0.2, 0.9, 6, 1), hide.base, 0, 0.36, -0.08, PI / 2, 0, 0, 1, 0.75),
+      part(new THREE.IcosahedronGeometry(0.17, 0), flesh.base, 0, 0.4, 0.26, 0, 0, 0, 1, 1.3),
+      // a narrow wedge of a head, out in front
+      part(new THREE.ConeGeometry(0.11, 0.3, 5), flesh.light, 0, 0.36, 0.56, PI / 2, 0, 0),
+      // a whip of a tail
+      part(box(0.05, 0.05, 0.4), hide.shade, 0, 0.36, -0.68, 0.15, 0, 0),
+      // long thin legs, splayed wide for speed
+      ...[
+        [-1, 1],
+        [1, 1],
+        [-1, -1],
+        [1, -1],
+      ].flatMap(([sx, sz]) => [
+        part(box(0.05, 0.36, 0.05), hide.base, sx * 0.3, 0.3, sz * 0.26, sz * 0.4, 0, -sx * 0.9),
+        part(box(0.045, 0.34, 0.045), hide.shade, sx * 0.5, 0.13, sz * 0.36, 0, 0, sx * 0.3),
+      ]),
+    ],
+    "ground",
+    0.25,
+  );
+  const g = multiMesh({ matte: [body], emissive: [...[-1, 1].map((s) => glowPart(box(0.04, 0.03, 0.03), EMIT_RED, s * 0.05, 0.42, 0.66))] });
+  outlined(g.children[0] as THREE.Mesh, 0.02);
+  const spine = mesh(merge([glowPart(box(0.1, 0.04, 0.7), EMIT_AMBER, 0, 0.5, -0.1)], "none"), "emissive");
+  spine.name = "spine";
+  g.add(spine);
   return g;
 }
 

@@ -12,6 +12,10 @@ import {
   SPITTER_FROM_WAVE,
   spawnInterval,
   spitterShare,
+  eliteShare,
+  ELITE_FROM_WAVE,
+  hitPointsOf,
+  speedOf,
   TURRET_RANGE,
   WAVE_BREAK_MS,
   READY_LEAD_MS,
@@ -150,6 +154,26 @@ describe("spitters", () => {
     expect(all.length).toBe(Math.min(waveSize(WAVES_TO_WIN), MAX_ENEMIES));
     expect(all.some((e) => e.kind === "spitter")).toBe(true);
     expect(all.some((e) => e.kind === "crawler")).toBe(true);
+  });
+});
+
+describe("elites", () => {
+  it("brutes and runners come from wave 3, about a tenth of a wave climbing to a quarter", () => {
+    expect(eliteShare(ELITE_FROM_WAVE - 1)).toBe(0);
+    expect(eliteShare(ELITE_FROM_WAVE)).toBeCloseTo(0.1);
+    expect(eliteShare(WAVES_TO_WIN)).toBeCloseTo(0.25);
+    const { w } = world([]);
+    const d = new Defence(w, { reactorHealth: 1, wave: WAVES_TO_WIN - 1, phase: "break", nextWaveAt: 0 });
+    run(d, (waveSize(WAVES_TO_WIN) * spawnInterval(WAVES_TO_WIN)) / 1000 + 1);
+    const all = d.snapshot();
+    expect(all.some((e) => e.kind === "brute")).toBe(true);
+    expect(all.some((e) => e.kind === "runner")).toBe(true);
+  });
+
+  it("a brute takes three times a crawler's hits; a runner outpaces a crawler", () => {
+    expect(hitPointsOf("brute")).toBe(3 * hitPointsOf("crawler"));
+    expect(speedOf("runner")).toBeGreaterThan(speedOf("crawler") * 1.5);
+    expect(speedOf("brute")).toBeLessThan(speedOf("crawler"));
   });
 });
 

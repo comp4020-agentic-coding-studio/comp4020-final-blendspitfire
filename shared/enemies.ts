@@ -26,7 +26,7 @@ import {
  * in; slower and squishier, so it's a threat from range rather than a
  * tougher wall to shoot through.
  */
-export type EnemyKind = "crawler" | "spitter";
+export type EnemyKind = "crawler" | "spitter" | "brute" | "runner";
 
 export interface EnemyState {
   id: string;
@@ -174,7 +174,37 @@ export const SPITTER_FROM_WAVE = 3;
 /** share of a wave that's spitters: none before SPITTER_FROM_WAVE, then climbing to a third */
 export const spitterShare = (wave: number): number =>
   wave < SPITTER_FROM_WAVE ? 0 : Math.min(0.33, 0.1 + 0.04 * (Math.min(wave, WAVES_TO_WIN) - SPITTER_FROM_WAVE));
-export const hitPointsOf = (kind: EnemyKind): number => (kind === "spitter" ? SPITTER_HIT_POINTS : ENEMY_HIT_POINTS);
+
+// --- The elites ----------------------------------------------------------------
+// With a full crew one person can camp each breach and a wave melts
+// (ADR-060). Two elites break that up, each strong in one way and each
+// plainly a different animal (ADR-053: a kind's stats never change, so
+// tougher has to look it). The brute is a big plated thing that soaks a
+// breach-camper's fire; the runner is thin and quick and gets past one.
+
+export const BRUTE_HIT_POINTS = 15;
+export const BRUTE_SPEED_FACTOR = 0.7;
+/** drawn this much bigger than a crawler (its body still fits the same corridors) */
+export const BRUTE_SCALE = 1.35;
+export const RUNNER_HIT_POINTS = 3;
+export const RUNNER_SPEED_FACTOR = 1.7;
+export const ELITE_FROM_WAVE = 3;
+/** share of a wave that's elites (half brutes, half runners): none before ELITE_FROM_WAVE, then about a tenth climbing to a quarter by the last wave */
+export const eliteShare = (wave: number): number => {
+  if (wave < ELITE_FROM_WAVE) return 0;
+  const k = WAVES_TO_WIN > ELITE_FROM_WAVE ? (Math.min(wave, WAVES_TO_WIN) - ELITE_FROM_WAVE) / (WAVES_TO_WIN - ELITE_FROM_WAVE) : 1;
+  return 0.1 + 0.15 * k;
+};
+
+const HIT_POINTS: Record<EnemyKind, number> = {
+  crawler: ENEMY_HIT_POINTS,
+  spitter: SPITTER_HIT_POINTS,
+  brute: BRUTE_HIT_POINTS,
+  runner: RUNNER_HIT_POINTS,
+};
+const SPEED_FACTOR: Record<EnemyKind, number> = { crawler: 1, spitter: SPITTER_SPEED_FACTOR, brute: BRUTE_SPEED_FACTOR, runner: RUNNER_SPEED_FACTOR };
+export const hitPointsOf = (kind: EnemyKind): number => HIT_POINTS[kind];
+export const speedOf = (kind: EnemyKind): number => ENEMY_SPEED * SPEED_FACTOR[kind];
 
 /** where enemies come in: just inside each breach */
 export function breachSpawn(b: Breach): { x: number; z: number } {

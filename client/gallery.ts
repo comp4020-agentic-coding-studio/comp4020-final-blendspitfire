@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { CAMERA_ALTITUDE, CAMERA_FOV, configureRenderer, crawlerEyes, lampHalos, setupLighting } from "./look.ts";
-import { character, crawler, floorSlab } from "./models/index.ts";
+import { brute, character, crawler, floorSlab, runner } from "./models/index.ts";
+import { BRUTE_SCALE } from "../shared/enemies.ts";
 import { ASSETS } from "./models/registry.ts";
 import { REACTOR_LIVE, REACTOR_STANDBY, buildFacility, reactorCore } from "./models/facility.ts";
 import { createPostProcess } from "./postprocess.ts";
@@ -92,7 +93,7 @@ function facilityView(): void {
   }
   // with &live, a wave closing on the reactor, for judging enemies in the scene
   if (params.has("live")) {
-    const crawlers: [number, number][] = [
+    const crawlers: [number, number, string?][] = [
       [4.5, -9],
       [5.5, -7.5],
       [3.8, -14],
@@ -100,9 +101,12 @@ function facilityView(): void {
       [6.5, -15.5],
       [12, -2],
       [5.5, -16.6],
+      [1.5, -14.8, "brute"],
+      [8.5, -11.5, "runner"],
     ];
-    for (const [x, z] of crawlers) {
-      const c = crawler();
+    for (const [x, z, kind] of crawlers) {
+      const c = kind === "brute" ? brute() : kind === "runner" ? runner() : crawler();
+      if (kind === "brute") c.scale.setScalar(BRUTE_SCALE);
       const eyes = crawlerEyes(x * 7 + z);
       eyes.group.position.set(0, 0.48, 0.66);
       eyes.step(Math.hypot(x - (fx === null ? 0 : Number(fx)), z - (fz === null ? 5 : Number(fz))), 0);

@@ -47,7 +47,9 @@ import {
   HELD_GUN_OFFSET,
   SHOULDER_LAMP,
   character,
+  brute,
   crawler,
+  runner,
   grenade,
   gun,
   heldGun,
@@ -58,9 +60,9 @@ import {
 import { REACTOR_LIVE, REACTOR_STANDBY, buildFacility, reactorCore } from "./models/facility.ts";
 import { mesh } from "./models/kit.ts";
 import { LAMPS, LAMP_SPECS, lampSource } from "./world/dressing.ts";
-import { STENCIL, DANGER, OK, EMIT_GREEN, EMIT_TRACER, EMIT_ACID, EMIT_SPARK, AMBIENT_SKY } from "../shared/palette.ts";
+import { STENCIL, DANGER, OK, EMIT_AMBER, EMIT_GREEN, EMIT_TRACER, EMIT_ACID, EMIT_SPARK, AMBIENT_SKY } from "../shared/palette.ts";
 import { INTERP_DELAY_MS, ServerClock, SnapshotBuffer, Tracer } from "./netsync.ts";
-import { ENEMY_RADIUS, SPIT_SPLASH, WAVES_TO_WIN, waveSize, type DefenceState, type EnemyState, type SpitState } from "../shared/enemies.ts";
+import { BRUTE_SCALE, ENEMY_RADIUS, SPIT_SPLASH, WAVES_TO_WIN, waveSize, type DefenceState, type EnemyKind, type EnemyState, type SpitState } from "../shared/enemies.ts";
 import {
   BREACHES,
   DOORWAYS,
@@ -1667,6 +1669,10 @@ interface ClientEnemy {
   health: number;
   bar: THREE.Mesh;
   hitUntil: number;
+  /** drawn scale: a brute is bigger */
+  size: number;
+  /** a runner's amber spine, pulsed as it runs */
+  spine?: THREE.Object3D;
 }
 const enemies = new Map<string, ClientEnemy>();
 let defenceState: DefenceState = { reactorHealth: 1, wave: 0, phase: "spawning" };
@@ -1684,6 +1690,9 @@ const breakPrompts = (): boolean => defenceState.phase === "break" && performanc
 let funds = 0;
 const ITEM_NAMES: Record<ItemKind, string> = { gun: "rifle", turret: "turret", grenade: "grenade" };
 const enemyBarGeometry = new THREE.PlaneGeometry(0.7, 0.07).rotateX(-Math.PI / 2);
+const ENEMY_MODELS: Record<EnemyKind, () => THREE.Group> = { crawler, spitter, brute, runner };
+/** where each kind's eye flare sits (height, forward), in its own model's space */
+const EYE_SPOT: Record<EnemyKind, [number, number]> = { crawler: [0.48, 0.66], spitter: [0.66, 0.6], brute: [0.48, 0.74], runner: [0.42, 0.66] };
 
 function updateEnemies(incoming: EnemyState[], t: number): void {
   const seen = new Set<string>();
@@ -1691,9 +1700,17 @@ function updateEnemies(incoming: EnemyState[], t: number): void {
     seen.add(e.id);
     let ce = enemies.get(e.id);
     if (!ce) {
-      const mesh = e.kind === "spitter" ? spitter() : crawler();
+      const mesh = ENEMY_MODELS[e.kind]();
       const eyes = crawlerEyes(restingAngle(e.id));
-      eyes.group.position.set(0, e.kind === "spitter" ? 0.66 : 0.48, e.kind === "spitter" ? 0.6 : 0.66);
+      // a runner trails a warm smear of light down its back: the thing you track across a dark room
+      if (e.kind === "runner") {
+        const trail = glow(EMIT_AMBER, 1.1, 0.5);
+        trail.position.set(0, 0.55, -0.25);
+        trail.name = "spine-glow";
+        mesh.getObjectByName("spine")?.add(trail);
+      }
+      const [eyeY, eyeZ] = EYE_SPOT[e.kind];
+      eyes.group.position.set(0, eyeY, eyeZ);
       mesh.add(eyes.group);
       const bar = new THREE.Mesh(enemyBarGeometry, new THREE.MeshBasicMaterial({ color: DANGER, depthTest: false }));
       bar.position.set(0, 1.0, 0);
@@ -1702,7 +1719,7 @@ function updateEnemies(incoming: EnemyState[], t: number): void {
       mesh.add(bar);
       mesh.position.set(e.x, 0, e.z);
       scene.add(mesh);
-      ce = { mesh, eyes, snaps: new SnapshotBuffer(), drawn: { x: e.x, z: e.z, rotation: e.rotation }, health: e.health, bar, hitUntil: 0 };
+      ce = { mesh, eyes, snaps: new SnapshotBuffer(), drawn: { x: e.x, z: e.z, rotation: e.rotation }, health: e.health, bar, hitUntil: 0, size: e.kind === "brute" ? BRUTE_SCALE : 1, spine: mesh.getObjectByName("spine") };
       enemies.set(e.id, ce);
     }
     if (e.health < ce.health) ce.hitUntil = performance.now() + 120;
@@ -1848,7 +1865,8 @@ function stepEnemies(time: number): void {
     ce.bar.scale.x = Math.max(0.02, ce.health);
     // flash on a hit: brief scale pop
     const s = now < ce.hitUntil ? 1.15 : 1;
-    ce.mesh.scale.setScalar(s);
+    ce.mesh.scale.setScalar(s * ce.size);
+    if (ce.spine) ce.spine.visible = Math.sin(time * 18 + ce.drawn.z * 2) > -0.4;
   }
 }
 

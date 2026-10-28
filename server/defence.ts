@@ -5,7 +5,6 @@ import {
   ENEMY_RADIUS,
   ENEMY_REACH,
   ENEMY_REACTOR_DAMAGE,
-  ENEMY_SPEED,
   FIRST_WAVE_DELAY_MS,
   FlowField,
   LEASH_RANGE,
@@ -25,7 +24,8 @@ import {
   blackoutSpawnInterval,
   hitPointsOf,
   spitterShare,
-  SPITTER_SPEED_FACTOR,
+  eliteShare,
+  speedOf,
   SPIT_INTERVAL_MS,
   SPIT_MIN_RANGE,
   SPIT_RANGE,
@@ -113,6 +113,9 @@ export class Defence {
   private readonly spitsInFlight = new Map<string, SpitState>();
   /** builds up a wave's spitter share spawn by spawn, so the mix is even and deterministic */
   private spitterDebt = 0;
+  private eliteDebt = 0;
+  /** alternates the elites owed, so a wave gets brutes and runners in turn */
+  private eliteTurn = 0;
 
   private readonly world: World;
 
@@ -225,10 +228,15 @@ export class Defence {
     const id = randomUUID();
     // the wave's spitter share, paid out evenly: every spawn adds the share, each whole one owed is a spitter
     this.spitterDebt += spitterShare(Math.max(1, this.state.wave));
+    // and the elites the same way, brute and runner in turn
+    this.eliteDebt += eliteShare(Math.max(1, this.state.wave));
     let kind: EnemyKind = "crawler";
     if (this.spitterDebt >= 1) {
       this.spitterDebt -= 1;
       kind = "spitter";
+    } else if (this.eliteDebt >= 1) {
+      this.eliteDebt -= 1;
+      kind = this.eliteTurn++ % 2 === 0 ? "runner" : "brute";
     }
     const hp = hitPointsOf(kind);
     this.enemies.set(id, {
@@ -251,6 +259,7 @@ export class Defence {
     this.enemies.clear();
     this.spitsInFlight.clear();
     this.spitterDebt = 0;
+    this.eliteDebt = 0;
     this.toSpawn = 0;
     this.state = { reactorHealth: 1, wave: 0, phase: "spawning" };
     this.world.changed();
@@ -423,7 +432,7 @@ export class Defence {
   /** one step along (dx, dz); stuck (or sealed in), chew whatever turret is in the way */
   private walk(e: Enemy, dx: number, dz: number, dt: number, solid: typeof OBSTACLES, blockers: ItemState[], now: number, sealed: boolean): void {
     const len = Math.hypot(dx, dz) || 1;
-    const step = ENEMY_SPEED * (e.kind === "spitter" ? SPITTER_SPEED_FACTOR : 1) * dt;
+    const step = speedOf(e.kind) * dt;
     e.rotation = Math.atan2(dx, dz);
     const moved = this.collide(e, e.x + (dx / len) * step, e.z + (dz / len) * step, solid);
     if (sealed || Math.hypot(moved.x - e.x, moved.z - e.z) < step * 0.25) this.chewNearestBlocker(e, blockers, now);

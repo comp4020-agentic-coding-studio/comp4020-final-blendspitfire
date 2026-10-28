@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { PLAYER_COLORS } from "../../shared/palette.ts";
 import type { FixtureKind } from "../../shared/protocol.ts";
-import { GUN_REST_HEIGHT, beaconLamp, character, crawler, grenade, gun, heldGun, HELD_GUN_OFFSET, sentryTurret, spitter } from "./index.ts";
+import { GUN_REST_HEIGHT, beaconLamp, character, brute, crawler, grenade, gun, heldGun, HELD_GUN_OFFSET, runner, sentryTurret, spitter } from "./index.ts";
 import { fixtureModel } from "./facility.ts";
 import { helicopter } from "./heli.ts";
 
@@ -69,6 +69,8 @@ export const ASSETS: AssetEntry[] = [
   { id: "transport helicopter", category: "fixture", build: helicopter, frame: 10 },
   { id: "crawler (enemy)", category: "enemy", build: crawler, frame: 2 },
   { id: "spitter (enemy)", category: "enemy", build: spitter, frame: 2 },
+  { id: "brute (elite)", category: "enemy", build: brute, frame: 2.4 },
+  { id: "runner (elite)", category: "enemy", build: runner, frame: 2 },
   fixture("blastDoor", 4, 0.6, 2.5, 6),
   fixture("barrier", 2, 0.68, 0.8, 3),
   fixture("bench", 5, 1.2, 0.9, 6),
