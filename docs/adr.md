@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-10-28, sixth round built: snap markers, ready vote, helicopters, tutorial shed
+Synced from the draft up to: 2026-10-28, seventh round: the developer's playtest observations (ready hint, top panel, wave-end overload)
 
 ---
 
@@ -785,3 +785,15 @@ Suggested minimal topology: safe room, one main corridor (bottleneck), a fork in
 - Found while testing: a trainee counted as "on the surface", making the garden lift wait its full 15 s for them; now excluded, and the countdown doesn't show in the shed. Two old tests assumed a garden spawn and now rejoin as a returning player.
 
 **Why.** The developer's plan (ADR-058); the placement and the restart were chosen to keep the change small and to make revisiting actually teach.
+
+## ADR-060: Seventh round — what watching the group play showed about the UI
+*2026-10-28 · Status: Accepted (the developer's observation; not yet built)*
+
+**Context.** The developer watched teammates play the sixth-round build. These are the developer's own observations of their play, not suggestions the players made.
+
+**Decision.** Three changes are queued for the next round:
+- *The ready hint.* Of two players, one never realised they could ready up with X; the other noticed. The developer's fix is to give the hint a place of its own, rather than one line among the top panel's text and the controls line.
+- *The top panel* (the reactor's health and everything with it) is too big and should be made lighter.
+- *Wave end.* When a wave is cleared, the report on the right, the next-wave warning, the prompt to go and buy, and more all appear in the same instant, which is too much at once. The developer's fix is to show them in batches.
+
+**Why.** In the developer's judgement from watching the play, the information is there but either buried or arriving all at once.
