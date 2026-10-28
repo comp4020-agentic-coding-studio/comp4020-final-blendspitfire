@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  attemptScore,
+  cleanName,
+  SCORE,
   BUY_RANGE,
   GRENADE_COST,
   GRENADE_RANGE,
@@ -102,5 +105,22 @@ describe("gore", () => {
     expect(kept.filter((m) => m.kind === "blood").length).toBe(GORE_CAPS.blood);
     expect(kept[0].n).toBe(20);
     expect(kept.some((m) => m.kind === "corpse")).toBe(true);
+  });
+});
+
+describe("names and scores on the board", () => {
+  it("a typed name is cleaned to upper-case letters and digits, 2 to 12 long", () => {
+    expect(cleanName("  ripley ")).toBe("RIPLEY");
+    expect(cleanName("hicks<script>")).toBe("HICKSSCRIPT");
+    expect(cleanName("a")).toBeUndefined();
+    expect(cleanName("!!")).toBeUndefined();
+    expect(cleanName(42)).toBeUndefined();
+    expect(cleanName("averyveryverylongname")?.length).toBe(12);
+  });
+
+  it("an attempt's score counts kills, waves, standing at the end and a win", () => {
+    expect(attemptScore(0, 0, false, false)).toBe(0);
+    expect(attemptScore(3, 2, true, false)).toBe(3 * SCORE.kill + 2 * SCORE.wave + SCORE.standing);
+    expect(attemptScore(10, 6, true, true)).toBeGreaterThan(attemptScore(30, 6, false, false));
   });
 });

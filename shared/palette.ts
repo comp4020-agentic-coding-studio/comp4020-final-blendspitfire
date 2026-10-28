@@ -239,10 +239,11 @@ const PLAYER_COLOR_NAMES: Record<string, string> = {
 };
 
 /**
- * What a player is called on screen and in the server log: their colour
- * plus the start of their id, so two Oranges on different days stay apart.
+ * What a player is called on screen and in the server log: the name they
+ * chose, or until they have, their colour plus the start of their id (so
+ * two Blues on different days stay apart).
  */
-export const codename = (p: { id: string; color: string }): string =>
-  `${PLAYER_COLOR_NAMES[p.color] ?? "Grey"}-${p.id.slice(0, 4)}`;
+export const codename = (p: { id: string; color: string; handle?: string }): string =>
+  p.handle ?? `${PLAYER_COLOR_NAMES[p.color] ?? "Grey"}-${p.id.slice(0, 4)}`;
 
 export const hex = (c: number): string => `#${c.toString(16).padStart(6, "0")}`;

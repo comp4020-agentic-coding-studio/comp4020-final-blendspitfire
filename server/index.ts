@@ -22,7 +22,9 @@ import {
   saveRun,
   saveWorld,
   savePlayer,
-  topStats,
+  recordScore,
+  rankOf,
+  topNames,
 } from "./db.ts";
 import { Defence } from "./defence.ts";
 import { Lift } from "./lift.ts";
@@ -99,6 +101,10 @@ import {
   capGore,
   type GoreMark,
   type ClientMessage,
+  type CrewLine,
+  attemptScore,
+  cleanName,
+  type NameMessage,
   type ObjectiveState,
   type ItemKind,
   type ItemState,
@@ -367,7 +373,7 @@ const defence = new Defence(
       console.log(`[attempt ${attempt.number}] failed: ${reason}, ${wave} wave(s) cleared${blackoutMs ? `, ${Math.round(blackoutMs / 1000)}s in the dark` : ""} (crew: ${crewNames().join(", ") || "nobody"})`);
       run.best = Math.max(run.best, wave);
       saveRun(run);
-      report({ type: "attempt", outcome: "lost", reason, attempt: attempt.number, waves: wave, blackoutMs, crew: crewReport() });
+      report({ type: "attempt", outcome: "lost", reason, attempt: attempt.number, waves: wave, blackoutMs, crew: crewReport(wave, false) });
       carried.clear();
       // a moment where they fell before the cut to black and back to the garden
       bringUpAt = Date.now() + WIPE_HOLD_MS;
@@ -443,7 +449,7 @@ function winRun(): void {
     const c = connections.get(id);
     if (c) bumpStats(id, codename(c.player), { wins: 1 });
   }
-  report({ type: "attempt", outcome: "won", reason: "reactor stable", attempt: attempt.number, waves: defence.state.wave, blackoutMs: 0, crew: crewReport() });
+  report({ type: "attempt", outcome: "won", reason: "reactor stable", attempt: attempt.number, waves: defence.state.wave, blackoutMs: 0, crew: crewReport(defence.state.wave, true) });
   // the fallen stay down until the crew that's left has walked out:
   // resetAfterWin() brings them back with everyone (two levels with people
   // on both, mid-win, is what trapped a revived player at the lift door)
@@ -462,7 +468,7 @@ function resetAfterWin(): void {
   saveFunds(funds);
   attempt.number = 0;
   attempt.players.clear();
-  attemptKills.clear();
+  attemptStats.clear();
   // the facility starts over: what was built goes, the starting kit comes back
   items.clear();
   clearItems();
@@ -475,13 +481,44 @@ function resetAfterWin(): void {
 /** set after a wipe: when to cut back to the garden (0 = not pending) */
 let bringUpAt = 0;
 
-/** kills this attempt, by player id, for the end-of-attempt summary */
-const attemptKills = new Map<string, number>();
-const crewReport = (): { name: string; kills: number; out: boolean }[] =>
-  [...attempt.players].map((id) => {
+/** what each of the crew did this attempt, by player id, for the settlement */
+interface AttemptStats {
+  kills: number;
+  shots: number;
+  hits: number;
+  wounds: number;
+  spent: number;
+  turrets: number;
+}
+const attemptStats = new Map<string, AttemptStats>();
+/** add to a crew member's tally for this attempt (only while one's on) */
+function tally(id: string, add: Partial<AttemptStats>): void {
+  if (!objective.active) return;
+  const s = attemptStats.get(id) ?? { kills: 0, shots: 0, hits: 0, wounds: 0, spent: 0, turrets: 0 };
+  for (const k of Object.keys(add) as (keyof AttemptStats)[]) s[k] += add[k] ?? 0;
+  attemptStats.set(id, s);
+}
+/**
+ * The attempt's crew, each with their tally and score; the scores go on the
+ * board under each one's chosen name (kept only if it beats that name's
+ * best), and each line says where the name stands now.
+ */
+function crewReport(waves: number, won: boolean): CrewLine[] {
+  return [...attempt.players].map((id) => {
     const c = connections.get(id);
-    return { name: c ? codename(c.player) : shortId(id), kills: attemptKills.get(id) ?? 0, out: c ? c.deadUntil === Infinity : true };
+    const s = attemptStats.get(id) ?? { kills: 0, shots: 0, hits: 0, wounds: 0, spent: 0, turrets: 0 };
+    const out = c ? c.deadUntil === Infinity : true;
+    const score = attemptScore(s.kills, waves, !out, won);
+    const line: CrewLine = { name: c ? codename(c.player) : shortId(id), out, ...s, score };
+    const handle = c?.player.handle;
+    if (handle) {
+      line.best = recordScore({ name: handle, score, kills: s.kills, waves, won });
+      line.rank = rankOf(handle);
+      boardDirty = true;
+    }
+    return line;
   });
+}
 
 /** summaries (a wave's pay, an attempt's end) for every client's report panel */
 let pendingReports: Report[] = [];
@@ -749,6 +786,7 @@ function handlePrimary(conn: Connection, x: number, z: number, now: number): voi
     if (now - conn.lastFireAt < FIRE_COOLDOWN_MS) return;
     conn.lastFireAt = now;
     if (conn.shots++ === 0) setTimeout(() => flushShots(conn), SHOT_LOG_EVERY_MS);
+    tally(conn.player.id, { shots: 1 });
     // aim at the point the shooter clicked, not their last-reported facing,
     // which can lag a move packet behind
     let dx = x - conn.player.x;
@@ -834,7 +872,7 @@ function boardMessage(): string {
   return JSON.stringify({
     type: "board",
     run: { attempts: run.attempts, best: run.best },
-    top: topStats(BOARD_SIZE).map(({ name, kills, attempts, wins }) => ({ name, kills, attempts, wins })),
+    top: topNames(BOARD_SIZE),
     wins: recentRuns(5),
   } satisfies ServerMessage);
 }
@@ -877,6 +915,8 @@ wss.on("connection", (socket, req) => {
   if (!PLAYER_COLORS.includes(player.color as (typeof PLAYER_COLORS)[number]) || taken.includes(player.color)) {
     player.color = leastUsedColor(taken);
   }
+  // a saved name someone else online is using now: they pick again
+  if (player.handle && [...connections.values()].some((c) => c.player.id !== playerId && c.player.handle === player.handle)) delete player.handle;
   const conn: Connection = {
     socket,
     player,
@@ -970,8 +1010,6 @@ wss.on("connection", (socket, req) => {
       refuse(conn, "flood", `refused: over ${MAX_MESSAGES_PER_SECOND} messages/s, dropping the excess`);
       return;
     }
-    if (isDead(conn)) return; // frozen while waiting to respawn
-
     let msg: ClientMessage;
     try {
       msg = JSON.parse(raw.toString());
@@ -981,6 +1019,12 @@ wss.on("connection", (socket, req) => {
     // valid JSON isn't necessarily an object (null, a number): never let a
     // malformed message throw, or one client could take the server down
     if (typeof msg !== "object" || msg === null || typeof msg.type !== "string") return;
+    // a name can be chosen whatever state they're in, spectating included
+    if (msg.type === "name") {
+      takeName(conn, (msg as NameMessage).name);
+      return;
+    }
+    if (isDead(conn)) return; // frozen while waiting to respawn
     if (msg.type === "move") {
       const move = msg as MoveMessage;
       if (!Number.isFinite(move.x) || !Number.isFinite(move.z) || !Number.isFinite(move.rotation)) return;
@@ -1048,7 +1092,7 @@ wss.on("connection", (socket, req) => {
       const verdict = activateVerdict(conn.player, objective, defence.state.phase);
       if (verdict === "ok") {
         objective.active = true;
-        attemptKills.clear();
+        attemptStats.clear();
         defence.start(Date.now());
         attempt.number += 1;
         // everyone down here is in it: from now on the lift won't take them back up
@@ -1081,6 +1125,7 @@ wss.on("connection", (socket, req) => {
       }
       const cost = SHOP[what].cost;
       funds -= cost;
+      tally(conn.player.id, { spent: cost });
       saveFunds(funds);
       if (what === "grenade") {
         const id = randomUUID();
@@ -1109,6 +1154,7 @@ wss.on("connection", (socket, req) => {
       saveFunds(funds);
       const id = randomUUID();
       items.set(id, { id, kind: "turret", x: msg.x, z: msg.z });
+      tally(conn.player.id, { spent: TURRET_COST, turrets: 1 });
       act(conn.player, `built turret ${shortId(id)} at ${pos(msg.x, msg.z)} for ${TURRET_COST} quota (${funds} left)`);
       markWorldDirty();
       return;
@@ -1191,6 +1237,29 @@ wss.on("connection", (socket, req) => {
     savePlayer(conn.player);
   });
 });
+
+/**
+ * Play (and score) under a name, arcade style: no login, and the same name
+ * later is the same board entry. Refused if someone else online has it now.
+ */
+function takeName(conn: Connection, raw: unknown): void {
+  const reply = (ok: boolean, text: string): void => {
+    if (conn.socket.readyState === conn.socket.OPEN) conn.socket.send(JSON.stringify({ type: "nameReply", ok, text } satisfies ServerMessage));
+  };
+  const name = cleanName(raw);
+  if (!name) return reply(false, "2 to 12 letters or digits");
+  const clash = [...connections.values()].find((c) => c !== conn && c.player.handle === name);
+  if (clash) {
+    refuse(conn, "name", `refused: name ${name} (in use)`);
+    return reply(false, "someone playing now has that name");
+  }
+  const was = codename(conn.player);
+  conn.player.handle = name;
+  conn.dirty = true;
+  savePlayer(conn.player);
+  if (was !== name) act(conn.player, `now playing as ${name} (was ${was})`);
+  reply(true, name);
+}
 
 /**
  * The palette colour fewest connected players are wearing, so a handful of
@@ -1279,7 +1348,7 @@ function creditKill(ownerId: string): void {
   if (!ownerConn) return;
   ownerConn.score += 1;
   ownerConn.kills += 1;
-  if (objective.active) attemptKills.set(ownerConn.player.id, (attemptKills.get(ownerConn.player.id) ?? 0) + 1);
+  tally(ownerConn.player.id, { kills: 1 });
   bumpStats(ownerConn.player.id, codename(ownerConn.player), { kills: 1 });
   boardDirty = true;
 }
@@ -1359,6 +1428,7 @@ function stepProjectiles(now: number): void {
       const ex = p.x + p.dirX * enemyHit.at;
       const ez = p.z + p.dirZ * enemyHit.at;
       const killed = defence.damage(enemyHit.id);
+      tally(p.ownerId, { hits: 1 });
       // a drip where it was hit, carried a little on along the shot; a body and a pool where it drops
       if (Math.random() < 0.5) leaveGore({ kind: "blood", who: "enemy", x: ex + p.dirX * 0.5, z: ez + p.dirZ * 0.5, size: 0.18 + Math.random() * 0.12 });
       if (killed) {
@@ -1389,6 +1459,7 @@ function wound(conn: Connection, now: number, by: string): boolean {
   }
   if (conn.bandaged > 0) {
     // the dressing gives way: every wound under it is back at once
+    tally(conn.player.id, { wounds: conn.bandaged });
     conn.wounds = conn.bandaged;
     conn.bandaged = 0;
     conn.woundGraceUntil = now + WOUND_GRACE_MS;
@@ -1398,6 +1469,7 @@ function wound(conn: Connection, now: number, by: string): boolean {
     return false;
   }
   conn.wounds += 1;
+  tally(conn.player.id, { wounds: 1 });
   conn.woundGraceUntil = now + WOUND_GRACE_MS;
   conn.dirty = true;
   leaveGore({ kind: "blood", who: "player", x: conn.player.x + (Math.random() - 0.5) * 0.4, z: conn.player.z + (Math.random() - 0.5) * 0.4, size: 0.22 + Math.random() * 0.1 });

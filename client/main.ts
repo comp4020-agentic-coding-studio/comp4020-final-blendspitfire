@@ -97,6 +97,8 @@ import {
   BROADCAST_INTERVAL_MS,
   FIRE_COOLDOWN_MS,
   ITEM_KINDS,
+  cleanName,
+  NAME_MAX,
   BLOCKING_KINDS,
   SUPPLY_TERMINAL,
   SHOP,
@@ -444,10 +446,75 @@ function renderLeaderboard(players: PlayerState[]): void {
 
 
 
+// --- Your name --------------------------------------------------------------
+// Arcade style (ADR-060): type a name on joining and that's who you are on
+// screen and on the board; no login. The last one typed is offered again.
+// The game waits behind the card until the server takes a name.
+
+/** the name the server has us under (undefined until one's taken) */
+let myHandle: string | undefined;
+const NAME_KEY = "blendspitfire.name";
+const nameEl = document.createElement("div");
+nameEl.className = "ui-name";
+nameEl.innerHTML =
+  '<div class="title">sign in for the shift</div>' +
+  '<div class="dim">your name on the board · 2–12 letters</div>' +
+  `<input maxlength="${NAME_MAX}" spellcheck="false" autocomplete="off" />` +
+  '<div class="why"></div>' +
+  '<div class="dim">enter: clock in</div>';
+document.body.appendChild(nameEl);
+const nameInput = nameEl.querySelector<HTMLInputElement>("input")!;
+const nameWhy = nameEl.querySelector<HTMLDivElement>(".why")!;
+const naming = (): boolean => nameEl.classList.contains("open");
+function askName(): void {
+  pressed.clear();
+  nameEl.classList.add("open");
+  let last = "";
+  try {
+    last = localStorage.getItem(NAME_KEY) ?? "";
+  } catch {
+    // storage blocked: just an empty box
+  }
+  nameInput.value = myHandle ?? last;
+  nameWhy.textContent = "";
+  setTimeout(() => nameInput.focus(), 0);
+}
+nameInput.addEventListener("input", () => {
+  nameInput.value = nameInput.value.toUpperCase();
+});
+nameInput.addEventListener("keydown", (e) => {
+  e.stopPropagation();
+  if (e.key === "Enter") {
+    const name = cleanName(nameInput.value);
+    if (!name) {
+      nameWhy.textContent = "2 to 12 letters or digits";
+      return;
+    }
+    nameWhy.textContent = "…";
+    net.name(name);
+  } else if (e.key === "Escape" && myHandle) nameEl.classList.remove("open");
+});
+function onNameReply(ok: boolean, text: string): void {
+  if (!ok) {
+    nameWhy.textContent = text;
+    return;
+  }
+  myHandle = text;
+  try {
+    localStorage.setItem(NAME_KEY, text);
+  } catch {
+    // remembered for this tab only
+  }
+  nameEl.classList.remove("open");
+  nameInput.blur();
+}
+
 // --- Aim -------------------------------------------------------------------
 
 const pressed = new Set<string>();
-window.addEventListener("keydown", (e) => pressed.add(e.key.toLowerCase()));
+window.addEventListener("keydown", (e) => {
+  if (!naming()) pressed.add(e.key.toLowerCase());
+});
 window.addEventListener("keyup", (e) => pressed.delete(e.key.toLowerCase()));
 // a key released while the window is in the background never sends keyup;
 // without this the player keeps walking after alt-tabbing back
@@ -1324,6 +1391,8 @@ const net = connect({
     serverClock.observe(t);
     versionEl.textContent = version;
     myId = you.id;
+    myHandle = you.handle;
+    if (!myHandle) askName();
     myRespawnAt = you.respawnAt ?? 0;
     myOut = !!you.out;
     myLate = !!you.late;
@@ -1341,6 +1410,7 @@ const net = connect({
     renderLeaderboard(players);
   },
   onBoard: renderBoard,
+  onNameReply,
   onReplaced() {
     connectionLostEl.textContent = "open in another tab — this one is paused";
     connectionLostEl.style.display = "block";
@@ -1628,6 +1698,7 @@ window.addEventListener("pointerup", (e) => {
 // the browser's own right-click menu would steal the secondary action
 window.addEventListener("contextmenu", (e) => e.preventDefault());
 window.addEventListener("keydown", (e) => {
+  if (naming()) return;
   const key = e.key.toLowerCase();
   // Space would otherwise scroll, or "click" whatever link has focus
   if (key === " ") e.preventDefault();
@@ -1636,7 +1707,10 @@ window.addEventListener("keydown", (e) => {
   else if (key === "q") drop();
   else if (key === "e") useTarget(eTarget());
   else if (key === "x") toggleReady();
-  else if (key === "escape" && boardOpen) toggleBoard();
+  else if (key === "n" && boardOpen) {
+    toggleBoard();
+    askName();
+  } else if (key === "escape" && boardOpen) toggleBoard();
   else if (key === "escape" && shopOpen) toggleShop(false);
   else if (key === "escape" && placingTurret) placingTurret = false;
   else if (shopOpen) {
@@ -2343,12 +2417,15 @@ function toggleBoard(): void {
   boardEl.classList.toggle("open", boardOpen);
 }
 function renderBoard(b: BoardMessage): void {
-  scoreboard.draw(b.top.slice(0, 3).map((p, i) => `${i + 1} ${p.name.slice(0, 14).padEnd(14)} ${p.kills}`));
+  scoreboard.draw(b.top.slice(0, 3).map((p, i) => `${i + 1} ${p.name.slice(0, 12).padEnd(12)} ${p.score}`));
   const runLine = b.run.attempts
     ? `run: attempt ${b.run.attempts}${b.run.best ? ` · best ${b.run.best}/${WAVES_TO_WIN} waves` : ""}`
     : "run: no attempts yet";
   const rows = b.top
-    .map((p, i) => `<div class="row"><span class="rank">${i + 1}</span><span>${escapeText(p.name)}</span><span class="score">${p.wins ? `★${p.wins} ` : ""}${p.kills}k</span></div>`)
+    .map(
+      (p, i) =>
+        `<div class="row${p.name === myHandle ? " me" : ""}"><span class="rank">${i + 1}</span><span>${escapeText(p.name)}${p.won ? " ★" : ""}</span><span class="score">${p.score} · ${p.kills}k · ${p.waves}w</span></div>`,
+    )
     .join("");
   const wins = b.wins
     .map((w) => `<div class="row won"><span>#${w.n}</span><span>${w.attempts} attempt(s)</span><span class="score">${escapeText(w.crew.slice(0, 3).join(", "))}${w.crew.length > 3 ? "…" : ""}</span></div>`)
@@ -2356,10 +2433,11 @@ function renderBoard(b: BoardMessage): void {
   boardEl.innerHTML =
     '<div class="board-panel">' +
     `<div class="title">high scores</div><div class="run">${runLine}</div>` +
+    '<div class="row head dim"><span class="rank">#</span><span>name</span><span class="score">best · kills · waves</span></div>' +
     (rows || '<div class="row dim">nobody yet</div>') +
     (wins ? `<div class="title">reactor stabilised</div>${wins}` : "") +
-    '<div class="legend">★ runs won · k kills</div>' +
-    '<div class="legend">E / Esc to close</div></div>';
+    '<div class="legend">each name\'s best attempt · ★ the reactor held</div>' +
+    '<div class="legend">N: change name · E / Esc to close</div></div>';
 }
 // walking away closes it
 setInterval(() => {
@@ -2468,7 +2546,7 @@ function showReport(r: Report): void {
       `<div class="row total"><span>quota</span><span class="score">+${r.base + r.bonus} → ${r.total}</span></div>`;
   } else {
     hold = 11000;
-    const crew = [...r.crew].sort((a, b) => b.kills - a.kills);
+    const crew = [...r.crew].sort((a, b) => b.score - a.score);
     html =
       `<div class="title">${r.outcome === "won" ? "reactor stabilised" : "attempt failed"}</div>` +
       `<div class="run">attempt ${r.attempt} · ${escapeText(r.reason)}</div>` +
@@ -2476,7 +2554,12 @@ function showReport(r: Report): void {
       (r.blackoutMs ? `<div class="row"><span>held in the dark</span><span class="score">${secs(r.blackoutMs)}</span></div>` : "") +
       `<div class="title sub">crew</div>` +
       (crew.length
-        ? crew.map((c) => `<div class="row${c.out ? " dim" : ""}"><span>${escapeText(c.name)}${c.out ? " †" : ""}</span><span class="score">${c.kills} kills</span></div>`).join("")
+        ? crew
+            .map(
+              (c) =>
+                `<div class="row${c.out ? " dim" : ""}"><span>${escapeText(c.name)}${c.out ? " †" : ""}</span><span class="score">${c.kills}k · ${c.score}${c.rank ? ` · #${c.rank}${c.best ? " new best" : ""}` : ""}</span></div>`,
+            )
+            .join("")
         : '<div class="row dim">nobody</div>') +
       (r.outcome === "won" ? '<div class="legend">power restored · take the lift up</div>' : "");
   }

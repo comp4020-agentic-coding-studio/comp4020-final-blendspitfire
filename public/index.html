@@ -16,7 +16,7 @@
         --ui-font: 400 19px/1.05 "VT323", ui-monospace, "SF Mono", Menlo, monospace; }
       html, body { margin: 0; height: 100%; background: #111; overflow: hidden; }
       canvas { display: block; }
-      .ui-frame, #leaderboard, #board .board-panel, #shop .board-panel, .ui-report, .ui-hud, .ui-ready, .ui-wounds, .ui-spectate, .ui-banner, #connection-lost {
+      .ui-frame, #leaderboard, #board .board-panel, #shop .board-panel, .ui-report, .ui-hud, .ui-ready, .ui-name, .ui-wounds, .ui-spectate, .ui-banner, #connection-lost {
         position: fixed; color: var(--ui); font: var(--ui-font); letter-spacing: 0.06em; text-transform: uppercase;
         padding: 8px 12px; pointer-events: none; text-shadow: 0 0 6px var(--ui-glow), 0 1px 0 #000;
         border: 2px solid var(--ui-dim); border-radius: 0;
@@ -88,6 +88,14 @@
       .ui-ready .what { font-size: 22px; }
       .ui-ready .who { color: var(--ui-dim); }
       @keyframes ready-pulse { 0% { background: var(--ui); color: #0b0c0e; } 50% { background: transparent; color: var(--ui); } }
+      .ui-name { left: 50%; top: 38%; transform: translate(-50%, -50%); display: none; flex-direction: column; align-items: center; gap: 6px;
+        padding: 16px 28px; border-color: var(--ui); pointer-events: auto; z-index: 20; }
+      .ui-name.open { display: flex; }
+      .ui-name .title { font-size: 28px; }
+      .ui-name .dim { color: var(--ui-dim); }
+      .ui-name input { font: 400 40px/1 "VT323", ui-monospace, monospace; letter-spacing: 0.18em; text-transform: uppercase; text-align: center;
+        width: 9em; color: var(--ui); background: transparent; border: none; border-bottom: 2px solid var(--ui); outline: none; caret-color: var(--ui); }
+      .ui-name .why { color: #ff7a6a; min-height: 1em; }
       .ui-wounds { left: 14px; bottom: 40px; display: none; }
       .ui-wounds .pip { display: inline-block; width: 12px; height: 12px; margin-right: 4px; border: 2px solid var(--ui-dim); }
       .ui-wounds .pip.hit { background: #ff5a5a; border-color: #ff5a5a; }

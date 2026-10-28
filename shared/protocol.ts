@@ -12,6 +12,8 @@ export interface PlayerState {
   respawnAt?: number;
   /** wire-only: dead for the rest of this attempt (died while the reactor was live): spectating */
   out?: true;
+  /** the name they chose to play under (NameMessage); until then they're shown by codename */
+  handle?: string;
   /** wire-only: out only because they joined while an attempt was on (they watch the crew until it ends) */
   late?: true;
   /** wire-only: in-memory for the current connection, not persisted */
@@ -101,8 +103,38 @@ export type Report =
       waves: number;
       /** how long the crew held out after the reactor died (0 if it didn't) */
       blackoutMs: number;
-      crew: { name: string; kills: number; out: boolean }[];
+      crew: CrewLine[];
     };
+
+/** one of the crew's attempt, for the settlement */
+export interface CrewLine {
+  name: string;
+  kills: number;
+  out: boolean;
+  shots: number;
+  hits: number;
+  /** wounds taken (dressings torn open count again) */
+  wounds: number;
+  /** quota spent at the comms set */
+  spent: number;
+  turrets: number;
+  /** the attempt's score for them (attemptScore), what the board keeps the best of */
+  score: number;
+  /** where their name stands on the board after this (1 = top); absent if it isn't on it */
+  rank?: number;
+  /** true if this attempt beat what their name had on the board */
+  best?: boolean;
+}
+
+/**
+ * One crew member's score for an attempt (agent's numbers, ADR-060): ten
+ * a kill, fifty a wave the crew cleared, a hundred for still standing at
+ * the end, five hundred more if the reactor held.
+ */
+export const SCORE = { kill: 10, wave: 50, standing: 100, won: 500 } as const;
+export function attemptScore(kills: number, waves: number, standing: boolean, won: boolean): number {
+  return kills * SCORE.kill + waves * SCORE.wave + (standing ? SCORE.standing : 0) + (won ? SCORE.won : 0);
+}
 
 /** after everyone's down: how long the view stays where they fell before the cut back to the garden */
 export const WIPE_HOLD_MS = 4500;
@@ -115,7 +147,8 @@ export const WIPE_HOLD_MS = 4500;
 export interface BoardMessage {
   type: "board";
   run: { attempts: number; best: number };
-  top: { name: string; kills: number; attempts: number; wins: number }[];
+  /** the best single attempt each name has played, highest first */
+  top: { name: string; score: number; kills: number; waves: number; won: boolean }[];
   wins: { n: number; wonAt: number; attempts: number; crew: string[] }[];
 }
 
@@ -257,7 +290,15 @@ export interface ReplacedMessage {
   type: "replaced";
 }
 
-export type ServerMessage = WelcomeMessage | StateMessage | BoardMessage | ReplacedMessage;
+/** the answer to a NameMessage: taken (or refused) with why, or the name now theirs */
+export interface NameReplyMessage {
+  type: "nameReply";
+  ok: boolean;
+  /** the name as the server will show it (normalised), or why not */
+  text: string;
+}
+
+export type ServerMessage = WelcomeMessage | StateMessage | BoardMessage | ReplacedMessage | NameReplyMessage;
 export type ClientMessage =
   | MoveMessage
   | PickupMessage
@@ -269,7 +310,25 @@ export type ClientMessage =
   | LiftMessage
   | BuyMessage
   | BuildTurretMessage
-  | ScrapMessage;
+  | ScrapMessage
+  | NameMessage;
+
+/**
+ * The name to play (and score) under, arcade style: typed on joining, no
+ * login. It's the leaderboard's key, so the same name later is the same
+ * entry; a name someone online is using now is refused (ADR-060).
+ */
+export interface NameMessage {
+  type: "name";
+  name: string;
+}
+export const NAME_MAX = 12;
+/** a name as typed, cleaned up: letters, digits, space, - and _, upper case, trimmed; undefined if nothing usable is left */
+export function cleanName(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const s = raw.toUpperCase().replace(/[^A-Z0-9 _-]/g, "").replace(/\s+/g, " ").trim().slice(0, NAME_MAX).trim();
+  return s.length >= 2 ? s : undefined;
+}
 
 /**
  * Every pickup-able thing in the world is one of these: same shape, same

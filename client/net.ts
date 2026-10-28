@@ -4,6 +4,8 @@ export interface NetHandlers {
   onWelcome: (you: PlayerState, players: PlayerState[], t: number, version: string) => void;
   onState: (state: StateMessage) => void;
   onBoard: (board: BoardMessage) => void;
+  /** the server's answer to a chosen name */
+  onNameReply: (ok: boolean, text: string) => void;
   /** the server closed this tab because the same player opened another */
   onReplaced: () => void;
   /** fires on every connect/disconnect transition, including the first connect */
@@ -22,6 +24,7 @@ export interface Net {
   buildTurret: (x: number, z: number) => void;
   scrap: (itemId: string) => void;
   lift: () => void;
+  name: (name: string) => void;
 }
 
 const RECONNECT_BASE_MS = 500;
@@ -55,6 +58,7 @@ export function connect(handlers: NetHandlers): Net {
       if (msg.type === "welcome") handlers.onWelcome(msg.you, msg.players, msg.t, msg.version);
       else if (msg.type === "state") handlers.onState(msg);
       else if (msg.type === "board") handlers.onBoard(msg);
+      else if (msg.type === "nameReply") handlers.onNameReply(msg.ok, msg.text);
       else if (msg.type === "replaced") {
         replaced = true;
         handlers.onReplaced();
@@ -121,6 +125,9 @@ export function connect(handlers: NetHandlers): Net {
     },
     lift() {
       send({ type: "lift" });
+    },
+    name(name) {
+      send({ type: "name", name });
     },
   };
 }
