@@ -217,6 +217,7 @@ try {
   throw new Error("WebGLRenderer construction failed");
 }
 configureRenderer(renderer);
+if (params.has("debug")) renderer.info.autoReset = false;
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 const post = createPostProcess(renderer, PIXEL_SCALE, GRADE);
@@ -620,28 +621,39 @@ function restingAngle(id: string): number {
   return ((h >>> 0) % 628) / 100;
 }
 
+/** item models, built once each and cloned (as with enemies: building one is tens of milliseconds) */
+const itemTemplates = new Map<string, THREE.Object3D>();
+function itemModel(name: string, build: () => THREE.Object3D): THREE.Object3D {
+  let t = itemTemplates.get(name);
+  if (!t) {
+    t = build();
+    itemTemplates.set(name, t);
+  }
+  return t.clone();
+}
+
 function makeItem(state: ItemState): ClientItem {
   let lying: THREE.Object3D;
   let held: THREE.Object3D;
   /** the mesh whose shape the hover outline copies */
   let shape: THREE.Mesh;
   if (state.kind === "gun") {
-    lying = shape = gun();
+    lying = shape = itemModel("gun", gun) as THREE.Mesh;
     lying.position.y = GUN_REST_HEIGHT;
     lying.rotation.y = restingAngle(state.id);
-    held = heldGun();
+    held = itemModel("heldGun", heldGun);
     held.position.set(HELD_GUN_OFFSET.x, HELD_GUN_OFFSET.y, HELD_GUN_OFFSET.z);
   } else if (state.kind === "grenade") {
-    lying = grenade();
+    lying = itemModel("grenade", grenade);
     shape = lying.children[0] as THREE.Mesh;
     // in the right hand, at the hip
-    held = grenade();
+    held = itemModel("grenade", grenade);
     held.position.set(0.32, 0.8, 0.2);
   } else {
     // a turret: the only blocking kind
-    lying = sentryTurret();
+    lying = itemModel("turret", sentryTurret);
     shape = lying.children[0] as THREE.Mesh;
-    held = sentryTurret();
+    held = itemModel("turret", sentryTurret);
     // carried in front, in both arms, at a smaller size so it doesn't hide the carrier
     held.scale.setScalar(0.55);
     held.position.set(0, 0.62, 0.5);
@@ -1822,7 +1834,24 @@ const breakPrompts = (): boolean => defenceState.phase === "break" && performanc
 let funds = 0;
 const ITEM_NAMES: Record<ItemKind, string> = { gun: "rifle", turret: "turret", grenade: "grenade" };
 const enemyBarGeometry = new THREE.PlaneGeometry(0.7, 0.07).rotateX(-Math.PI / 2);
-const ENEMY_MODELS: Record<EnemyKind, () => THREE.Group> = { crawler, spitter, brute, runner };
+const ENEMY_BUILDERS: Record<EnemyKind, () => THREE.Group> = { crawler, spitter, brute, runner };
+/**
+ * One model per kind, built the first time it's needed and cloned for every
+ * enemy after (a clone shares the geometry and materials). Building one ---
+ * merging its parts and baking their AO --- takes 15--35 ms, which done per
+ * spawn was a dropped frame every time an enemy came through a breach.
+ */
+const enemyTemplates = new Map<EnemyKind, THREE.Group>();
+function enemyModel(kind: EnemyKind): THREE.Group {
+  let t = enemyTemplates.get(kind);
+  if (!t) {
+    t = ENEMY_BUILDERS[kind]();
+    enemyTemplates.set(kind, t);
+  }
+  return t.clone();
+}
+// built ahead, one a moment, so even the first of a kind comes in without a hitch
+for (const [i, kind] of (Object.keys(ENEMY_BUILDERS) as EnemyKind[]).entries()) setTimeout(() => enemyModel(kind), 1500 + i * 300);
 /** where each kind's eye flare sits (height, forward), in its own model's space */
 const EYE_SPOT: Record<EnemyKind, [number, number]> = { crawler: [0.48, 0.66], spitter: [0.66, 0.6], brute: [0.48, 0.74], runner: [0.42, 0.66] };
 
@@ -1832,7 +1861,7 @@ function updateEnemies(incoming: EnemyState[], t: number): void {
     seen.add(e.id);
     let ce = enemies.get(e.id);
     if (!ce) {
-      const mesh = ENEMY_MODELS[e.kind]();
+      const mesh = enemyModel(e.kind);
       const eyes = crawlerEyes(restingAngle(e.id));
       // a runner trails a warm smear of light down its back: the thing you track across a dark room
       if (e.kind === "runner") {
@@ -1925,7 +1954,7 @@ function updateGrenades(incoming: GrenadeState[], blasts: { x: number; z: number
   for (const g of incoming) {
     seen.add(g.id);
     if (thrown.has(g.id)) continue;
-    const mesh = grenade();
+    const mesh = itemModel("grenade", grenade);
     const ring = new THREE.Mesh(blastRingGeometry, new THREE.MeshBasicMaterial({ color: DANGER, transparent: true, opacity: 0, depthWrite: false }));
     ring.position.set(g.tx, 0.04, g.tz);
     scene.add(mesh, ring);
@@ -2134,9 +2163,10 @@ function animate(): void {
   renderCountdown();
   stepBeacon(time);
   renderControls();
-  renderDebug(dt);
-
+  // ?debug counts the whole frame's draws (every pass), not just the last pass's
+  if (debugEl) renderer.info.reset();
   post.render(scene, camera);
+  renderDebug(dt);
   requestAnimationFrame(animate);
 }
 
@@ -2685,7 +2715,8 @@ function renderDebug(dt: number): void {
   if (debugTime < 0.5) return;
   const ms = (debugTime / debugFrames) * 1000;
   const at = localMesh ? ` · ${localMesh.position.x.toFixed(1)},${localMesh.position.z.toFixed(1)}` : "";
-  debugEl.textContent = `${(1000 / ms).toFixed(0)} fps · ${ms.toFixed(1)} ms · ${renderer.info.render.calls} draws · ${(renderer.info.render.triangles / 1000).toFixed(0)}k tris${at}`;
+  const lights = scene.children.filter((o) => (o as THREE.Light).isLight).length;
+  debugEl.textContent = `${(1000 / ms).toFixed(0)} fps · ${ms.toFixed(1)} ms · ${renderer.info.render.calls} draws · ${(renderer.info.render.triangles / 1000).toFixed(0)}k tris · ${renderer.info.programs?.length ?? 0} programs · ${lights} lights${at}`;
   debugFrames = 0;
   debugTime = 0;
 }
