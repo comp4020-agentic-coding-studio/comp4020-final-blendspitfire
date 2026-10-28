@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-10-28, the red-grey repaint and the answers given before the seventh round was built
+Synced from the draft up to: 2026-10-28, the seventh round as built overnight
 
 ---
 
@@ -825,3 +825,21 @@ Suggested minimal topology: safe room, one main corridor (bottleneck), a fork in
 *2026-10-28 · Status: Accepted*
 
 **Decision.** Before the agent built the rest of ADR-060 unattended, the developer chose, from the agent's options: sound is deferred to a later round; both elites appear from wave 3, rising from about a tenth of each wave to a quarter by wave 6, split evenly; a player who disconnects below is held for 30 seconds and then counts as out, so an empty facility ends in a wipe; the freight lift's boarding timer is 20 seconds, and the fallen revive with everyone on the surface after the thanks card. The evacuation is to be built last and as completely as possible in one go, for the developer to review afterwards. Turret sealing stays pending.
+
+## ADR-063: Seventh round built, unattended — the agent's choices to review
+*2026-10-28 · Status: Built; every choice below is the agent's, awaiting the developer's review*
+
+**Context.** The developer asked the agent to build the rest of ADR-060 overnight, leaving sound for later and the evacuation for last, "done in one go if possible", to review the next day.
+
+**Decision.** What was built, and the calls the agent made along the way:
+- *Revive trap and endless attempts.* The fallen stay out after a win until the crew has left, then come back with everyone. Testing showed a second bug: once the living had left, the fallen still below counted as a wipe and failed a won run; that check now stands down in a won attempt. A player who drops out below is held 30 seconds (back where they were if they return in time), then counts as out.
+- *Six waves.* The per-wave sizes were kept, so the last wave is 40 rather than 81.
+- *Boxes removed.* Turrets keep the placement and blocking code; boxes in an old saved world are dropped on load.
+- *Crew colours.* Ice, teal, sky, blue, indigo and violet; cyan was skipped because it is already the interface's "you can use this" colour.
+- *The interface.* One slim line for the top panel; the ready vote as its own card at the bottom with a flashing X key; at a wave's end the banner first, the report 1.5 s later, and the ready card and supply marker after 5 s.
+- *Elites.* A brute (three times a crawler's hits, slower, drawn larger with pale plates and three pairs of eyes) and a runner (fragile, 1.7 times as fast, an amber stripe down its back), alternating, from wave 3.
+- *One level at a time.* When the lift leaves the surface, everyone up there outside the tutorial is put in the car; someone joining during an attempt watches the crew until it ends.
+- *Names.* A name card on joining (remembered by the browser). An attempt scores ten a kill, fifty a wave cleared, a hundred for still standing and five hundred for a win; the board keeps each name's best single attempt.
+- *The way out.* The blast door is the core's north wall from its west wall to the shaft breach, two halves that slide apart under rotating amber beacons. The freight platform behind it carries stacks of crates. The climb is staged by girder rings with lamps sliding down the shaft past the platform. Three settlement pages play during the 33-second climb: the shift report and MVP, a payslip that starts at $480,000 and always nets $20 (ammunition and medical lines follow each player's own shots and wounds), and the standings with the top five. Then a thanks card with a logo placeholder. The old lift stays locked through a won attempt.
+
+**Why.** The developer's decisions in ADR-060 and ADR-062 set what to build; these are the agent's means to them, kept to what could be verified unattended (tests, bots, screenshots), and all open to change.
