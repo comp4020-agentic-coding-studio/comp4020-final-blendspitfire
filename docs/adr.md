@@ -801,6 +801,7 @@ Suggested minimal topology: safe room, one main corridor (bottleneck), a fork in
 - *Length.* Ten waves is too long; the objective becomes six.
 - *Elite enemies.* With enough players, each can hold one breach and the waves are cleared without thought. Elites are needed to break that up. Per ADR-053 an elite must look different, never a silent stat change; what it looks like and what makes it dangerous is still to be decided. The developer then decided: two elites, one with more health and one that's faster.
 - *Boxes go.* The placeable boxes are left over from an early version and no longer do anything; the developer asked for them to be removed.
-- *Turrets as walls.* Players found that a turret placed in a narrow spot blocks the way. Enemies do reroute, but sealing them off entirely is not intended. The agent notes that a full seal doesn't stall the game today (with no route, enemies head for the reactor and chew through whatever blocks them), but how to handle it is open.
+- *Turrets as walls.* Players found that a turret placed in a narrow spot blocks the way. Enemies do reroute, but sealing them off entirely is not intended. The agent notes that a full seal doesn't stall the game today (with no route, enemies head for the reactor and chew through whatever blocks them), but how to handle it is open. The developer has left it pending for now.
+- *Teammate colours.* A player reported mistaking some teammates' colours for enemies. The developer's decision: teammates all in one family of hues (cool, say), enemies in the other.
 
 **Why.** In the developer's judgement from watching the play, the information is there but either buried or arriving all at once.
