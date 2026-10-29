@@ -55,6 +55,13 @@ Updated: 2026-10-29 (user looked at seventh round: happy; shaft walls fix commit
 - Tests: spec/*.test.ts (159). defence.test.ts covers won/blackout/hunt + ready vote; lift.test.ts the won/blackout lift; economy.test.ts shop + dressing + gore caps; tutorial.test.ts layout + lessons. multiuser/robustness tests join as returning players (rejoin()) or walk east, since a fresh cookie lands in the tutorial.
 
 ## Next work (ordered)
+- **Eighth round (user's list 2026-10-29, recorded only; nothing built yet; full wording in .claude/notes/adr-draft.md):**
+  1. BUILD: freight shaft's 3 non-door walls tall at all times (not only rising/thanks); door side: open = see out, shutting = door + tall wall above it occlude in step with the door's close fraction (no snap at the end). Touches evac.ts shaftWalls()/doorOccluders, main.ts shaftLid (mask lid currently only lifted when shaftUp).
+  2. NOT NOW: real game name + logo ("Coms"/COMMONS is a placeholder; thanks card has no logo).
+  3. BUILD: ending pacing: after page 3 the settlement UI fades with the screen; logo only once fully black; logo shown +2 s longer than now (THANKS_MS); then logo fades to black, then garden. settlement.ts, .ui-settle/.ui-thanks, shared/enemies.ts timings.
+  4. DISCUSS first: difficulty + tension. Goal: a normal newcomer clears it first try, but it's hard. Ideas from user: bigger map, longer waves, slightly longer breaks, sharper wave-to-wave swings; felt danger > real danger (e.g. tinnitus + red screen at ~half HP, user's example only). Agent to bring options, not decide.
+  5. DISCUSS first: payslip = fixed formula: gross scales with score, few fixed fees, most by fixed % (absurd tax/fees), net small (2 digits) but still tracks score. Show: big green gross top, 5-8 deductions ~1/s, rule line, pause, then reveal net as if a fortune (effect TBD).
+  6. DISCUSS first: rooms (create / join / room list before play). Big change: server is one persistent world today.
 - **Fifth round DONE 2026-10-22 (awaiting user playtest; ADR-055):**
   a. Wall-hit shimmer (soft additive glow quantised by the retro grade) moved to Impacts.muzzle(), played at the muzzle on every shot (own on click in muzzleFlash(), others' on receipt in updateProjectiles). Wall hits = sparks + chips only.
   b. Loose guns were half-buried (sights below the receiver): GUN_REST_HEIGHT now measured from the lying geometry's bbox (lowest point 3.5 cm up). Lying gun x1.15 (GUN_LYING_SCALE); outlineGlint pulses every 2.5 s on unhovered loose guns (main.ts stepItemVisuals).
