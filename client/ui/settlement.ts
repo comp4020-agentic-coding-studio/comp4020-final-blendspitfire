@@ -1,5 +1,5 @@
 import type { BoardMessage, CrewLine, Report } from "../../shared/protocol.ts";
-import { SETTLE_PAGES_MS, type EvacStage } from "../../shared/enemies.ts";
+import { SETTLE_PAGES_MS, THANKS_BLACK_MS, THANKS_IN_MS, THANKS_MS, THANKS_OUT_MS, type EvacStage } from "../../shared/enemies.ts";
 
 // The settlement (ADR-060): played while the freight lift climbs, after
 // Lethal Company's end-of-shift screens. Three pages on the server's clock,
@@ -12,6 +12,11 @@ type Attempt = Extract<Report, { type: "attempt" }>;
 
 const money = (n: number): string => `${n < 0 ? "−" : ""}$${Math.abs(Math.round(n)).toLocaleString("en-US")}`;
 const pct = (a: number, b: number): string => (b ? `${Math.round((a / b) * 100)}%` : "—");
+const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
+/** fades go in visible steps, like the rest of the pixel UI */
+const stepped = (a: number): number => Math.round(a * 8) / 8;
+/** after the card, the garden fades in from black over this long */
+const BACK_IN_MS = 1500;
 const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** the deadpan payslip: what the corp promised, and what it took back, for this crew member */
@@ -48,6 +53,9 @@ export class Settlement {
   private report?: Attempt;
   private board?: BoardMessage;
   private me = "";
+  /** the screen was held black by the ending (thanks/done): fade back in when it lets go */
+  private wasBlack = false;
+  private backAt = 0;
 
   constructor() {
     this.el = document.createElement("div");
@@ -71,15 +79,36 @@ export class Settlement {
   /** show whatever the evacuation's stage calls for; returns how black the screen should be, 0..1 */
   update(st: EvacStage | undefined): number {
     const rising = st?.stage === "rising";
+    const thanks = st?.stage === "thanks";
     this.el.classList.toggle("open", rising);
-    this.thanks.classList.toggle("open", st?.stage === "thanks");
-    if (st?.stage === "thanks") {
+    this.thanks.classList.toggle("open", thanks);
+    if (thanks) {
+      // black first, then the card fades in, holds, and fades back out to black
+      const ms = st.k * THANKS_MS;
+      const a = Math.min(clamp01((ms - THANKS_BLACK_MS) / THANKS_IN_MS), clamp01((THANKS_MS - ms) / THANKS_OUT_MS));
+      this.thanks.style.opacity = `${stepped(a)}`;
       this.page = -1;
+      this.wasBlack = true;
+      this.backAt = 0;
+      return 1;
+    }
+    if (st?.stage === "done") {
+      // the server's about to bring everyone up: stay black till it does
+      this.wasBlack = true;
+      this.backAt = 0;
       return 1;
     }
     if (!rising) {
+      // just brought up after the card: the garden fades in from black
+      if (this.page === -1 && this.wasBlack) {
+        this.wasBlack = false;
+        this.backAt = performance.now();
+      }
       this.page = -1;
-      return 0;
+      if (!this.backAt) return 0;
+      const back = 1 - (performance.now() - this.backAt) / BACK_IN_MS;
+      if (back <= 0) this.backAt = 0;
+      return Math.max(0, back);
     }
     if (st.page !== this.page) {
       this.page = st.page;
@@ -91,6 +120,8 @@ export class Settlement {
     rows.forEach((r, i) => r.classList.toggle("in", i < shown));
     const total = this.el.querySelector<HTMLElement>(".total");
     if (total) total.classList.toggle("in", shown > rows.length);
+    // the last page goes dark with the screen, not over it
+    this.el.style.opacity = `${1 - st.fade}`;
     return st.fade;
   }
 

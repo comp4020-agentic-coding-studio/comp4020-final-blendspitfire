@@ -101,8 +101,11 @@ export const SETTLE_PAGES_MS = [11000, 13000, 9000] as const;
 export const RISE_MS = SETTLE_PAGES_MS.reduce((a, b) => a + b, 0);
 /** the screen fading to black at the end of the rise */
 export const EVAC_FADE_MS = 2500;
-/** the thanks card, on black */
-export const THANKS_MS = 5000;
+/** the thanks card, on black: a beat of black, the card fades in, holds, fades back to black (THANKS_IN/OUT_MS) */
+export const THANKS_MS = 7000;
+export const THANKS_BLACK_MS = 800;
+export const THANKS_IN_MS = 1200;
+export const THANKS_OUT_MS = 1500;
 
 export type EvacStage =
   | { stage: "lights" }

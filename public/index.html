@@ -117,12 +117,11 @@
       .ui-thanks { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
         color: var(--ui); font: var(--ui-font); letter-spacing: 0.2em; text-transform: uppercase; z-index: 8; pointer-events: none;
         text-shadow: 0 0 10px var(--ui-glow); }
-      .ui-thanks.open { display: flex; animation: thanks-in 1.2s steps(6); }
+      .ui-thanks.open { display: flex; }
       .ui-thanks .logo { font-size: 72px; letter-spacing: 0.3em; border: 3px solid var(--ui); padding: 4px 22px 0; }
       .ui-thanks .sub { color: var(--ui-dim); font-size: 16px; }
       .ui-thanks .line { color: var(--ui-dim); font-size: 22px; }
       .ui-thanks .line.big { color: var(--ui); font-size: 34px; margin-top: 18px; }
-      @keyframes thanks-in { from { opacity: 0; } }
       .ui-wounds { left: 14px; bottom: 40px; display: none; }
       .ui-wounds .pip { display: inline-block; width: 12px; height: 12px; margin-right: 4px; border: 2px solid var(--ui-dim); }
       .ui-wounds .pip.hit { background: #ff5a5a; border-color: #ff5a5a; }

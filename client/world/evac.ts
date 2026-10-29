@@ -176,6 +176,22 @@ function shaftWalls(): THREE.Mesh {
   return mesh(merge(parts, "none"));
 }
 
+/**
+ * The parked shaft, while the platform waits at the bottom: the same
+ * girder rings as the moving bays, but fixed, every 3 m up the walls, and
+ * lit, so the walls read as a tall shaft going up rather than a dark band.
+ * Hidden while the bays scroll (they take over).
+ */
+function parkedShaft(): THREE.Group {
+  const g = new THREE.Group();
+  for (let y = H + 0.6; y < SHAFT_H - 1; y += BAY) {
+    const b = bay();
+    b.position.y = y;
+    g.add(b);
+  }
+  return g;
+}
+
 /** the shaft wall over one half of the blast door, riding on it: the door shuts and the wall closes over the way out with it */
 function doorWall(half: number, side: -1 | 1): THREE.Mesh {
   const h = SHAFT_H - H;
@@ -198,6 +214,7 @@ export class EvacView {
   private readonly half: number;
   private readonly beacons: THREE.Group[] = [];
   private readonly shaft = new THREE.Group();
+  private readonly parked = parkedShaft();
   private readonly deck: THREE.Group;
   private readonly sweep: THREE.PointLight;
 
@@ -227,6 +244,7 @@ export class EvacView {
     }
     this.group.add(this.shaft);
     this.group.add(shaftWalls());
+    this.group.add(this.parked);
     this.sweep = new THREE.PointLight(0xfff0d8, 0, 14, 1.4);
     this.sweep.position.set(CX, 2.5, CZ);
     this.group.add(this.sweep);
@@ -270,6 +288,7 @@ export class EvacView {
     this.sweep.intensity = deckLight * 14;
     // the shaft above is only there once the platform's on its way
     this.shaft.visible = st?.stage === "rising" || st?.stage === "thanks";
+    this.parked.visible = !this.shaft.visible;
     return { shake, deckLight };
   }
 
