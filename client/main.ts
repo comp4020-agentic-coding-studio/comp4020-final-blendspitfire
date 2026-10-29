@@ -2201,6 +2201,7 @@ function stepLevel(x: number, z: number, dt: number): void {
   const level = inTutorial(x, z) ? "tutorial" : levelOf(z);
   if (level !== viewLevel) {
     viewLevel = level;
+    shaftLid = false;
     activeVisibility = level === "top" ? surfaceVisibility : level === "tutorial" ? tutorialVisibility : visibility;
     activeVisibility.invalidate();
     // underground (and in the shed) the wall tops are out of sight; outdoors there's nothing overhead to hide (tree crowns stand above the walls)
@@ -2278,10 +2279,17 @@ document.body.appendChild(evacFadeEl);
 /** the last won attempt's report, for the settlement's pages */
 let wonReport: Extract<Report, { type: "attempt" }> | undefined;
 let lastBoard: BoardMessage | undefined;
+let shaftLid = false;
 function stepEvac(time: number): void {
   const now = serverClock.now();
   const e = objective.active && defenceState.phase === "won" ? defenceState.evac : undefined;
   const fx = evacView.update(e, now, time);
+  // on the platform with the shaft up, its walls rise past the camera: lift the mask's lid so they show
+  const lid = fx.shaftUp && inFreight(viewPoint.x, viewPoint.z);
+  if (lid !== shaftLid && viewLevel === "bottom") {
+    shaftLid = lid;
+    post.setMask(visibility.postMask(lid ? 50 : FACILITY_WALL_HALF_HEIGHT * 2 - 0.05));
+  }
   const st = e ? evacStage(e, now) : undefined;
   settlement.set(wonReport, lastBoard, myHandle ?? (myId ? codename({ id: myId, color: myColor, handle: myHandle }) : ""));
   const black = settlement.update(st);

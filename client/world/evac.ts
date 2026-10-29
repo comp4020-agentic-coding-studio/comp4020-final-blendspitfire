@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { EMIT_AMBER, EMIT_WHITE, HAZARD, PAINT_CHARCOAL, PAINT_OXIDE, RUBBER, RUST, STEEL, WOOD } from "../../shared/palette.ts";
+import { CONCRETE_DARK, EMIT_AMBER, EMIT_WHITE, HAZARD, PAINT_CHARCOAL, PAINT_OXIDE, RUBBER, RUST, STEEL, WOOD } from "../../shared/palette.ts";
 import { BLAST_DOOR, FACILITY_WALL_HALF_HEIGHT, FREIGHT, FREIGHT_PANEL } from "../../shared/protocol.ts";
 import { blastDoorOpen, evacStage, type EvacState } from "../../shared/enemies.ts";
 import { glow } from "../look.ts";
@@ -158,11 +158,31 @@ function bay(): THREE.Group {
   return g;
 }
 
+/**
+ * The shaft's walls all the way up, round all four sides (over the shut
+ * door too): the facility's walls stop at head height under a ceiling the
+ * sight mask paints black, but a shaft has no ceiling, so from the
+ * platform the view is wall on every side, past the camera. Plain: the
+ * bays sliding down them are what move.
+ */
+function shaftWalls(): THREE.Mesh {
+  const t = 0.6;
+  const h = SHAFT_TOP + BAY;
+  const parts: THREE.BufferGeometry[] = [
+    part(box(W + 2 * t, h, t), CONCRETE_DARK.shade, CX, h / 2, FREIGHT.minZ - t / 2),
+    part(box(W + 2 * t, h - H, t), CONCRETE_DARK.shade, CX, H + (h - H) / 2, FREIGHT.maxZ + t / 2),
+  ];
+  for (const x of [FREIGHT.minX - t / 2, FREIGHT.maxX + t / 2]) parts.push(part(box(t, h, D), CONCRETE_DARK.shade, x, h / 2, CZ));
+  return mesh(merge(parts, "none"));
+}
+
 /** the camera's shake while the door grinds and the platform climbs, 0..1 */
 export interface EvacFx {
   shake: number;
   /** a light pool over the platform while it climbs (with its strength 0..1): the deck lit as lamps go by */
   deckLight: number;
+  /** the shaft's walls are up (rising, thanks): nothing overhead to hide from the platform */
+  shaftUp: boolean;
 }
 
 export class EvacView {
@@ -171,6 +191,7 @@ export class EvacView {
   private readonly half: number;
   private readonly beacons: THREE.Group[] = [];
   private readonly shaft = new THREE.Group();
+  private readonly walls = shaftWalls();
   private readonly deck: THREE.Group;
   private readonly sweep: THREE.PointLight;
 
@@ -198,6 +219,8 @@ export class EvacView {
       this.shaft.add(b);
     }
     this.group.add(this.shaft);
+    this.walls.visible = false;
+    this.group.add(this.walls);
     this.sweep = new THREE.PointLight(0xfff0d8, 0, 14, 1.4);
     this.sweep.position.set(CX, 2.5, CZ);
     this.group.add(this.sweep);
@@ -240,8 +263,10 @@ export class EvacView {
     const deckLight = st?.stage === "rising" ? 0.35 + 0.65 * Math.max(0, 1 - Math.abs(phase - 0.5) * 4) : 0;
     this.sweep.intensity = deckLight * 14;
     // the shaft above is only there once the platform's on its way
-    this.shaft.visible = st?.stage === "rising" || st?.stage === "thanks";
-    return { shake, deckLight };
+    const shaftUp = st?.stage === "rising" || st?.stage === "thanks";
+    this.shaft.visible = shaftUp;
+    this.walls.visible = shaftUp;
+    return { shake, deckLight, shaftUp };
   }
 
   /** the door as a sight blocker while it's shut (the facility's base sight walls leave it out) */

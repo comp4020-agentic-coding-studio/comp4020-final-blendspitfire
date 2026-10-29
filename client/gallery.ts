@@ -137,7 +137,8 @@ function facilityView(): void {
   const evacNow = (): number => (evacMode === "rise" ? -1e7 + EVAC_SHUT_MS + evacAt + clock.getElapsedTime() * 1000 : evacMode === "opening" ? evacAt + clock.getElapsedTime() * 1000 : 0);
   const visibility = new VisibilityMask(sightBlockers(WALLS.filter((w) => w !== BLAST_DOOR), FIXTURES), SOLID, SIGHT_BOUNDS);
   const masked = close && !params.has("nomask");
-  if (masked) post.setMask(visibility.postMask(FACILITY_WALL_HALF_HEIGHT * 2 - 0.05));
+  // in the risen shaft the walls go up past the camera: no lid to hide
+  if (masked) post.setMask(visibility.postMask(evacMode === "rise" ? 50 : FACILITY_WALL_HALF_HEIGHT * 2 - 0.05));
   const live = params.has("live");
   const clock = new THREE.Clock();
   const render = (): void => {
