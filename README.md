@@ -1,4 +1,4 @@
-# Blendspitfire
+# Asset Nexus Unlimited
 
 A top-down 3D multiplayer game set in an underground facility. You spawn in a
 safe intake room, go through a one-way gate, and make your way through dark
