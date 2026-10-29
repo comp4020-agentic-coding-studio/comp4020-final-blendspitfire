@@ -118,8 +118,9 @@
         color: var(--ui); font: var(--ui-font); letter-spacing: 0.2em; text-transform: uppercase; z-index: 8; pointer-events: none;
         text-shadow: 0 0 10px var(--ui-glow); }
       .ui-thanks.open { display: flex; }
-      .ui-thanks .logo { font-size: 72px; letter-spacing: 0.3em; border: 3px solid var(--ui); padding: 4px 22px 0; }
-      .ui-thanks .sub { color: var(--ui-dim); font-size: 16px; }
+      .ui-thanks .logo { width: min(440px, 80vw); }
+      .ui-thanks .logo svg { display: block; width: 100%; height: auto; filter: drop-shadow(0 0 6px var(--ui-glow)); }
+      .ui-thanks .sub { color: var(--ui); font-size: 26px; letter-spacing: 0.3em; padding-left: 0.3em; }
       .ui-thanks .line { color: var(--ui-dim); font-size: 22px; }
       .ui-thanks .line.big { color: var(--ui); font-size: 34px; margin-top: 18px; }
       .ui-wounds { left: 14px; bottom: 40px; display: none; }

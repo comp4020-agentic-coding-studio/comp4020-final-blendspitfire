@@ -1,5 +1,6 @@
 import type { BoardMessage, CrewLine, Report } from "../../shared/protocol.ts";
 import { SETTLE_PAGES_MS, THANKS_BLACK_MS, THANKS_IN_MS, THANKS_MS, THANKS_OUT_MS, type EvacStage } from "../../shared/enemies.ts";
+import { logoSvg } from "./logo.ts";
 
 // The settlement (ADR-060): played while the freight lift climbs, after
 // Lethal Company's end-of-shift screens. Three pages on the server's clock,
@@ -64,7 +65,7 @@ export class Settlement {
     this.thanks = document.createElement("div");
     this.thanks.className = "ui-thanks";
     this.thanks.innerHTML =
-      '<div class="logo">COMMONS</div><div class="sub">[ logo placeholder ]</div>' +
+      `<div class="logo">${logoSvg()}</div><div class="sub">asset nexus unlimited</div>` +
       '<div class="line">the reactor holds. for now.</div><div class="line big">thanks for playing</div>';
     document.body.appendChild(this.thanks);
   }
