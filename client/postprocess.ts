@@ -43,6 +43,7 @@ const fragment = /* glsl */ `
   uniform float maskExtent;
   uniform float maskOn;
   uniform float topCutoff;
+  uniform vec4 openTop;
   uniform float exposure;
   uniform float contrast;
   uniform float saturation;
@@ -217,7 +218,9 @@ const fragment = /* glsl */ `
       float seen = texture2D(tMask, muv).r;
       // wall tops (and anything at wall height) are out of sight: a wall's
       // face shows, its top is black, so walls read as cut-outs into dark
-      seen *= 1.0 - smoothstep(topCutoff - 0.05, topCutoff, world.y);
+      // (except over a roofless shaft the viewer stands in: openTop = minX, minZ, maxX, maxZ)
+      bool roofless = world.x > openTop.x && world.x < openTop.z && world.z > openTop.y && world.z < openTop.w;
+      if (!roofless) seen *= 1.0 - smoothstep(topCutoff - 0.05, topCutoff, world.y);
       if (muv.x < 0.0 || muv.x > 1.0 || muv.y < 0.0 || muv.y > 1.0) seen = 0.0;
       // unseen is black on both levels: the painted look is for what you can see
       c = mix(vec3(0.0), c, seen);
@@ -268,6 +271,8 @@ export interface PostProcess {
    * wall tops).
    */
   setMask(mask: { texture: THREE.Texture; center: THREE.Vector2; extent: number; topCutoff: number } | null): void;
+  /** a floor area with no roof (the freight shaft, from inside it): `topCutoff` doesn't apply over it. Null for none */
+  setOpenTop(area: { minX: number; maxX: number; minZ: number; maxZ: number } | null): void;
   /** the game's screen effects, 0 (off) to 1 (full): dazed by a wound, the spectator's CRT, the surface's paint */
   effects: { daze: number; crt: number; paint: number };
 }
@@ -306,6 +311,7 @@ export function createPostProcess(renderer: THREE.WebGLRenderer, scale: number, 
     maskExtent: { value: 1 },
     maskOn: { value: 0 },
     topCutoff: { value: 2.45 },
+    openTop: { value: new THREE.Vector4(0, 0, 0, 0) },
     exposure: { value: 1 },
     contrast: { value: 1 },
     saturation: { value: 1 },
@@ -363,6 +369,10 @@ export function createPostProcess(renderer: THREE.WebGLRenderer, scale: number, 
       uniforms.maskCenter.value = mask.center;
       uniforms.maskExtent.value = mask.extent;
       uniforms.topCutoff.value = mask.topCutoff;
+    },
+    setOpenTop(area) {
+      if (area) uniforms.openTop.value.set(area.minX, area.minZ, area.maxX, area.maxZ);
+      else uniforms.openTop.value.set(0, 0, 0, 0);
     },
     render(scene, camera) {
       uniforms.exposure.value = grade.exposure;

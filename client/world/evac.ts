@@ -159,30 +159,37 @@ function bay(): THREE.Group {
 }
 
 /**
- * The shaft's walls all the way up, round all four sides (over the shut
- * door too): the facility's walls stop at head height under a ceiling the
- * sight mask paints black, but a shaft has no ceiling, so from the
- * platform the view is wall on every side, past the camera. Plain: the
- * bays sliding down them are what move.
+ * The shaft's walls all the way up, on its three sides without the door:
+ * the facility's walls stop at head height under a ceiling the sight mask
+ * paints black, but a shaft has no ceiling, so from the platform the view
+ * is wall on every side, past the camera. They start where the walls they
+ * stand on stop (FREIGHT_WALLS, drawn with the facility). Plain: the bays
+ * sliding down them are what move.
  */
+const WALL_T = 0.6;
+const SHAFT_H = SHAFT_TOP + BAY;
 function shaftWalls(): THREE.Mesh {
-  const t = 0.6;
-  const h = SHAFT_TOP + BAY;
-  const parts: THREE.BufferGeometry[] = [
-    part(box(W + 2 * t, h, t), CONCRETE_DARK.shade, CX, h / 2, FREIGHT.minZ - t / 2),
-    part(box(W + 2 * t, h - H, t), CONCRETE_DARK.shade, CX, H + (h - H) / 2, FREIGHT.maxZ + t / 2),
-  ];
-  for (const x of [FREIGHT.minX - t / 2, FREIGHT.maxX + t / 2]) parts.push(part(box(t, h, D), CONCRETE_DARK.shade, x, h / 2, CZ));
+  const t = WALL_T;
+  const h = SHAFT_H - H;
+  const parts: THREE.BufferGeometry[] = [part(box(W + 2 * t, h, t), CONCRETE_DARK.shade, CX, H + h / 2, FREIGHT.minZ - t / 2)];
+  for (const x of [FREIGHT.minX - t / 2, FREIGHT.maxX + t / 2]) parts.push(part(box(t, h, D + t), CONCRETE_DARK.shade, x, H + h / 2, CZ - t / 2));
   return mesh(merge(parts, "none"));
 }
+
+/** the shaft wall over one half of the blast door, riding on it: the door shuts and the wall closes over the way out with it */
+function doorWall(half: number, side: -1 | 1): THREE.Mesh {
+  const h = SHAFT_H - H;
+  return mesh(merge([part(box(half, h, BLAST_DOOR.halfZ * 2), CONCRETE_DARK.shade, (side * half) / 2, H + 0.15 + h / 2, 0)], "none"));
+}
+
+/** the shaft's footprint, its walls included: where there's no roof to hide (postprocess setOpenTop) */
+export const SHAFT_AREA = { minX: FREIGHT.minX - WALL_T, maxX: FREIGHT.maxX + WALL_T, minZ: FREIGHT.minZ - WALL_T, maxZ: BLAST_DOOR.z + BLAST_DOOR.halfZ };
 
 /** the camera's shake while the door grinds and the platform climbs, 0..1 */
 export interface EvacFx {
   shake: number;
   /** a light pool over the platform while it climbs (with its strength 0..1): the deck lit as lamps go by */
   deckLight: number;
-  /** the shaft's walls are up (rising, thanks): nothing overhead to hide from the platform */
-  shaftUp: boolean;
 }
 
 export class EvacView {
@@ -191,7 +198,6 @@ export class EvacView {
   private readonly half: number;
   private readonly beacons: THREE.Group[] = [];
   private readonly shaft = new THREE.Group();
-  private readonly walls = shaftWalls();
   private readonly deck: THREE.Group;
   private readonly sweep: THREE.PointLight;
 
@@ -200,7 +206,8 @@ export class EvacView {
     const doorMaxX = BLAST_DOOR.x + BLAST_DOOR.halfX;
     this.half = (doorMaxX - doorMinX) / 2;
     this.halves = [doorHalf(this.half, -1), doorHalf(this.half, 1)];
-    for (const h of this.halves) {
+    for (const [i, h] of this.halves.entries()) {
+      h.add(doorWall(this.half, i === 0 ? -1 : 1));
       h.position.set(BLAST_DOOR.x, 0, BLAST_DOOR.z);
       this.group.add(h);
     }
@@ -219,8 +226,7 @@ export class EvacView {
       this.shaft.add(b);
     }
     this.group.add(this.shaft);
-    this.walls.visible = false;
-    this.group.add(this.walls);
+    this.group.add(shaftWalls());
     this.sweep = new THREE.PointLight(0xfff0d8, 0, 14, 1.4);
     this.sweep.position.set(CX, 2.5, CZ);
     this.group.add(this.sweep);
@@ -263,10 +269,8 @@ export class EvacView {
     const deckLight = st?.stage === "rising" ? 0.35 + 0.65 * Math.max(0, 1 - Math.abs(phase - 0.5) * 4) : 0;
     this.sweep.intensity = deckLight * 14;
     // the shaft above is only there once the platform's on its way
-    const shaftUp = st?.stage === "rising" || st?.stage === "thanks";
-    this.shaft.visible = shaftUp;
-    this.walls.visible = shaftUp;
-    return { shake, deckLight, shaftUp };
+    this.shaft.visible = st?.stage === "rising" || st?.stage === "thanks";
+    return { shake, deckLight };
   }
 
   /** the door as a sight blocker while it's shut (the facility's base sight walls leave it out) */

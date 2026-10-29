@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { CAMERA_ALTITUDE, CAMERA_FOV, configureRenderer, crawlerEyes, lampHalos, setupLighting } from "./look.ts";
 import { brute, character, crawler, floorSlab, runner } from "./models/index.ts";
 import { BRUTE_SCALE, EVAC_SHUT_MS, type EvacState } from "../shared/enemies.ts";
-import { EvacView } from "./world/evac.ts";
+import { EvacView, SHAFT_AREA } from "./world/evac.ts";
 import { ASSETS } from "./models/registry.ts";
 import { REACTOR_LIVE, REACTOR_STANDBY, buildFacility, reactorCore } from "./models/facility.ts";
 import { createPostProcess } from "./postprocess.ts";
@@ -24,6 +24,7 @@ import {
   SOLID,
   SURFACE,
   WALLS,
+  inFreight,
   ZONE_RECTS,
 } from "../shared/protocol.ts";
 
@@ -137,8 +138,9 @@ function facilityView(): void {
   const evacNow = (): number => (evacMode === "rise" ? -1e7 + EVAC_SHUT_MS + evacAt + clock.getElapsedTime() * 1000 : evacMode === "opening" ? evacAt + clock.getElapsedTime() * 1000 : 0);
   const visibility = new VisibilityMask(sightBlockers(WALLS.filter((w) => w !== BLAST_DOOR), FIXTURES), SOLID, SIGHT_BOUNDS);
   const masked = close && !params.has("nomask");
-  // in the risen shaft the walls go up past the camera: no lid to hide
-  if (masked) post.setMask(visibility.postMask(evacMode === "rise" ? 50 : FACILITY_WALL_HALF_HEIGHT * 2 - 0.05));
+  if (masked) post.setMask(visibility.postMask(FACILITY_WALL_HALF_HEIGHT * 2 - 0.05));
+  // looking from inside the freight shaft: its walls go up past the camera, no roof to hide
+  if (masked && inFreight(cx, cz)) post.setOpenTop(SHAFT_AREA);
   const live = params.has("live");
   const clock = new THREE.Clock();
   const render = (): void => {
