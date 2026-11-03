@@ -59,11 +59,12 @@ Updated: 2026-11-03 (ninth-round alignment with the user; nothing built yet. ADR
 0. Playtest DONE 2026-11-03 (3-wave run, dev server :8080 with DEV_WAVES=3). Rounds 4-7 items the user didn't flag count as approved. Their feedback (recorded, not built; full wording in ADR draft):
    p1. Freight cargo is the mission's real objective: bigger, more, stacked neatly. Two kinds: munitions (olive-drab steel cases, shells) and equipment (white old-IBM-style computers, stacks of disks/tapes, partly covered by cloth).
    p2. Logo on the thanks card isn't pixelated; pixelate it and show the user.
-   p3. Under logo + name add "BETA" or "DEMO" (user hasn't picked; ask): square incised stamp, white ground, black letters.
+   p3. Under logo + name a "DEMO" stamp (decided 2026-11-03): square incised, white ground, black letters. Part of p8.
    p4. Freight shaft walls: yellow girder rings too loud and clip the platform. Leave a gap between platform and walls; restyle walls (e.g. columns of tiny lamps); drop the yellow/black hazard rings.
    p5. Remove the reactor's "E: start next wave early" prompt box; X ready vote only.
    p6. Wave-end report: bigger.
    p7. Reactor HP bar in the HUD flashes when the reactor takes damage (the reactor model already does).
+   p8. Thanks card -> scrolling end credits (user 2026-11-03). Drop "the reactor holds. for now." (agent's own line, never asked for). Sections: (1) logo + name + DEMO stamp (decided: DEMO, the p3 stamp) + "Assets recovered. Thank you for your service.", hold, then scroll; (2) this run's crew names, cast-list style; (3) leaderboard top 10; (4) credits: placeholder only, user fills later; (5) "thanks for playing" holds, fades out, back to the surface. Settlement page 3 keeps only the personal rank / new best (top 5 moves to the credits). Longer than today's 7 s (user wants it longer; exact length and whether players can skip not decided: ask, agent default ~30 s, no skip, everyone returns together).
 
 1. Build (decided 2026-11-03):
    a. Turrets no longer block enemies: drop turret from BLOCKING_KINDS for enemy pathing/collision (flow field ignores them). Check what then still uses TURRET_HIT_POINTS / chewing (enemies chewing turrets may become moot: confirm with user if unclear).
