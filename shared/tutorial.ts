@@ -178,7 +178,7 @@ export const GARDEN_HELI_OBSTACLES: Obstacle[] = heliObstacles(HELIPADS.garden);
 export const LESSON_TEXT: Record<Lesson, { title: string; how: string }> = {
   move: { title: "walk", how: "WASD · onto the ring" },
   pickup: { title: "pick up", how: "E by the rifle" },
-  shoot: { title: "shoot", how: "aim · click · drop all three" },
+  shoot: { title: "shoot", how: "aim · click or space · drop all three" },
   drop: { title: "put down", how: "on the ring · Q" },
   grenade: { title: "grenade", how: "E, then click the huddle" },
   fly: { title: "fly out", how: "step in · E" },

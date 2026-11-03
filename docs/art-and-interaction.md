@@ -156,8 +156,9 @@ with stepped corners, segmented bars, and leaders drawn as pixel steps.
 
 **Trackpads are first-class.** Many players are on a laptop trackpad, so:
 no hold-to-act, no drag-to-act, and nothing that needs a right button.
-Every right-click action also has Space, and Mac ctrl+click is treated as a
-right-click (not as a left click as well).
+Space does exactly what a left click does (fire, throw, place, pick up), so
+either hand can act; right-click does nothing, and Mac ctrl+click is treated
+as a right-click (not as a left click as well).
 
 **The world explains itself.** Boundaries are visible (no invisible walls),
 your own character is easy to find (a ring at your feet, and your shoulder

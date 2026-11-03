@@ -338,8 +338,7 @@ export function cleanName(raw: unknown): string | undefined {
 
 /**
  * Every pickup-able thing in the world is one of these: same shape, same
- * pickup/drop rules, differing only in what its primary (and optional
- * secondary) action does. The "equipment slot" is just `heldBy` --- a
+ * pickup/drop rules, differing only in what its primary action does. The "equipment slot" is just `heldBy` --- a
  * player holds at most one item, and nothing on screen shows a slot.
  */
 export type ItemKind = "gun" | "turret" | "grenade";
@@ -364,13 +363,11 @@ export interface ItemState {
 export interface ItemKindInfo {
   /** label for the on-screen control hint */
   primaryLabel: string;
-  /** absent when the kind has no secondary action */
-  secondaryLabel?: string;
 }
 
 export const ITEM_KINDS: Record<ItemKind, ItemKindInfo> = {
   gun: { primaryLabel: "fire" },
-  turret: { primaryLabel: "place", secondaryLabel: "grid snap" },
+  turret: { primaryLabel: "place" },
   grenade: { primaryLabel: "throw" },
 };
 
@@ -415,7 +412,6 @@ export const PICKUP_RANGE = 2.2;
 /** how far from the player a turret can be built */
 export const PLACE_RANGE = 3.5;
 export const BOX_HALF_EXTENT = 0.5;
-export const GRID_SIZE = 1;
 
 /** 20 updates a second: smooth enough to interpolate between, small enough for the 256 MB machine */
 export const BROADCAST_INTERVAL_MS = 50;
@@ -1149,10 +1145,6 @@ export function worldObstacles(items: Iterable<ItemState>): Obstacle[] {
     if (isBlocking(item)) result.push(boxObstacle(item));
   }
   return result;
-}
-
-export function snapToGrid(v: number): number {
-  return Math.round(v / GRID_SIZE) * GRID_SIZE;
 }
 
 export type PlacementVerdict = "ok" | "too far" | "blocked" | "no building here";

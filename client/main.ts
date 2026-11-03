@@ -148,7 +148,6 @@ import {
   obstaclesFor,
   placementVerdict,
   resolveObstacles,
-  snapToGrid,
   worldObstacles,
   type ItemState,
   type ObjectiveState,
@@ -599,8 +598,6 @@ const TURRET_IDLE_SPEED = 0.6;
 const items = new Map<string, ClientItem>();
 /** walls, rocks, and turrets on the ground, as of the last state broadcast */
 let obstacles: Obstacle[] = OBSTACLES;
-/** the secondary action toggles this while ordering a turret; it stays put between orders */
-let gridSnap = false;
 
 const outlineInReach = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.BackSide, transparent: true });
 const outlineOutOfReach = new THREE.MeshBasicMaterial({
@@ -723,29 +720,18 @@ function hoveredItem(): { item: ClientItem; inReach: boolean } | undefined {
   return { item: best, inReach: reach <= PICKUP_RANGE };
 }
 
-/**
- * Where a turret being ordered would land: the cursor's ground point, pulled in to
- * placement range, then snapped if grid snap is on. Pulled in a bit
- * further when snapping, so rounding to the grid can't push a spot that
- * looked in range back out of it.
- */
+/** where a turret being ordered would land: the cursor's ground point, pulled in to placement range */
 function placeTarget(): { x: number; z: number } {
   const origin = localMesh!.position;
   let dx = aimPoint.x - origin.x;
   let dz = aimPoint.z - origin.z;
   const dist = Math.hypot(dx, dz);
-  const maxDist = gridSnap ? PLACE_RANGE - 0.75 : PLACE_RANGE - 0.01;
+  const maxDist = PLACE_RANGE - 0.01;
   if (dist > maxDist) {
     dx *= maxDist / dist;
     dz *= maxDist / dist;
   }
-  let x = origin.x + dx;
-  let z = origin.z + dz;
-  if (gridSnap) {
-    x = snapToGrid(x);
-    z = snapToGrid(z);
-  }
-  return { x, z };
+  return { x: origin.x + dx, z: origin.z + dz };
 }
 
 function livingBodies(): { x: number; z: number }[] {
@@ -786,14 +772,6 @@ turretPreview.traverse((o) => {
 });
 turretPreview.visible = false;
 scene.add(turretPreview);
-
-// shown around the preview while grid snap is on, so "snap" is visible
-// rather than just a word in the hint
-const snapGrid = new THREE.GridHelper(7, 7, STENCIL, STENCIL);
-(snapGrid.material as THREE.Material).transparent = true;
-(snapGrid.material as THREE.Material).opacity = 0.3;
-snapGrid.visible = false;
-scene.add(snapGrid);
 
 /** when the last refused placement happened, for the preview's shake */
 let refusedAt = -Infinity;
@@ -875,14 +853,12 @@ function stepItemVisuals(time: number): void {
   }
   const showTurretPreview = !dead && !!localMesh && placingTurret;
   turretPreview.visible = showTurretPreview;
-  snapGrid.visible = showTurretPreview && gridSnap;
   if (showTurretPreview) {
     const target = placeTarget();
     const sinceRefused = time - refusedAt;
     const shake = sinceRefused < 0.3 ? Math.sin(sinceRefused * 60) * 0.12 : 0;
     turretPreview.position.set(target.x + shake, 0, target.z);
     turretPreviewMaterial.color.setHex(turretVerdict(target) === "ok" ? OK : DANGER);
-    snapGrid.position.set(target.x, 0.02, target.z);
   }
 }
 
@@ -1346,16 +1322,12 @@ function renderControls(): void {
   if (myOut) {
     text = myLate ? "watching the crew until this attempt ends" : "you're out until this attempt ends";
   } else if (placingTurret) {
-    text = `WASD move · click: build turret (${TURRET_COST} quota) · right-click / Space: grid snap (${gridSnap ? "on" : "off"}) · Q / Esc: cancel`;
+    text = `WASD move · click / Space: build turret (${TURRET_COST} quota) · Q / Esc: cancel`;
   } else if (!held) {
     text = "WASD move · E use";
   } else {
     const info = ITEM_KINDS[held.state.kind];
-    const parts = [held.state.kind === "gun" ? "click / hold: fire" : `click: ${info.primaryLabel}`];
-    if (info.secondaryLabel) {
-      parts.push(`right-click / Space: ${info.secondaryLabel}`);
-    }
-    parts.push("Q: drop");
+    const parts = [held.state.kind === "gun" ? "click / Space, hold: fire" : `click / Space: ${info.primaryLabel}`, "Q: drop"];
     text = `WASD move · ${parts.join(" · ")}`;
   }
   if (text !== lastControlsText) {
@@ -1603,13 +1575,13 @@ function stepMuzzleFlash(): void {
 }
 
 // --- Input --------------------------------------------------------------
-// Three verbs, each reachable without a right mouse button and without
+// Two verbs, each reachable without a right mouse button and without
 // holding anything down, since a lot of players are on a laptop trackpad.
 // The left hand stays on WASD: its only other keys are the thumb's Space
 // and an occasional Q.
-//   primary   --- click (or tap-to-click)
-//   secondary --- right-click / two-finger click / ctrl+click, or Space
-//   drop      --- Q
+//   primary --- click (or tap-to-click), or Space: the same thing, so either
+//               hand can fire (user 2026-11-03)
+//   drop    --- Q
 
 function primary(): void {
   if (myOut) {
@@ -1695,11 +1667,6 @@ function stepTrigger(): void {
   fireGun(false);
 }
 
-function secondary(): void {
-  if (isDead()) return;
-  if (placingTurret) gridSnap = !gridSnap;
-}
-
 function drop(): void {
   if (isDead()) return;
   if (placingTurret) {
@@ -1715,15 +1682,18 @@ window.addEventListener("pointerdown", (e) => {
   // a click on the page's own links/UI isn't a game action
   if (e.target !== renderer.domElement) return;
   // On a Mac, ctrl+click is the trackpad's right-click: it arrives as a
-  // *left* button press with ctrlKey set (plus a contextmenu event), so it
-  // has to be caught here or it would fire the primary action as well.
-  if (e.button === 2 || (e.button === 0 && e.ctrlKey)) secondary();
-  else if (e.button === 0) primary();
+  // *left* button press with ctrlKey set (plus a contextmenu event). Right
+  // clicks do nothing, so it mustn't fire the primary action either.
+  if (e.button === 0 && !e.ctrlKey) primary();
 });
 window.addEventListener("pointerup", (e) => {
   if (e.button === 0) triggerHeld = false;
 });
-// the browser's own right-click menu would steal the secondary action
+// Space is the click's twin: letting it go stops the rifle the same way
+window.addEventListener("keyup", (e) => {
+  if (e.key === " ") triggerHeld = false;
+});
+// the browser's own right-click menu would pop up over the game
 window.addEventListener("contextmenu", (e) => e.preventDefault());
 window.addEventListener("keydown", (e) => {
   if (naming()) return;
@@ -1731,7 +1701,7 @@ window.addEventListener("keydown", (e) => {
   // Space would otherwise scroll, or "click" whatever link has focus
   if (key === " ") e.preventDefault();
   if (e.repeat) return;
-  if (key === " ") secondary();
+  if (key === " ") primary();
   else if (key === "q") drop();
   else if (key === "e") useTarget(eTarget());
   else if (key === "x") toggleReady();

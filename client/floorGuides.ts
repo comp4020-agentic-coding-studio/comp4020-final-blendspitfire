@@ -155,12 +155,14 @@ export function buildYardGuides(): THREE.Group {
     );
     if (station.kind === "gun") {
       group.add(
-        decal(3.4, 1.5, x, station.z + 3.0, (ctx) => {
+        decal(3.8, 1.6, x + 0.2, station.z + 3.05, (ctx) => {
           mouse(ctx, 0.35, 0.05, "left");
-          text(ctx, "fire", 1.0, 0.25);
-          text(ctx, "hold for auto · try the targets", 1.0, 0.55, 0.2);
-          key(ctx, "Q", 0.32, 0.9);
-          text(ctx, "drop", 1.0, 1.15);
+          text(ctx, "/", 0.95, 0.3);
+          key(ctx, "Space", 1.25, 0.05, 1.0);
+          text(ctx, "fire", 2.5, 0.3);
+          text(ctx, "hold for auto · try the targets", 1.0, 0.72, 0.2);
+          key(ctx, "Q", 0.32, 1.0);
+          text(ctx, "drop", 1.0, 1.25);
         }),
       );
     }
