@@ -1,12 +1,12 @@
 // The company's seal, for the thanks card: a rectangular stamp whose face is
-// a Code 128 barcode for "4020". The bar tops are cut
+// a Code 128 barcode for PAYLOAD. The bar tops are cut
 // into the surface --- regular blocks with windows, trees, and vine cables
 // hung between the towers that punch holes through the bars --- and the
 // bottom edge sinks into a shaft with the reactor under it, so the surface
 // and the facility read as one cross-section. Everything decorative stays
 // above the scan band. The bars run flush with the frame (user's call,
 // 2026-10-29), which drops the quiet zone a scanner needs to find the code:
-// it encodes 4020 correctly but won't scan unless ~7 modules of space are
+// it encodes PAYLOAD correctly but won't scan unless ~7 modules of space are
 // left either side (tested with zbar).
 // No letters on the face: the name is set under it by the card.
 // Drawn in currentColor, so it takes the UI's phosphor colour.
@@ -22,12 +22,20 @@ const C128 = (
   "124112 124211 411212 421112 421211 212141 214121 412121 111143 111341 131141 114113 114311 411113 411311 113141 114131 " +
   "311141 411131 211412 211214 211232 2331112"
 ).split(" ");
+const START_B = 104;
 const START_C = 105;
+const CODE_C = 99;
 const STOP = 106;
 
-/** an even-length digit string in set C: black runs as [startModule, widthModules], and the total width */
-function code128Digits(digits: string): { runs: [number, number][]; width: number } {
-  const vals = [START_C, ...(digits.match(/\d\d/g) ?? []).map(Number)];
+/** what the bars say: "COMP4020" (user trying it, 2026-10-29) or "4020" (thicker bars, survives pixelation) */
+const PAYLOAD = "COMP4020";
+
+/** letters in set B, trailing digit pairs in set C: black runs as [startModule, widthModules], and the total width */
+function code128(text: string): { runs: [number, number][]; width: number } {
+  const [, head = "", digits = ""] = text.match(/^(.*?)((?:\d\d)*)$/) ?? [];
+  const pairs = (digits.match(/\d\d/g) ?? []).map(Number);
+  const letters = [...head].map((c) => c.charCodeAt(0) - 32);
+  const vals = letters.length ? [START_B, ...letters, ...(pairs.length ? [CODE_C, ...pairs] : [])] : [START_C, ...pairs];
   const check = vals.reduce((s, v, i) => s + v * Math.max(i, 1), 0) % 103;
   const runs: [number, number][] = [];
   let x = 0;
@@ -139,7 +147,7 @@ function frame(): string {
 
 /** the seal as an SVG string; scale it with CSS width */
 export function logoSvg(): string {
-  const { runs, width } = code128Digits("4020");
+  const { runs, width } = code128(PAYLOAD);
   const m = BW / width;
   const bars = runs.map(([x, w]) => `<rect x="${(X0 + x * m).toFixed(2)}" y="0" width="${(w * m).toFixed(2)}" height="${BOT + 40}"/>`).join("");
   const shaft =
