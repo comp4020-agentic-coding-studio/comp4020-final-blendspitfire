@@ -44,11 +44,8 @@ import {
   BROADCAST_INTERVAL_MS,
   DEATH_DURATION_MS,
   FIRE_COOLDOWN_MS,
-  HIT_RADIUS,
-  FRIENDLY_FIRE,
   MUZZLE_OFFSET,
   shotRange,
-  segmentHitsCircle,
   ITEM_CAPS,
   OBSTACLES,
   PERSIST_INTERVAL_MS,
@@ -1453,21 +1450,8 @@ function stepProjectiles(now: number): void {
       if (now - p.firedAt > (p.range / PROJECTILE_SPEED) * 1000 + PROJECTILE_LINGER_MS) projectiles.delete(p.id);
       continue;
     }
-    // the stretch covered since last tick, swept against every living
-    // player (the shooter included: past the muzzle offset, a shot is
-    // neutral); the first one it meets stops it
-    let victim: Connection | undefined;
-    let at = reach;
-    // a turret's shots pass through the crew: it's their defence, not a hazard to them
-    const fromTurret = items.get(p.ownerId)?.kind === "turret";
-    for (const conn of connections.values()) {
-      if (isDead(conn) || fromTurret || !FRIENDLY_FIRE) continue;
-      const t = segmentHitsCircle(p.x, p.z, p.dirX, p.dirZ, p.travelled, at, conn.player.x, conn.player.z, HIT_RADIUS);
-      if (t !== undefined && t <= at) {
-        victim = conn;
-        at = t;
-      }
-    }
+    // the stretch covered since last tick; shots pass through the crew (no friendly fire)
+    const at = reach;
     // the lift car is a no-fire zone: a shot that reaches it stops there
     const hx = p.x + p.dirX * at;
     const hz = p.z + p.dirZ * at;
@@ -1487,7 +1471,7 @@ function stepProjectiles(now: number): void {
         continue;
       }
     }
-    // an enemy nearer along the line than any player takes the shot instead
+    // the first enemy along the stretch takes the shot
     const enemyHit = defence.firstHit(p.x, p.z, p.dirX, p.dirZ, p.travelled, at);
     p.travelled = enemyHit ? enemyHit.at : at;
     if (enemyHit) {
@@ -1504,15 +1488,6 @@ function stepProjectiles(now: number): void {
         leaveGore({ kind: "corpse", who: "enemy", x: ex + p.dirX * 0.3, z: ez + p.dirZ * 0.3, r: Math.atan2(p.dirX, p.dirZ) + (Math.random() - 0.5) });
       }
       if (killed) creditKill(p.ownerId);
-    } else if (victim) {
-      p.range = at;
-      p.hit = "player";
-      const ownerConn = connections.get(p.ownerId);
-      const by = ownerConn ? (victim === ownerConn ? "their own shot" : codename(ownerConn.player)) : "a stray shot";
-      // friendly fire only counts against the score when it kills
-      if (wound(victim, now, by)) {
-        if (ownerConn) ownerConn.score += victim.player.id === p.ownerId ? -1 : 1;
-      }
     }
   }
 }

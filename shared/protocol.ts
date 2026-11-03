@@ -243,10 +243,10 @@ export interface ProjectileState {
   firedAt: number;
   /** distance it travels before stopping */
   range: number;
-  /** what stopped it, once known: drawn as sparks, a green splash or a red one where it lands */
+  /** what stopped it, once known: drawn as sparks or a splash where it lands */
   hit?: ShotHit;
 }
-export type ShotHit = "wall" | "enemy" | "player";
+export type ShotHit = "wall" | "enemy";
 
 /**
  * What a fight leaves on the facility floor: blood where someone or
@@ -379,7 +379,7 @@ export const ITEM_KINDS: Record<ItemKind, ItemKindInfo> = {
 // floor for GRENADE_FUSE_MS so everyone can see where it'll go, then
 // blasts everything within GRENADE_RADIUS for GRENADE_DAMAGE --- enough to
 // drop a spitter outright and leave a crawler on its last legs. Crew are
-// never hurt by it, same as the rifle while friendly fire's off.
+// never hurt by it, same as by the rifle: there's no friendly fire.
 export const GRENADE_RANGE = 8;
 export const GRENADE_FLIGHT_MS = 500;
 export const GRENADE_FUSE_MS = 700;
@@ -1217,8 +1217,6 @@ export const PROJECTILE_RADIUS = 0.05;
 /** the furthest a shot flies if nothing stops it */
 export const PROJECTILE_MAX_RANGE = 40;
 export const HIT_RADIUS = PLAYER_RADIUS + PROJECTILE_RADIUS;
-/** off for now: teammates aren't marked well enough to tell apart in a fight, so shots pass through the crew */
-export const FRIENDLY_FIRE = false;
 /** how far in front of the shooter a shot starts: past their own body, so it can't hit them */
 export const MUZZLE_OFFSET = 0.8;
 

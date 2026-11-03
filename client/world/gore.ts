@@ -169,7 +169,7 @@ interface Chip {
   size: number;
 }
 
-const IMPACT_COLOUR: Record<ShotHit, number> = { wall: EMIT_SPARK, enemy: BLOOD_CRAWLER, player: BLOOD_HUMAN };
+const IMPACT_COLOUR: Record<ShotHit, number> = { wall: EMIT_SPARK, enemy: BLOOD_CRAWLER };
 /** debris chips off a wall or turret: concrete, not an emitter, so it reads as matter rather than light */
 const DEBRIS_COLOURS = [CONCRETE.base, CONCRETE.shade, CONCRETE.light];
 const chipGeometry = new THREE.BoxGeometry(1, 1, 1);
