@@ -56,7 +56,15 @@ Updated: 2026-11-03 (ninth-round alignment with the user; nothing built yet. ADR
 - Tests: spec/*.test.ts (171). They run against whatever answers on :8080 (APP_URL overrides). A DEV_JOIN/DEV_ARMED server there fails multiuser 'take what another is holding': run `PORT=8091 DB_PATH=/tmp/blendspitfire-test.db node server/index.ts` and `APP_URL=http://localhost:8091 pnpm check` instead. defence.test.ts covers won/blackout/hunt + ready vote; lift.test.ts the won/blackout lift; economy.test.ts shop + dressing + gore caps; tutorial.test.ts layout + lessons. multiuser/robustness tests join as returning players (rejoin()) or walk east, since a fresh cookie lands in the tutorial.
 
 ## Next work (ordered; ninth round, user 2026-11-03, due 2026-11-09 12:00)
-0. **FIRST in the next session: start a playtest round for the user** (dev server :8080, see Verify recipes; ask which DEV_ flags, default full game without DEV_WAVES so the whole run is real). User plays one full run + one newcomer tutorial run; whatever they flag gets fixed, anything not flagged from rounds 4-7 counts as approved (no item-by-item sign-off).
+0. Playtest DONE 2026-11-03 (3-wave run, dev server :8080 with DEV_WAVES=3). Rounds 4-7 items the user didn't flag count as approved. Their feedback (recorded, not built; full wording in ADR draft):
+   p1. Freight cargo is the mission's real objective: bigger, more, stacked neatly. Two kinds: munitions (olive-drab steel cases, shells) and equipment (white old-IBM-style computers, stacks of disks/tapes, partly covered by cloth).
+   p2. Logo on the thanks card isn't pixelated; pixelate it and show the user.
+   p3. Under logo + name add "BETA" or "DEMO" (user hasn't picked; ask): square incised stamp, white ground, black letters.
+   p4. Freight shaft walls: yellow girder rings too loud and clip the platform. Leave a gap between platform and walls; restyle walls (e.g. columns of tiny lamps); drop the yellow/black hazard rings.
+   p5. Remove the reactor's "E: start next wave early" prompt box; X ready vote only.
+   p6. Wave-end report: bigger.
+   p7. Reactor HP bar in the HUD flashes when the reactor takes damage (the reactor model already does).
+
 1. Build (decided 2026-11-03):
    a. Turrets no longer block enemies: drop turret from BLOCKING_KINDS for enemy pathing/collision (flow field ignores them). Check what then still uses TURRET_HIT_POINTS / chewing (enemies chewing turrets may become moot: confirm with user if unclear).
    b. Friendly fire concept dropped for good: remove leftovers/notes about teammate markers for FF.
