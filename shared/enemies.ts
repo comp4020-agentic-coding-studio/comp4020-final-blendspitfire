@@ -16,9 +16,9 @@ import {
 //
 // They find their way with a flow field: one breadth-first search outward
 // from the reactor over a grid of the facility's walkable floor, giving
-// every cell the step that leads closer. Turrets count as walls in that
-// grid, so what players build really does reroute them --- and when a
-// turret seals a route completely, enemies stuck against it chew through it.
+// every cell the step that leads closer. Only walls and fixtures count:
+// turrets don't stand in their way (user 2026-11-03: a ring of them could
+// seal a breach), so enemies walk past them and turrets can't be broken.
 
 /**
  * "crawler": the original --- melee, straight at whatever it's after.
@@ -179,8 +179,6 @@ export const SEARCH_MS = 2000;
 export const THINK_MS = 400;
 /** within this of the reactor's footprint an enemy is committed to it */
 export const REACTOR_COMMIT = 2.5;
-/** hits it takes an enemy to break a turret blocking its way */
-export const TURRET_HIT_POINTS = 10;
 /**
  * A placed turret fires at the nearest enemy it can see within range, a
  * shot every interval --- slower than a player on full auto, so it holds a
@@ -381,9 +379,8 @@ export class FlowField {
 
   /**
    * Which way to walk from (x, z) to get closer to the reactor: toward the
-   * centre of the best neighbouring cell. Undefined when there's no route
-   * (sealed in by turrets) --- the caller then heads straight for the reactor
-   * and chews through whatever's in the way.
+   * centre of the best neighbouring cell. Undefined off the grid or with no
+   * route --- the caller then heads straight for the reactor.
    */
   direction(x: number, z: number): { dx: number; dz: number } | undefined {
     const [c, r] = cellOf(x, z);

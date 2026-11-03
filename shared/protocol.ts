@@ -344,7 +344,7 @@ export function cleanName(raw: unknown): string | undefined {
  */
 export type ItemKind = "gun" | "turret" | "grenade";
 
-/** kinds that stand on a 1×1 tile once put down: they block players, shots and enemies, and enemies chew them */
+/** kinds that stand on a 1×1 tile once put down: they block players and shots (enemies walk past them) */
 export const BLOCKING_KINDS: ReadonlySet<ItemKind> = new Set<ItemKind>(["turret"]);
 export const isBlocking = (item: { kind: ItemKind; heldBy?: string }): boolean => BLOCKING_KINDS.has(item.kind) && item.heldBy === undefined;
 
@@ -355,8 +355,6 @@ export interface ItemState {
   z: number;
   /** id of the player holding it; absent while it's lying in the world */
   heldBy?: string;
-  /** wire-only: a turret being chewed, 0..1 of the way to breaking (absent = intact) */
-  wear?: number;
   /** wire-only: a placed turret's barrel heading (radians, atan2(dx, dz)), set when it fires */
   aim?: number;
   /** a tutorial prop: only this player can take it or sees it, and it's never saved */

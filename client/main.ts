@@ -117,7 +117,6 @@ import {
   ITEM_KINDS,
   cleanName,
   NAME_MAX,
-  BLOCKING_KINDS,
   SUPPLY_TERMINAL,
   SHOP,
   TURRET_COST,
@@ -589,7 +588,6 @@ interface ClientItem {
   held: THREE.Object3D;
   outline: THREE.Mesh;
   /** a turret: shudders until this (performance.now()) after a bite */
-  bittenUntil: number;
   /** a turret: performance.now() it last got a fresh aim --- idles (slow sweep) once this goes stale */
   lastAimAt: number;
 }
@@ -664,37 +662,12 @@ function makeItem(state: ItemState): ClientItem {
   outline.visible = false;
   lying.add(outline);
   scene.add(lying);
-  return { state, lying, held, outline, bittenUntil: 0, lastAimAt: 0 };
+  return { state, lying, held, outline, lastAimAt: 0 };
 }
 
 function removeItem(item: ClientItem): void {
   scene.remove(item.lying);
   item.held.removeFromParent();
-}
-
-// A turret that's chewed shows it: it shudders at each bite, and slumps and
-// tilts further the closer it is to giving way. When it breaks, a puff of
-// dust where it stood, so it doesn't just vanish.
-const dustPuffs: { sprite: THREE.Sprite; born: number }[] = [];
-function turretBroke(x: number, z: number): void {
-  const sprite = glow(STENCIL, 1.2, 0.6);
-  sprite.position.set(x, 0.4, z);
-  scene.add(sprite);
-  dustPuffs.push({ sprite, born: performance.now() });
-}
-function stepDust(): void {
-  const now = performance.now();
-  for (let i = dustPuffs.length - 1; i >= 0; i--) {
-    const p = dustPuffs[i];
-    const k = (now - p.born) / 600;
-    if (k >= 1) {
-      scene.remove(p.sprite);
-      dustPuffs.splice(i, 1);
-      continue;
-    }
-    p.sprite.scale.setScalar(1.2 + k * 1.6);
-    p.sprite.material.opacity = 0.6 * (1 - k);
-  }
 }
 
 function updateItems(all: ItemState[]): void {
@@ -705,15 +678,12 @@ function updateItems(all: ItemState[]): void {
     seen.add(state.id);
     const existing = items.get(state.id);
     if (existing) {
-      if ((state.wear ?? 0) > (existing.state.wear ?? 0)) existing.bittenUntil = performance.now() + 180;
       if (state.aim !== undefined && state.aim !== existing.state.aim) existing.lastAimAt = performance.now();
       existing.state = state;
     } else items.set(state.id, makeItem(state));
   }
   for (const [id, item] of items) {
     if (!seen.has(id)) {
-      // a chewed turret that's gone from the ground was torn down (rather than scrapped, which keeps it in the list)
-      if (BLOCKING_KINDS.has(item.state.kind) && item.state.heldBy === undefined && item.state.wear) turretBroke(item.state.x, item.state.z);
       removeItem(item);
       items.delete(id);
     }
@@ -868,14 +838,6 @@ function stepItemVisuals(time: number): void {
       lying.visible = true;
       lying.position.x = state.x;
       lying.position.z = state.z;
-      if (BLOCKING_KINDS.has(state.kind)) {
-        const wear = state.wear ?? 0;
-        const shudder = performance.now() < item.bittenUntil ? Math.sin(time * 90) * 0.08 : 0;
-        lying.position.x += shudder;
-        lying.rotation.z = wear * 0.12 + shudder;
-        lying.rotation.x = wear * -0.07;
-        lying.scale.y = 1 - wear * 0.15;
-      }
       if (state.kind === "turret") {
         const head = lying.getObjectByName("turretHead")!;
         if (state.aim !== undefined && performance.now() - item.lastAimAt < TURRET_IDLE_AFTER_MS) {
@@ -2153,7 +2115,6 @@ function animate(): void {
   renderDefenceHud();
   stepTrigger();
   stepWounds(dt);
-  stepDust();
   stepTracers();
   impacts.step(dt);
   stepMuzzleFlash();
