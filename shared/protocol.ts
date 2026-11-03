@@ -433,7 +433,7 @@ export const PERSIST_INTERVAL_MS = 1000;
 // ride moves everyone in the car by exactly that much, so the car looks
 // the same before and after.
 //
-//   z=-18  +------+======== ~~ ====+------+   ~~ breach: stuck elevator shaft
+//   z=-18  +------+======== ~~ ====+------+   ~~ breach: vent
 //          |######|      CORE       |######|
 //          |######|    (reactor)    |######|
 //   z=-4   |######+-  -+##+-  -+##+-  -+####|
@@ -546,7 +546,7 @@ export const DOORWAYS: Rect[] = [
  * for now they're scenery --- and a place to build in front of. Not
  * no-build: blocking a breach is the point.
  */
-export type BreachKind = "vent" | "collapse" | "shaft";
+export type BreachKind = "vent" | "collapse";
 export interface Breach {
   kind: BreachKind;
   /** which outer wall it's in */
@@ -559,7 +559,7 @@ export interface Breach {
 export const BREACHES: Breach[] = [
   { kind: "vent", side: "west", x: -FACILITY_HALF - WALL_HALF, z: 10, width: 2 },
   { kind: "collapse", side: "east", x: FACILITY_HALF + WALL_HALF, z: 8, width: 4 },
-  { kind: "shaft", side: "north", x: 5.5, z: -FACILITY_HALF - WALL_HALF, width: 3 },
+  { kind: "vent", side: "north", x: 5.5, z: -FACILITY_HALF - WALL_HALF, width: 3 },
 ];
 const breachGap = (b: Breach): [number, number] => {
   const c = b.side === "north" ? b.x : b.z;
@@ -698,7 +698,7 @@ const O = FACILITY_HALF + WALL_HALF; // outer walls
 const C = CAR_BOTTOM.maxX + WALL_HALF; // the lift car's side walls
 const [ventFrom, ventTo] = breachGap(BREACHES[0]);
 const [collapseFrom, collapseTo] = breachGap(BREACHES[1]);
-const [shaftFrom, shaftTo] = breachGap(BREACHES[2]);
+const [northFrom, northTo] = breachGap(BREACHES[2]);
 
 export const FACILITY_WALLS: Obstacle[] = [
   // outer: south (either side of the yard door), the lab's west, the
@@ -713,8 +713,8 @@ export const FACILITY_WALLS: Obstacle[] = [
   facilityWall(-O, ventTo, -O, O),
   facilityWall(O, 1.7, O, collapseFrom),
   facilityWall(O, collapseTo, O, O),
-  // (the core's north wall west of the shaft is the blast door: BLAST_DOOR)
-  facilityWall(shaftTo, -O, 14.3, -O),
+  // (the core's north wall west of the vent is the blast door: BLAST_DOOR)
+  facilityWall(northTo, -O, 14.3, -O),
   // the corridor's sides, which carry on north as the airlock's
   facilityWall(-2.3, -4.3, -2.3, 9),
   facilityWall(-2.3, 12, -2.3, O),
@@ -744,16 +744,16 @@ export const LIFT_WALLS: Obstacle[] = [
 ];
 
 // --- The way out after a win: blast door and freight lift (ADR-060) -----------
-// The core's north wall west of the shaft is one huge blast door, so big it
+// The core's north wall west of the north vent is one huge blast door, so big it
 // reads as wall until it moves. Behind it, a freight lift's open platform.
 // On a win the door grinds open, someone starts the lift, everyone else has
 // FREIGHT_BOARD_MS to get on (then they're put on), the door shuts and the
 // platform "rises": the shaft walls scroll past while the settlement plays.
 
-/** the door: a wall-thick slab from the core's west wall to the shaft breach */
-export const BLAST_DOOR: Obstacle = wallBetween(ROOMS.core.minX - WALL_HALF, -O, shaftFrom, -O, FACILITY_WALL_HALF_HEIGHT);
+/** the door: a wall-thick slab from the core's west wall to the north vent */
+export const BLAST_DOOR: Obstacle = wallBetween(ROOMS.core.minX - WALL_HALF, -O, northFrom, -O, FACILITY_WALL_HALF_HEIGHT);
 /** the freight lift's platform, behind the door: as wide as the door's opening, and deep */
-export const FREIGHT: Rect = { minX: ROOMS.core.minX, maxX: shaftFrom - 0.3, minZ: -FACILITY_HALF - 12, maxZ: -FACILITY_HALF - 2 * WALL_HALF };
+export const FREIGHT: Rect = { minX: ROOMS.core.minX, maxX: northFrom - 0.3, minZ: -FACILITY_HALF - 12, maxZ: -FACILITY_HALF - 2 * WALL_HALF };
 /** the shaft round the platform: its sides and back */
 export const FREIGHT_WALLS: Obstacle[] = [
   facilityWall(FREIGHT.minX - WALL_HALF, FREIGHT.minZ - 2 * WALL_HALF, FREIGHT.minX - WALL_HALF, -O),

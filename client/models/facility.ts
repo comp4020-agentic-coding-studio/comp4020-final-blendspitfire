@@ -568,20 +568,24 @@ function breachJambs(b: Breach, height: number): THREE.BufferGeometry[] {
 /**
  * The model for one breach, in world space. A vent: a duct beyond the wall
  * and its grille knocked onto the floor. A collapse: broken wall stubs and
- * rubble spilling both ways. A shaft: an elevator pit beyond, its doors
- * pried apart. Beyond each, nothing: that's the dark they come out of.
+ * rubble spilling both ways. Beyond each, nothing: that's the dark they
+ * come out of.
  */
 function breachModel(b: Breach, height: number): THREE.BufferGeometry {
   const parts = breachJambs(b, height);
   const random = rng(b.x * 3 + b.z * 7);
   if (b.kind === "vent") {
-    const out = -1;
-    parts.push(part(box(1.8, 1.2, b.width + 0.5), STEEL.shade, b.x + out * 1.15, 0.6, b.z));
-    parts.push(part(box(1.4, 0.04, b.width - 0.2), RUBBER.base, b.x + out * 0.9, 1.22, b.z));
+    // built facing west (outside is -x, the wall runs along z), then turned to face its wall
+    const vent: THREE.BufferGeometry[] = [];
+    vent.push(part(box(1.8, 1.2, b.width + 0.5), STEEL.shade, -1.15, 0.6, 0));
+    vent.push(part(box(1.4, 0.04, b.width - 0.2), RUBBER.base, -0.9, 1.22, 0));
     const grille = [part(box(1.1, 0.05, 1.5), STEEL.base, 0, 0.025, 0)];
     for (let i = 0; i < 5; i++) grille.push(part(box(0.9, 0.03, 0.1), STEEL.shade, 0, 0.06, -0.55 + i * 0.275));
-    for (const g of grille) parts.push(g.rotateY(0.5).translate(b.x + 1.6, 0, b.z + 1.6));
-    for (let i = 0; i < 4; i++) parts.push(part(box(0.04, 0.02, 0.04), STEEL.light, b.x + 0.6 + random() * 1.2, 0.01, b.z + (random() - 0.5) * 2));
+    for (const g of grille) vent.push(g.rotateY(0.5).translate(1.6, 0, 1.6));
+    for (let i = 0; i < 4; i++) vent.push(part(box(0.04, 0.02, 0.04), STEEL.light, 0.6 + random() * 1.2, 0.01, (random() - 0.5) * 2));
+    // the wall carries on over it, so it reads as a duct mouth low in the wall, not a doorway
+    vent.push(part(box(0.6, height - 1.3, b.width + 0.6), CONCRETE_DARK.base, 0, 1.3 + (height - 1.3) / 2, 0));
+    for (const g of vent) parts.push((b.side === "north" ? g.rotateY(-PI / 2) : g).translate(b.x, 0, b.z));
   } else if (b.kind === "collapse") {
     for (const end of [-1, 1]) {
       for (let i = 0; i < 3; i++) {
@@ -592,15 +596,6 @@ function breachModel(b: Breach, height: number): THREE.BufferGeometry {
     }
     for (const g of rubbleChunks(random, 1.6, b.width - 1, 0.5, 7)) parts.push(g.translate(b.x - 1.1, 0, b.z));
     parts.push(part(cyl(0.04, 0.04, 1.6, 4), RUST.base, b.x - 0.8, 0.2, b.z + 0.6, 0.2, 0.4, 1.3));
-  } else {
-    const out = -1;
-    const d = 2.4;
-    const cz = b.z + out * (d / 2 + 0.3);
-    parts.push(part(box(0.3, height, d + 0.3), CONCRETE_DARK.base, b.x - b.width / 2 - 0.25, height / 2, cz));
-    parts.push(part(box(0.3, height, d + 0.3), CONCRETE_DARK.base, b.x + b.width / 2 + 0.25, height / 2, cz));
-    parts.push(part(box(b.width + 0.8, height, 0.3), CONCRETE_DARK.base, b.x, height / 2, cz + out * (d / 2 + 0.15)));
-    parts.push(part(box(b.width * 0.35, height * 0.9, 0.08), STEEL.base, b.x - b.width * 0.33, height * 0.45, b.z));
-    parts.push(part(box(b.width * 0.5, 0.08, height * 0.85), STEEL.base, b.x + 0.7, 0.04, b.z + 1.5, 0, 0.35, 0));
   }
   return merge(parts, "ground", 0.4);
 }
