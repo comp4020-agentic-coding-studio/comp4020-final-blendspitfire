@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-10-28, the seventh round as built overnight
+Synced from the draft up to: 2026-11-03, the ninth round's end-credits decision
 
 ---
 
@@ -843,3 +843,74 @@ Suggested minimal topology: safe room, one main corridor (bottleneck), a fork in
 - *The way out.* The blast door is the core's north wall from its west wall to the shaft breach, two halves that slide apart under rotating amber beacons. The freight platform behind it carries stacks of crates. The climb is staged by girder rings with lamps sliding down the shaft past the platform. Three settlement pages play during the 33-second climb: the shift report and MVP, a payslip that starts at $480,000 and always nets $20 (ammunition and medical lines follow each player's own shots and wounds), and the standings with the top five. Then a thanks card with a logo placeholder. The old lift stays locked through a won attempt.
 
 **Why.** The developer's decisions in ADR-060 and ADR-062 set what to build; these are the agent's means to them, kept to what could be verified unattended (tests, bots, screenshots), and all open to change.
+
+## ADR-064: Eighth round — the developer's asks after playing the seventh
+*2026-10-29 · Status: Recorded; items 1–3 built, 4–6 for discussion*
+
+**Context.** The developer played the seventh round and was "fairly satisfied". While the freight lift rose, the shaft showed a black band above the walls: the walls stopped at ceiling height and the shaft has no ceiling. The developer then gave a list in one go, asking that the discussion items be analysed and offered as options rather than decided by the agent.
+
+**Decision.**
+1. *Shaft walls.* The three sides without the blast door show as tall walls at all times, not only during the climb. On the door side, the opening is visible while the door is open, and as it closes the door and the tall wall above it cover the view in step with its progress, not all at once at the end.
+2. *Name and logo.* The working name was an early placeholder and the thanks card had no logo; to be discussed (became ADR-065).
+3. *The ending felt rushed.* After the three settlement pages, the last page dims along with the screen; the logo appears only once the screen is fully black; it stays two seconds longer than before; it fades out to black, and only then does the game cut back to the surface. All of it smooth.
+4. *Difficulty and tension (discuss first).* Six waves are too easy: one player can finish them, and cutting from ten waves to six left the run thin. The real difficulty is low and the felt pressure is too. The aim has changed: replay matters less (the final showcase is the concern); a normal newcomer should clear it on the first try, but not comfortably, having to handle enemies, resources and pressure. Directions: a larger map, longer waves, slightly longer breaks, sharper swings between waves so the pressure curve shows. Tension can also be amplified by sight, sound and feedback, so felt danger exceeds real danger (the developer's example, not necessarily to be used: strong tinnitus and a red screen when hit, so players think they're dying with about half their health left).
+5. *Payslip (discuss first, direction mostly set).* $20 was only an example. It should follow fixed rules: a gross wage that scales with the final score, a few fixed fees, and mostly fixed-percentage deductions (very high tax, unreasonable charges), ending at perhaps two digits but still tracking score (100 points and 50 points should differ). The presentation should be more theatrical: a large green gross at the top that looks substantial, deductions appearing about one a second, five to eight of them, then a rule, a pause of a few seconds, and the net pay revealed below as if it were a fortune, a deliberately absurd satirical beat. Formula and effect to be worked out.
+6. *Rooms (discuss first).* Create a room, join one, or pick from a list before playing. Interface, flow and room settings to be discussed.
+
+**Why.** The developer's own playtest; the reasons are as given above.
+
+## ADR-065: The company is Asset Nexus Unlimited, its seal a barcode in cross-section
+*2026-10-29 · Status: Accepted*
+
+**Context.** ADR-064 item 2. The developer named the company "Asset Nexus Unlimited" and asked for a rectangular logo with an outer frame, like a stamp, with no text or initials on its face; the name is set beneath it in code.
+
+**Options.** The agent drew seven directions from the setting (reactor, blast door, freight shaft, asset tag or barcode, nexus, cross-section, infinity loop).
+
+**Decision.** The developer chose the barcode: "it's also a logo, so make it stylised and decorative". Of three treatments (hang tag, surface, cross-section) the developer chose the cross-section: the surface along the top, the bottom edge sinking into a shaft with the reactor at its foot. The developer's refinements: the game's URL made the bars too fine to survive pixelation, so less information — COMP4020, and if still too fine just 4020 (tested: COMP4020 didn't read once pixelated, 4020 did, so 4020 was used); the surface was too cluttered, so regular buildings, hanging vines (punching holes through the bars so they breathe) and natural plants. The empty margins either side looked bad, so the bars run flush to the frame; the agent pointed out that Code 128 needs about seven modules of clear space each side to scan, so the flush seal won't scan, and the developer accepted that. The game takes the company's name as its title.
+
+**Why.** The developer's choices at each step, for the reasons given.
+
+## ADR-066: Ninth round — scope for the last week, and the backlog settled
+*2026-11-03 · Status: Accepted*
+
+**Context.** Six days before the 2026-11-09 deadline the developer asked to align on everything uncertain before building anything. The agent listed what was open with a recommendation each.
+
+**Decision.**
+- *North breach.* It had become possible to walk into it, though it is only a spawn point. The working-tree change that turns it into a vent low in the wall is kept.
+- *Logo payload.* The working tree had switched the barcode to COMP4020; the developer hasn't tried it yet. That it doesn't read once pixelated is minor; keep it for now.
+- *Before the deadline:* difficulty and tension, the payslip, and sound, which the developer wants to spend time polishing.
+- *Rooms* depend on what the final showcase turns out to be. If tens of people, or even ten, will play at once, rooms are essential; decided once that's known.
+- *README and PROCESS* stay on the list; the developer will work out how to write them.
+- *Turret sealing:* turrets stop blocking enemies. Asked whether turrets should still be breakable, the developer chose the agent's recommendation: no, so the chewing path goes.
+- *Friendly fire:* the concept is dropped, not merely switched off.
+- *Grid snap:* never used, so removed. Space is not a sprint either: it fires exactly like the left click, giving two ways to act, and the tutorial says so.
+- Kept as they are: the lift locked in a blackout; no new shop items; the lighting option and the garden guides (the developer saw no problem); the gallery page stays public, on the agent's suggestion that reviewers can see the model sheet.
+- *Quota, score parts, turret cost and cap* are too much at once; the agent will ask about each separately. *Enemy rendering cost* is to be explained before the developer decides.
+- *The backlog of unreviewed choices:* rather than signing each off, the developer plays a full run; whatever they flag is fixed and the rest counts as approved.
+
+**Why.** The developer's own reasons, as given with each item.
+
+## ADR-067: Ninth round — what the three-wave playtest showed
+*2026-11-03 · Status: Recorded*
+
+**Context.** The developer played a three-wave run of the current build.
+
+**Decision.** To change:
+1. *Freight cargo.* In the setting the cargo is the mission's real objective, so it should be larger, more of it, stacked more neatly, and read as munitions and equipment: olive-drab steel cases, shells; white computers like old IBM machines, piles of disks, partly under cloth.
+2. *The logo* doesn't seem to be pixelated; try it pixelated.
+3. *A stamp* under the logo and name reading "beta" or "demo", as a square incised stamp, black letters on white.
+4. *The freight shaft walls* don't work: the yellow frames grab the eye and clip into the lift. Leave a gap between the platform and the walls, and restyle the walls, for instance with columns of very small lights; the rings of ochre-and-black hazard stripes look bad.
+5. *The reactor's E-to-start-early prompt box* goes; only X remains. The box pulls too much attention.
+6. *The wave-end report* should be larger.
+7. *The reactor's HUD bar* should flash when the reactor is hit, as the reactor itself does, or a slow drain can go unnoticed.
+
+**Why.** The developer's playtest observations.
+
+## ADR-068: End credits replace the thanks card; the stamp reads DEMO
+*2026-11-03 · Status: Accepted*
+
+**Context.** The line "the reactor holds. for now." on the thanks card was the agent's own addition in ADR-063; the developer never asked for it and its intent wasn't recorded. Asked for options, the agent suggested dropping it, a corporate line continuing the payslip's satire, or a line about the cargo.
+
+**Decision.** The developer picked "Assets recovered. Thank you for your service." but found it clashed with "thanks for playing" beneath, so the card becomes film-style end credits that scroll up, separate from the logo and line. The developer's idea was to put the leaderboard there and "thanks for playing" at the very bottom. Five sections, as the agent proposed: the logo, name, DEMO stamp and the line, holding before the scroll; this run's crew, like a cast list; the top ten; a credits section kept as a placeholder for the developer to fill; "thanks for playing", holding, then fading out to the surface. The settlement's third page keeps only the player's own rank and new best. The credits can run longer; the developer already found the current card too short. Asked beta or demo, the agent argued for DEMO (the run is complete from tutorial to credits, DEMO implies more to come, and a stamp reading DEMO fits a company marking a sample) and the developer chose it.
+
+**Why.** The developer's reasons as above: the line had to stop clashing, and the ending felt too short.
