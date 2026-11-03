@@ -78,6 +78,10 @@
       .ui-hud .bar > span { display: block; height: 100%; transition: width 0.3s steps(8);
         background: repeating-linear-gradient(90deg, var(--ui) 0 5px, transparent 5px 7px); }
       .ui-hud .bar.hp > span.low { background: repeating-linear-gradient(90deg, #ff5a4a 0 5px, transparent 5px 7px); }
+      /* hit: the frame and blocks blink alarm red, two hard steps, while the reactor is losing health */
+      .ui-hud .bar.hp.hit { border-color: #ff5a4a; animation: hp-hit 0.3s steps(2) infinite; }
+      .ui-hud .bar.hp.hit > span { background: repeating-linear-gradient(90deg, #ff5a4a 0 5px, transparent 5px 7px); }
+      @keyframes hp-hit { 50% { opacity: 0.25; } }
       .ui-hud .next { color: var(--ui-dim); }
       .ui-ready { left: 50%; bottom: 46px; transform: translateX(-50%); display: none; align-items: center; gap: 12px;
         padding: 6px 16px 6px 8px; border-color: var(--ui); white-space: nowrap; }
@@ -144,15 +148,15 @@
       .ui-countdown .cd-num { font: 400 88px/0.9 "VT323", ui-monospace, monospace; padding: 0 18px; border: 2px solid var(--ui); background: var(--ui-wash); }
       .ui-countdown .cd-text { font: var(--ui-font); font-size: 22px; margin-top: 6px; padding: 2px 10px; background: var(--ui-wash); white-space: nowrap; }
       .ui-wipe { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 5; }
-      .ui-report { right: 16px; top: 90px; min-width: 240px; max-width: min(320px, 80vw); padding: 12px 16px;
+      .ui-report { right: 16px; top: 90px; min-width: 320px; max-width: min(440px, 86vw); padding: 14px 20px; font-size: 24px;
         background-color: rgba(8, 10, 12, 0.8); opacity: 0; transform: translateX(16px); transition: opacity 0.3s, transform 0.3s; z-index: 6; }
       .ui-report.open { opacity: 1; transform: none; }
-      .ui-report .title { margin-bottom: 6px; padding-bottom: 3px; border-bottom: 2px dashed var(--ui-dim); font-size: 24px; }
+      .ui-report .title { margin-bottom: 8px; padding-bottom: 4px; border-bottom: 2px dashed var(--ui-dim); font-size: 32px; }
       .ui-report .title.sub { margin-top: 8px; }
       .ui-report .run, .ui-report .dim, .ui-report .legend { color: var(--ui-dim); }
       .ui-report .legend { margin-top: 8px; }
       .ui-report .row { display: flex; gap: 10px; padding: 1px 0; }
-      .ui-report .row.total { margin-top: 4px; padding-top: 4px; border-top: 2px dashed var(--ui-dim); font-size: 22px; }
+      .ui-report .row.total { margin-top: 6px; padding-top: 6px; border-top: 2px dashed var(--ui-dim); font-size: 28px; }
       .ui-report .score { margin-left: auto; font-variant-numeric: tabular-nums; }
       #fatal-error {
         position: fixed; inset: 0; display: none; align-items: center; justify-content: center;

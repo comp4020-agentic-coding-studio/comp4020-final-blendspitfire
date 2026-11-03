@@ -880,7 +880,6 @@ function hoveringReactor(): boolean {
 const ACTIVATE_TIPS: Record<string, string> = {
   ok: "activate the reactor",
   "too far": "move closer",
-  ready: "ready for the next wave",
   "already active": "already active — defend it",
   stable: "reactor stable — out by the freight lift, north",
   dead: "the reactor's dead",
@@ -1047,8 +1046,8 @@ setInterval(() => {
 // --- The ready vote ------------------------------------------------------------
 // In a break, X (a tap, anywhere below) says you're ready for the next wave;
 // pressed again it takes it back. Once everyone alive below is ready the
-// wave comes 3 s later; otherwise the break runs its course. E at the
-// reactor is the same vote.
+// wave comes 3 s later; otherwise the break runs its course. X only: the
+// reactor itself offers nothing between waves.
 
 const amReady = (): boolean => !!myId && (defenceState.ready ?? []).includes(myId);
 const readyCount = (): string => `${defenceState.ready?.length ?? 0}/${defenceState.voters ?? 0} ready`;
@@ -1069,8 +1068,8 @@ function useTarget(target: Target | undefined): void {
   else if (target.kind === "scrap") net.scrap(target.item.state.id);
   else if (target.kind === "reactor") {
     const verdict = activateVerdict(localMesh.position, objective, defenceState.phase);
-    if (verdict === "ok" || verdict === "ready") net.activate();
-    else prompts.nope("reactor");
+    if (verdict === "ok") net.activate();
+    else if (verdict !== "ready") prompts.nope("reactor");
   } else if (target.kind === "freight") {
     if (freightNow() === "start") net.freight();
     else prompts.nope("freight");
@@ -1113,10 +1112,9 @@ function currentPrompts(): Prompt[] {
     const s = target.item.state;
     out.push({ id: `scrap:${s.id}`, at: v3(s.x, 0.9, s.z), key: "E", label: "scrap turret", detail: "no refund" });
   } else if (target?.kind === "reactor") {
+    // between waves the reactor offers nothing: the ready vote is X's alone (user 2026-11-03: the box drew the eye)
     const verdict = activateVerdict(p, objective, defenceState.phase);
-    const label = verdict === "ready" && amReady() ? "not ready after all" : ACTIVATE_TIPS[verdict];
-    const detail = verdict === "ready" ? readyCount() : undefined;
-    if (verdict !== "already active") out.push({ id: "reactor", at: v3(REACTOR.x - 0.6, 1.9, REACTOR.z + 0.4), key: verdict === "stable" || verdict === "dead" ? "" : "E", label, detail, enabled: verdict === "ok" || verdict === "ready" });
+    if (verdict !== "already active" && verdict !== "ready") out.push({ id: "reactor", at: v3(REACTOR.x - 0.6, 1.9, REACTOR.z + 0.4), key: verdict === "stable" || verdict === "dead" ? "" : "E", label: ACTIVATE_TIPS[verdict], enabled: verdict === "ok" });
   } else if (target?.kind === "terminal") {
     const t = SUPPLY_TERMINAL;
     out.push({ id: "terminal", at: v3(t.x - 0.8, 1.9, t.z + 0.3), key: "E", label: shopOpen ? "close supply uplink" : "order supply", detail: `crew quota: ${funds}` });
@@ -1421,6 +1419,7 @@ const net = connect({
     const seenPlayers = new Set<string>();
     objective = state.objective;
     if (state.defence.phase === "break" && defenceState.phase !== "break") breakSince = defenceState.phase === "spawning" && defenceState.wave > 0 ? performance.now() : -Infinity;
+    if (objective.active && state.defence.reactorHealth < defenceState.reactorHealth) reactorHitAt = performance.now();
     defenceState = state.defence;
     funds = state.funds;
     if (state.lift) lift = state.lift;
@@ -1605,7 +1604,8 @@ function primary(): void {
   // a click with something in hand is that item's action (firing over the reactor is firing); E still works
   if (hoveringReactor() && !held) {
     const verdict = activateVerdict(localMesh.position, objective, defenceState.phase);
-    if (verdict === "ok" || verdict === "ready") net.activate();
+    if (verdict === "ok") net.activate();
+    else if (verdict === "ready") flash("X: ready for the next wave");
     else flash(ACTIVATE_TIPS[verdict]);
     return;
   }
@@ -2384,6 +2384,10 @@ document.body.appendChild(hudEl);
 const hudHp = hudEl.querySelector<HTMLSpanElement>("#hud-hp")!;
 const hudWave = hudEl.querySelector<HTMLSpanElement>("#hud-wave")!;
 const hudNext = hudEl.querySelector<HTMLSpanElement>("#hud-next")!;
+const hudBar = hudEl.querySelector<HTMLSpanElement>(".bar.hp")!;
+/** the last time the reactor lost health: its bar flashes red for REACTOR_HIT_FLASH_MS after, so a quiet drain is still seen */
+let reactorHitAt = -Infinity;
+const REACTOR_HIT_FLASH_MS = 600;
 function renderDefenceHud(): void {
   hudEl.style.display = objective.active ? "block" : "none";
   renderReadyCard();
@@ -2410,6 +2414,7 @@ function renderDefenceHud(): void {
   hudHp.style.width = `${Math.round(hp * 100)}%`;
   // white until it's in danger, then alarm red
   hudHp.classList.toggle("low", hp <= 0.3);
+  hudBar.classList.toggle("hit", performance.now() - reactorHitAt < REACTOR_HIT_FLASH_MS);
   const next = defenceState.nextWaveAt;
   const nextIn = next ? Math.max(0, Math.ceil((next - serverClock.now()) / 1000)) : 0;
   if (onBreak) {
