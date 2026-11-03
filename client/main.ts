@@ -270,6 +270,9 @@ scene.add(core);
 const coreHalo = glow(REACTOR_STANDBY, 3.2, 0.5);
 coreHalo.position.set(REACTOR.x, 2.1, REACTOR.z);
 scene.add(coreHalo);
+/** the last time the reactor lost health: core and HUD bar flash red for REACTOR_HIT_FLASH_MS after, so a quiet drain is still seen */
+let reactorHitAt = -Infinity;
+const REACTOR_HIT_FLASH_MS = 600;
 
 // the comms set's green call lamp: lit through a break, dark once a wave is on
 const beacon = beaconLamp();
@@ -2066,11 +2069,13 @@ function animate(): void {
     // a lamp lights the scene only if its light could reach what we see: in sight, or close
     return Math.hypot(at.x - view.x, at.z - view.z) < LAMP_SPECS[lamp.kind].range * 0.5 || canSee(view.x, view.z, at.x, at.z, visibility.segs);
   });
-  const coreColour = objective.active ? REACTOR_LIVE : REACTOR_STANDBY;
+  // hit: core and halo blink alarm red in step with the HUD bar (two hard steps every 0.3 s)
+  const hit = objective.active && performance.now() - reactorHitAt < REACTOR_HIT_FLASH_MS && Math.floor(performance.now() / 150) % 2 === 0;
+  const coreColour = hit ? REACTOR_STANDBY : objective.active ? REACTOR_LIVE : REACTOR_STANDBY;
   coreMaterial.color.setHex(power === "out" ? 0x080808 : coreColour);
   coreHalo.visible = power !== "out";
   coreHalo.material.color.setHex(coreColour);
-  coreHalo.material.opacity = power === "full" ? 0.95 : objective.active ? 0.7 + 0.2 * Math.sin(time * 2) : 0.3 + 0.15 * Math.sin(time * 1.3);
+  coreHalo.material.opacity = hit ? 1 : power === "full" ? 0.95 : objective.active ? 0.7 + 0.2 * Math.sin(time * 2) : 0.3 + 0.15 * Math.sin(time * 1.3);
   stepWipe(dt);
   liftDoors.update(lift, serverClock.now());
   stepEvac(time);
@@ -2385,9 +2390,6 @@ const hudHp = hudEl.querySelector<HTMLSpanElement>("#hud-hp")!;
 const hudWave = hudEl.querySelector<HTMLSpanElement>("#hud-wave")!;
 const hudNext = hudEl.querySelector<HTMLSpanElement>("#hud-next")!;
 const hudBar = hudEl.querySelector<HTMLSpanElement>(".bar.hp")!;
-/** the last time the reactor lost health: its bar flashes red for REACTOR_HIT_FLASH_MS after, so a quiet drain is still seen */
-let reactorHitAt = -Infinity;
-const REACTOR_HIT_FLASH_MS = 600;
 function renderDefenceHud(): void {
   hudEl.style.display = objective.active ? "block" : "none";
   renderReadyCard();
