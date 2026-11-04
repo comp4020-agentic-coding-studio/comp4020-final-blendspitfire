@@ -144,6 +144,7 @@ function facilityView(): void {
   if (masked) post.setMask(visibility.postMask(FACILITY_WALL_HALF_HEIGHT * 2 - 0.05));
   // looking from inside the freight shaft: its walls go up past the camera, no roof to hide
   if (masked && inFreight(cx, cz)) post.setOpenTop(SHAFT_AREA);
+  evacView.setInside(inFreight(cx, cz));
   const live = params.has("live");
   const clock = new THREE.Clock();
   const render = (): void => {

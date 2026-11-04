@@ -2228,6 +2228,7 @@ function stepEvac(time: number): void {
   if (lid !== shaftLid) {
     shaftLid = lid;
     post.setOpenTop(lid ? SHAFT_AREA : null);
+    evacView.setInside(lid);
   }
   const st = e ? evacStage(e, now) : undefined;
   settlement.set(wonReport, lastBoard, myHandle ?? (myId ? codename({ id: myId, color: myColor, handle: myHandle }) : ""));

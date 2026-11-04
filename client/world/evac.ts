@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { CONCRETE_DARK, EMIT_AMBER, HAZARD, PAINT_CHARCOAL, RUBBER, STEEL } from "../../shared/palette.ts";
+import { CONCRETE_DARK, EMIT_AMBER, HAZARD, PAINT_ASH, PAINT_CHARCOAL, PAINT_OXIDE, RUBBER, STEEL } from "../../shared/palette.ts";
 import { BLAST_DOOR, FACILITY_WALL_HALF_HEIGHT, FREIGHT, CARGO_W, FREIGHT_CARGO, FREIGHT_PANEL, FREIGHT_SHAFT, FREIGHT_WALLS } from "../../shared/protocol.ts";
 import { equipmentCargo, munitionsCargo } from "../models/cargo.ts";
 import { blastDoorOpen, evacStage, type EvacState } from "../../shared/enemies.ts";
@@ -27,13 +27,13 @@ const H = FACILITY_WALL_HALF_HEIGHT * 2;
 const SHAFT_TOP = 18;
 /** the wall lamps' vertical spacing (user 2026-11-04: about a metre apart) */
 const LAMP_STEP = 1;
-/** the moving pattern's repeat: three lamps and one panel seam, so it loops without a jump */
-const LOOP = 3;
+/** the moving pattern's repeat: long enough that the walls' plant doesn't read as a stamp, a whole number of lamps and seams so it loops without a jump */
+const LOOP = 9;
 /** the shaft's walls go up to here: a whole number of lamp steps past SHAFT_TOP */
 const SHAFT_H = SHAFT_TOP + 3;
 /** how fast the shaft goes by, in metres a second */
 const RISE_SPEED = 2.4;
-/** how far the shaft sinks as a whole before only its lamps move: the door's top well under the deck, a whole number of LOOPs */
+/** how far the shaft sinks as a whole before only its lamps and plant move: the door's top well under the deck */
 const SINK = 6;
 
 // the platform
@@ -135,90 +135,233 @@ function deck(): THREE.Group {
 }
 
 // The walls, after the lift shafts of industrial sci-fi (Alien's Nostromo,
-// Blade Runner, the Expanse): plain concrete in tall panels, a couple of
-// steel guide rails per wall, and a lamp beside each rail every metre in
-// its own dark housing --- lit from within, not throwing light. Lamps and
-// the panels' seams slide down together while the platform climbs; the
-// rails, being continuous, don't need to.
+// Blade Runner, the Expanse) and real hoistways: plain concrete in tall
+// panels, a couple of steel guide rails per wall, a lamp beside each rail
+// every metre in its own dark housing --- lit from within, not throwing
+// light --- and the plant a working shaft carries (user 2026-11-04: less
+// bare): conduit into junction boxes, a cable tray, a caged ladder, a vent,
+// the fire main, limit switches by a rail, the shut doors of the levels the
+// platform passes, and here and there a small dim red pilot light. What
+// repeats up the wall (lamps, seams, clamps, rungs, boxes, doors) slides
+// down together while the platform climbs; what runs the whole height
+// (rails, conduit, tray, ladder stiles, the main) doesn't need to.
+
+/** one inner face of the shaft: along x or z, its plane, which way it faces, and how low its plant starts */
+interface Face {
+  alongX: boolean;
+  plane: number;
+  n: 1 | -1;
+  from: number;
+}
+/** the south wall's inner face, over the blast door */
+const SOUTH_FACE = BLAST_DOOR.z - BLAST_DOOR.halfZ;
+const BACK: Face = { alongX: true, plane: FREIGHT_SHAFT.minZ, n: 1, from: -2 };
+const WEST: Face = { alongX: false, plane: FREIGHT_SHAFT.minX, n: 1, from: -2 };
+const EAST: Face = { alongX: false, plane: FREIGHT_SHAFT.maxX, n: -1, from: -2 };
+const SOUTH: Face = { alongX: true, plane: SOUTH_FACE, n: -1, from: H + 0.3 };
 
 /** where the lamp columns stand: two up each side wall, three across the back (user 2026-11-04: fewer columns) */
 const BACK_COLUMNS = [0.2, 0.5, 0.8].map((k) => FREIGHT_SHAFT.minX + k * (FREIGHT_SHAFT.maxX - FREIGHT_SHAFT.minX));
 const SIDE_COLUMNS = [0.3, 0.75].map((k) => FREIGHT_SHAFT.minZ + k * (FREIGHT_SHAFT.maxZ - FREIGHT_SHAFT.minZ));
-/** the south wall's inner face, over the blast door */
-const SOUTH_FACE = BLAST_DOOR.z - BLAST_DOOR.halfZ;
 /** a lamp's face: a warm white held well under the light fittings', so it reads as glowing without lighting anything */
 const LAMP_FACE = 0xd8cbb0;
+/** a pilot light: a red held well under EMIT_RED, there if you look and nothing more */
+const PILOT = 0xb8261e;
 
-/**
- * What slides by: the lamps (housing + face) and the panel seams, from
- * below the deck to the top plus one LOOP so sliding down a LOOP and
- * jumping back is seamless. Each lamp sits a hand's width to one side of
- * its column's rail.
- */
-function wallLamps(): THREE.Group {
-  const housings: THREE.BufferGeometry[] = [];
-  const faces: THREE.BufferGeometry[] = [];
-  // along the wall the lamp is 0.36 wide and 0.22 tall; it stands 0.08 off the wall
-  const lamp = (x: number, y: number, z: number, nx: number, nz: number): void => {
-    const along = (w: number, h: number, d: number) => box(nx ? d : w, h, nz ? d : w);
-    housings.push(part(along(0.46, 0.32, 0.06), STEEL.shade, x + nx * 0.03, y, z + nz * 0.03));
-    faces.push(glowPart(along(0.36, 0.22, 0.04), LAMP_FACE, x + nx * 0.06, y, z + nz * 0.06));
-  };
-  for (let y = -2; y < SHAFT_H + LOOP; y += LAMP_STEP) {
-    for (const x of BACK_COLUMNS) {
-      lamp(x + 0.35, y, FREIGHT_SHAFT.minZ, 0, 1);
-      // the south wall, over the door: from the door's top up, same as the rest
-      if (y > H + 0.4) lamp(x + 0.35, y, SOUTH_FACE, 0, -1);
-    }
-    for (const z of SIDE_COLUMNS) {
-      lamp(FREIGHT_SHAFT.minX, y, z + 0.35, 1, 0);
-      lamp(FREIGHT_SHAFT.maxX, y, z + 0.35, -1, 0);
-    }
-  }
-  // the panels' horizontal seams, every LOOP
-  for (let y = -2; y < SHAFT_H + LOOP; y += LOOP) {
-    housings.push(part(box(FREIGHT_SHAFT.maxX - FREIGHT_SHAFT.minX, 0.06, 0.03), PAINT_CHARCOAL.shade, (FREIGHT_SHAFT.minX + FREIGHT_SHAFT.maxX) / 2, y + 0.5, FREIGHT_SHAFT.minZ + 0.015));
-    for (const x of [FREIGHT_SHAFT.minX + 0.015, FREIGHT_SHAFT.maxX - 0.015]) housings.push(part(box(0.03, 0.06, FREIGHT_SHAFT.maxZ - FREIGHT_SHAFT.minZ), PAINT_CHARCOAL.shade, x, y + 0.5, (FREIGHT_SHAFT.minZ + FREIGHT_SHAFT.maxZ) / 2));
-  }
-  return multiMesh({ matte: [merge(housings, "none")], emissive: faces });
+/** what one wall's dressing is made of, sorted by whether it slides and how it's lit */
+interface Dressing {
+  still: THREE.BufferGeometry[];
+  moving: THREE.BufferGeometry[];
+  faces: THREE.BufferGeometry[];
+  pilots: THREE.BufferGeometry[];
+  blinks: THREE.BufferGeometry[];
 }
 
-/** the guide rails, one per lamp column, the whole height: still while the lamps go by */
-function wallRails(): THREE.Mesh {
-  const parts: THREE.BufferGeometry[] = [];
-  const h = SHAFT_H + 2;
-  for (const x of BACK_COLUMNS) {
-    parts.push(part(box(0.16, h, 0.14), STEEL.base, x, h / 2 - 2, FREIGHT_SHAFT.minZ + 0.07));
-    parts.push(part(box(0.16, SHAFT_H - H - 0.2, 0.14), STEEL.base, x, (SHAFT_H + H + 0.2) / 2, SOUTH_FACE - 0.07));
+/** a box on a face: `w` along it, `h` tall, `t` deep, centred at `u` along, `y` up, `d` out from the wall; left out if it'd reach below the face's start */
+function put(list: THREE.BufferGeometry[], f: Face, w: number, h: number, t: number, color: number, u: number, y: number, d: number, glowing = false): void {
+  if (y - h / 2 < f.from) return;
+  const g = f.alongX ? box(w, h, t) : box(t, h, w);
+  const x = f.alongX ? u : f.plane + f.n * d;
+  const z = f.alongX ? f.plane + f.n * d : u;
+  list.push(glowing ? glowPart(g, color, x, y, z) : part(g, color, x, y, z));
+}
+
+/** an upright the whole height of the face: a rail, a stile, a strap */
+function upright(list: THREE.BufferGeometry[], f: Face, w: number, t: number, color: number, u: number, d: number): void {
+  const lo = f.from;
+  const h = SHAFT_H - lo;
+  put(list, f, w, h, t, color, u, lo + h / 2, d);
+}
+
+/** a round pipe the whole height of the face */
+function pipe(list: THREE.BufferGeometry[], f: Face, r: number, color: number, u: number, d: number): void {
+  const h = SHAFT_H - f.from;
+  const x = f.alongX ? u : f.plane + f.n * d;
+  const z = f.alongX ? f.plane + f.n * d : u;
+  list.push(part(new THREE.CylinderGeometry(r, r, h, 6), color, x, f.from + h / 2, z));
+}
+
+/** each repeat of the sliding pattern's base height, from under the deck to a LOOP past the top */
+function loops(): number[] {
+  const out: number[] = [];
+  for (let y = -2; y < SHAFT_H + LOOP; y += LOOP) out.push(y);
+  return out;
+}
+
+/** a junction box on a conduit run, its lid's edge lighter, a pilot at its corner; `blink` makes the pilot flash */
+function junctionBox(d: Dressing, f: Face, u: number, y: number, w = 0.55, h = 0.65, blink = false): void {
+  put(d.moving, f, w, h, 0.24, PAINT_ASH.shade, u, y, 0.24);
+  put(d.moving, f, w + 0.04, 0.05, 0.27, PAINT_ASH.base, u, y + h / 2, 0.25);
+  put(d.moving, f, 0.12, 0.12, 0.1, RUBBER.base, u - w / 2 + 0.12, y - h / 2 - 0.04, 0.22);
+  put(blink ? d.blinks : d.pilots, f, 0.09, 0.09, 0.03, PILOT, u + w / 2 - 0.1, y + h / 2 - 0.12, 0.375, true);
+}
+
+/** conduit: `n` steel pipes side by side, clamped every 1.5 m */
+function conduit(d: Dressing, f: Face, u: number, n = 3): void {
+  const span = (n - 1) * 0.16;
+  for (let i = 0; i < n; i++) pipe(d.still, f, 0.045, STEEL.base, u - span / 2 + i * 0.16, 0.1);
+  for (const y0 of loops()) for (let k = 0; k < LOOP; k += 1.5) put(d.moving, f, span + 0.2, 0.06, 0.05, STEEL.light, u, y0 + k + 0.4, 0.16);
+}
+
+/** the lamps and the panels' seams: every face has them */
+function lampsAndSeams(d: Dressing, f: Face, columns: number[], width: number, mid: number): void {
+  for (const y0 of loops()) {
+    for (let k = 0; k < LOOP; k += LAMP_STEP) {
+      for (const c of columns) {
+        put(d.moving, f, 0.46, 0.32, 0.06, STEEL.shade, c + 0.35, y0 + k, 0.03);
+        put(d.faces, f, 0.36, 0.22, 0.04, LAMP_FACE, c + 0.35, y0 + k, 0.06, true);
+      }
+    }
+    for (let k = 0; k < LOOP; k += 3) put(d.moving, f, width, 0.06, 0.03, PAINT_CHARCOAL.shade, mid, y0 + k + 0.5, 0.015);
   }
-  for (const z of SIDE_COLUMNS) {
-    for (const x of [FREIGHT_SHAFT.minX + 0.07, FREIGHT_SHAFT.maxX - 0.07]) parts.push(part(box(0.14, h, 0.16), STEEL.base, x, h / 2 - 2, z));
+  for (const c of columns) upright(d.still, f, 0.16, 0.14, STEEL.base, c, 0.07);
+}
+
+/** the back wall: conduit into boxes, a cable tray, a vent, the caged maintenance ladder in the corner */
+function dressBack(d: Dressing): void {
+  const f = BACK;
+  lampsAndSeams(d, f, BACK_COLUMNS, SW, SCX);
+  conduit(d, f, -12.7);
+  // the cable tray: two stiles, a black bundle of cable in it, rungs across
+  for (const s of [-0.22, 0.22]) upright(d.still, f, 0.04, 0.16, STEEL.base, -7.6 + s, 0.1);
+  upright(d.still, f, 0.3, 0.07, RUBBER.base, -7.6, 0.06);
+  for (const y0 of loops()) {
+    for (let k = 0; k < LOOP; k += 0.45) put(d.moving, f, 0.48, 0.04, 0.04, STEEL.shade, -7.6, y0 + k, 0.17);
+    junctionBox(d, f, -12.7, y0 + 2.2);
+    junctionBox(d, f, -12.7, y0 + 6.8, 0.4, 0.45, true);
+    // a vent: a frame and slats standing off it
+    put(d.moving, f, 1.0, 0.7, 0.06, STEEL.shade, -2.6, y0 + 5, 0.03);
+    for (let s = 0; s < 5; s++) put(d.moving, f, 0.9, 0.05, 0.08, STEEL.light, -2.6, y0 + 4.76 + s * 0.12, 0.08);
   }
-  return mesh(merge(parts, "none"));
+  // the ladder in the corner, its cage kept clear of the platform's edge
+  const lu = 2.7;
+  for (const s of [-0.25, 0.25]) upright(d.still, f, 0.06, 0.08, STEEL.base, lu + s, 0.2);
+  for (const s of [-0.37, 0.37]) upright(d.still, f, 0.04, 0.04, STEEL.shade, lu + s, 0.6);
+  upright(d.still, f, 0.04, 0.04, STEEL.shade, lu, 0.6);
+  for (const y0 of loops()) {
+    for (let k = 0; k < LOOP; k += 0.3) put(d.moving, f, 0.5, 0.04, 0.04, STEEL.light, lu, y0 + k + 0.1, 0.2);
+    for (let k = 0; k < LOOP; k += 1) {
+      for (const s of [-0.37, 0.37]) put(d.moving, f, 0.04, 0.05, 0.6, STEEL.base, lu + s, y0 + k + 0.6, 0.3);
+      put(d.moving, f, 0.78, 0.05, 0.04, STEEL.base, lu, y0 + k + 0.6, 0.6);
+    }
+  }
+}
+
+/** the west wall: the shut doors of the levels the platform passes, conduit by the door end */
+function dressWest(d: Dressing): void {
+  const f = WEST;
+  lampsAndSeams(d, f, SIDE_COLUMNS, SD, SCZ);
+  conduit(d, f, -19.4, 2);
+  const u = -24;
+  for (const y0 of loops()) {
+    const sill = y0 + 2.2;
+    // the frame, two shut oxide leaves and their meeting line, a hazard-edged sill that stands out
+    for (const s of [-1.2, 1.2]) put(d.moving, f, 0.2, 2.6, 0.14, STEEL.base, u + s, sill + 1.3, 0.07);
+    put(d.moving, f, 2.6, 0.22, 0.16, STEEL.base, u, sill + 2.6, 0.08);
+    for (const s of [-0.56, 0.56]) put(d.moving, f, 1.1, 2.4, 0.05, PAINT_OXIDE.shade, u + s, sill + 1.2, 0.03);
+    put(d.moving, f, 0.04, 2.4, 0.07, PAINT_CHARCOAL.shade, u, sill + 1.2, 0.04);
+    put(d.moving, f, 2.6, 0.08, 0.32, HAZARD.shade, u, sill, 0.16);
+    // the level's call box beside it, locked out: a red pilot
+    put(d.moving, f, 0.22, 0.34, 0.1, PAINT_CHARCOAL.light, u - 1.6, sill + 1.3, 0.05);
+    put(d.pilots, f, 0.09, 0.09, 0.03, PILOT, u - 1.6, sill + 1.38, 0.115, true);
+    put(d.blinks, f, 0.1, 0.06, 0.03, PILOT, u, sill + 2.6, 0.175, true);
+    junctionBox(d, f, -19.4, y0 + 7.2, 0.4, 0.5);
+  }
+}
+
+/** the east wall: the fire main with its flanges and valves, limit switches by a rail, a junction box */
+function dressEast(d: Dressing): void {
+  const f = EAST;
+  lampsAndSeams(d, f, SIDE_COLUMNS, SD, SCZ);
+  const main = -28.9;
+  pipe(d.still, f, 0.09, PAINT_OXIDE.base, main, 0.2);
+  conduit(d, f, -24.2, 2);
+  const x = f.plane + f.n * 0.42;
+  for (const y0 of loops()) {
+    for (let k = 0; k < LOOP; k += 3) put(d.moving, f, 0.28, 0.06, 0.28, PAINT_OXIDE.shade, main, y0 + k + 1.9, 0.2);
+    // a valve: a stub off the main, a handwheel facing out
+    put(d.moving, f, 0.1, 0.1, 0.24, PAINT_OXIDE.base, main, y0 + 4.3, 0.3);
+    d.moving.push(part(new THREE.CylinderGeometry(0.2, 0.2, 0.04, 8), STEEL.light, x, y0 + 4.3, main, 0, 0, Math.PI / 2));
+    junctionBox(d, f, -24.2, y0 + 3.4);
+    // limit switches beside the near rail: a body, its roller arm reaching for the rail
+    for (const k of [1.0, 5.5]) {
+      const u = SIDE_COLUMNS[1] - 0.5;
+      put(d.moving, f, 0.22, 0.3, 0.18, PAINT_CHARCOAL.light, u, y0 + k, 0.09);
+      put(d.moving, f, 0.24, 0.04, 0.04, STEEL.light, u + 0.18, y0 + k + 0.1, 0.16);
+      put(d.pilots, f, 0.07, 0.07, 0.03, PILOT, u - 0.05, y0 + k + 0.07, 0.195, true);
+    }
+  }
+}
+
+/** the south wall, over the door: the same lamps and rails, conduit across to a box, a blinking pilot up high */
+function dressSouth(d: Dressing): void {
+  const f = SOUTH;
+  lampsAndSeams(d, f, BACK_COLUMNS, SW, SCX);
+  conduit(d, f, -12.4, 2);
+  for (const s of [-0.22, 0.22]) upright(d.still, f, 0.04, 0.16, STEEL.base, -2.4 + s, 0.1);
+  upright(d.still, f, 0.3, 0.07, RUBBER.base, -2.4, 0.06);
+  for (const y0 of loops()) {
+    for (let k = 0; k < LOOP; k += 0.45) put(d.moving, f, 0.48, 0.04, 0.04, STEEL.shade, -2.4, y0 + k, 0.17);
+    junctionBox(d, f, -12.4, y0 + 5.2, 0.55, 0.65, true);
+  }
+}
+
+/** a wall's dressing as meshes: what stays, and what slides (with its lamps, its pilots, and its blinking pilots by name) */
+function dressing(dress: (d: Dressing) => void): { still: THREE.Mesh; moving: THREE.Group } {
+  const d: Dressing = { still: [], moving: [], faces: [], pilots: [], blinks: [] };
+  dress(d);
+  const moving = multiMesh({ matte: [merge(d.moving, "none")], emissive: [...d.faces, ...d.pilots] });
+  const blink = d.blinks.length ? mesh(merge(d.blinks, "none"), "emissive") : new THREE.Group();
+  blink.name = "blink";
+  moving.add(blink);
+  return { still: mesh(merge(d.still, "none")), moving };
 }
 
 /**
- * The shaft's four walls above head height, the door's side the same as
- * the rest: the facility's walls stop under a ceiling the sight mask paints
- * black, but a shaft has no ceiling, so from the platform the view is wall
- * on every side, past the camera. Below the deck they carry on into the
- * drop. The south wall stands over the blast door, which is the map's.
+ * The shaft's walls above head height: the facility's walls stop under a
+ * ceiling the sight mask paints black, but a shaft has no ceiling, so from
+ * the platform the view is wall on every side, past the camera. Below the
+ * deck they carry on into the drop. The south wall (over the blast door,
+ * which is the map's) is its own: from outside it'd stand between the
+ * camera and the platform, so it's only up while you're in the shaft.
  */
 const WALL_T = 0.6;
 const DROP = 4;
 function shaftWalls(): THREE.Mesh {
   const t = WALL_T;
   const h = SHAFT_H - H;
-  const southZ = BLAST_DOOR.z;
-  const parts: THREE.BufferGeometry[] = [
-    part(box(SW + 2 * t, h, t), CONCRETE_DARK.shade, SCX, H + h / 2, FREIGHT_SHAFT.minZ - t / 2),
-    part(box(SW + 2 * t, h - 0.15, BLAST_DOOR.halfZ * 2), CONCRETE_DARK.shade, SCX, H + 0.15 + (h - 0.15) / 2, southZ),
-  ];
+  const parts: THREE.BufferGeometry[] = [part(box(SW + 2 * t, h, t), CONCRETE_DARK.shade, SCX, H + h / 2, FREIGHT_SHAFT.minZ - t / 2)];
   for (const x of [FREIGHT_SHAFT.minX - t / 2, FREIGHT_SHAFT.maxX + t / 2]) parts.push(part(box(t, h, SD + t), CONCRETE_DARK.shade, x, H + h / 2, SCZ - t / 2));
   // under the deck's level: the same walls going on down
   parts.push(part(box(SW + 2 * t, DROP, t), CONCRETE_DARK.shade, SCX, -DROP / 2, FREIGHT_SHAFT.minZ - t / 2));
   for (const x of [FREIGHT_SHAFT.minX - t / 2, FREIGHT_SHAFT.maxX + t / 2]) parts.push(part(box(t, DROP, SD + t), CONCRETE_DARK.shade, x, -DROP / 2, SCZ - t / 2));
   return mesh(merge(parts, "none"));
+}
+
+/** the south wall's slab, over the door */
+function southWall(): THREE.Mesh {
+  const h = SHAFT_H - H - 0.15;
+  return mesh(merge([part(box(SW + 2 * WALL_T, h, BLAST_DOOR.halfZ * 2), CONCRETE_DARK.shade, SCX, H + 0.15 + h / 2, BLAST_DOOR.z)], "none"));
 }
 
 /**
@@ -274,7 +417,12 @@ export class EvacView {
   private readonly halves: [THREE.Mesh, THREE.Mesh];
   private readonly half: number;
   private readonly beacons: THREE.Group[] = [];
-  private readonly lamps = wallLamps();
+  /** what slides down a LOOP and jumps back while the platform climbs: the walls' lamps, seams and plant */
+  private readonly lamps = new THREE.Group();
+  /** the pilots that blink, on their own slow beat */
+  private readonly blinks: THREE.Object3D[] = [];
+  /** the south wall and its dressing: only up while the viewer's in the shaft */
+  private readonly south: THREE.Object3D[] = [];
   /** what goes down while the platform climbs: the shaft's walls, the door, the foot */
   private readonly shaft = new THREE.Group();
   private readonly deck: THREE.Group;
@@ -298,7 +446,18 @@ export class EvacView {
     }
     this.deck = deck();
     this.group.add(this.deck, railing());
-    this.shaft.add(shaftWalls(), footWalls(), wallRails(), this.lamps);
+    this.shaft.add(shaftWalls(), footWalls(), this.lamps);
+    for (const dress of [dressBack, dressWest, dressEast, dressSouth]) {
+      const { still, moving } = dressing(dress);
+      this.shaft.add(still);
+      this.lamps.add(moving);
+      this.blinks.push(moving.getObjectByName("blink")!);
+      if (dress === dressSouth) this.south.push(still, moving);
+    }
+    const slab = southWall();
+    this.shaft.add(slab);
+    this.south.push(slab);
+    this.setInside(false);
     // the work lights on the shaft's back wall: theirs, so they go down with it
     for (const lamp of LAMPS.filter((l) => l.shaft)) {
       const f = lampFixture(lamp)!;
@@ -312,6 +471,11 @@ export class EvacView {
     this.sweep = new THREE.PointLight(0xfff0d8, 0, 14, 1.4);
     this.sweep.position.set(CX, 2.5, CZ);
     this.group.add(this.sweep);
+  }
+
+  /** the viewer's in the shaft (or not): the south wall's up only then, so from the core the platform shows through the open door */
+  setInside(inside: boolean): void {
+    for (const o of this.south) o.visible = inside;
   }
 
   /** move it all to the evacuation's stage at server time `now`; what the camera and lights should do back */
@@ -328,6 +492,8 @@ export class EvacView {
       b.visible = alarm;
       b.getObjectByName("arm")!.rotation.y = time * 4 + i * 1.3;
     }
+    // the blinking pilots: a short wink every couple of seconds
+    for (const b of this.blinks) b.visible = time % 2.2 < 0.18;
     const button = this.deck.getObjectByName("button")!;
     button.visible = st?.stage !== "open" || Math.sin(time * 6) > -0.3;
     let rising = 0;
