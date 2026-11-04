@@ -682,7 +682,12 @@ function updateItems(all: ItemState[]): void {
     seen.add(state.id);
     const existing = items.get(state.id);
     if (existing) {
-      if (state.aim !== undefined && state.aim !== existing.state.aim) existing.lastAimAt = performance.now();
+      if (state.aim !== undefined && state.aim !== existing.state.aim) {
+        if (performance.now() - existing.lastAimAt > TURRET_IDLE_AFTER_MS) audio.playAt("turretServo", state.x, state.z);
+        existing.lastAimAt = performance.now();
+      }
+      // picked up by us
+      if (state.heldBy === myId && existing.state.heldBy !== myId) audio.play("pickup");
       existing.state = state;
     } else items.set(state.id, makeItem(state));
   }
@@ -1427,7 +1432,11 @@ const net = connect({
     const seenPlayers = new Set<string>();
     objective = state.objective;
     if (state.defence.phase === "break" && defenceState.phase !== "break") breakSince = defenceState.phase === "spawning" && defenceState.wave > 0 ? performance.now() : -Infinity;
-    if (objective.active && state.defence.reactorHealth < defenceState.reactorHealth) reactorHitAt = performance.now();
+    if (objective.active && state.defence.reactorHealth < defenceState.reactorHealth) {
+      // the alarm at most every couple of seconds, not on every bite
+      if (performance.now() - reactorHitAt > 2000) audio.play("reactorAlarm");
+      reactorHitAt = performance.now();
+    }
     defenceState = state.defence;
     funds = state.funds;
     if (state.lift) lift = state.lift;
@@ -1500,7 +1509,10 @@ function updateProjectiles(incoming: ProjectileState[]): void {
       scene.remove(mine.tracer.mesh);
     }
     // someone else's round (a teammate, a turret): its muzzle shimmers here; ours did on the click
-    if (p.ownerId !== myId) impacts.muzzle(p.x, p.z);
+    if (p.ownerId !== myId) {
+      impacts.muzzle(p.x, p.z);
+      audio.playAt(items.get(p.ownerId)?.state.kind === "turret" ? "turretShot" : "rifle", p.x, p.z);
+    }
     const tracer = new Tracer(p, tracerMaterial);
     tracers.set(p.id, tracer);
     scene.add(tracer.mesh);
@@ -1515,6 +1527,7 @@ function stepTracers(): void {
     if (!landed.has(id) && s.hit && s.range > 0.05 && ((t - s.firedAt) / 1000) * PROJECTILE_SPEED >= s.range) {
       landed.add(id);
       impacts.hit(s.hit, s.x + s.dirX * s.range, s.z + s.dirZ * s.range, s.dirX, s.dirZ);
+      audio.playAt(s.hit === "enemy" ? "fleshHit" : "ricochet", s.x + s.dirX * s.range, s.z + s.dirZ * s.range, 0.8);
     }
     if (!tracer.update(t)) {
       scene.remove(tracer.mesh);
@@ -1645,7 +1658,10 @@ let triggerHeld = false;
 function fireGun(clicked: boolean): void {
   if (!localMesh) return;
   if (noFireAt(localMesh.position.x, localMesh.position.z)) {
-    if (clicked) flash("no firing in the lift");
+    if (clicked) {
+      flash("no firing in the lift");
+      audio.play("dryClick");
+    }
     return;
   }
   const now = performance.now();
@@ -1663,6 +1679,7 @@ function fireGun(clicked: boolean): void {
   const aimZ = localMesh.position.z + Math.cos(a) * d;
   net.primary(aimX, aimZ);
   firePredictedShot(aimX, aimZ);
+  audio.play("rifle");
 }
 
 /** called every frame: keep firing while the trigger's held on a gun */
@@ -1758,6 +1775,9 @@ interface ClientEnemy {
   size: number;
   /** a runner's amber spine, pulsed as it runs */
   spine?: THREE.Object3D;
+  kind: EnemyKind;
+  /** when it next makes a noise (performance.now()) */
+  nextVoice: number;
 }
 const enemies = new Map<string, ClientEnemy>();
 let defenceState: DefenceState = { reactorHealth: 1, wave: 0, phase: "spawning" };
@@ -1821,15 +1841,24 @@ function updateEnemies(incoming: EnemyState[], t: number): void {
       mesh.add(bar);
       mesh.position.set(e.x, 0, e.z);
       scene.add(mesh);
-      ce = { mesh, eyes, snaps: new SnapshotBuffer(), drawn: { x: e.x, z: e.z, rotation: e.rotation }, health: e.health, bar, hitUntil: 0, size: e.kind === "brute" ? BRUTE_SCALE : 1, spine: mesh.getObjectByName("spine") };
+      ce = { mesh, eyes, snaps: new SnapshotBuffer(), drawn: { x: e.x, z: e.z, rotation: e.rotation }, health: e.health, bar, hitUntil: 0, size: e.kind === "brute" ? BRUTE_SCALE : 1, spine: mesh.getObjectByName("spine"), kind: e.kind, nextVoice: performance.now() + Math.random() * 4000 };
       enemies.set(e.id, ce);
     }
     if (e.health < ce.health) ce.hitUntil = performance.now() + 120;
     ce.health = e.health;
+    ce.kind = e.kind;
+    // a voice now and then, from where it is
+    if (performance.now() > ce.nextVoice) {
+      if (ce.nextVoice) audio.playAt(e.kind === "brute" ? "bruteGrowl" : Math.random() < 0.15 ? "crawlerShriek" : "crawlerChitter", e.x, e.z, 0.8);
+      ce.nextVoice = performance.now() + 3000 + Math.random() * 7000;
+    }
     ce.snaps.push(t, e.x, e.z, e.rotation);
   }
+  // gone from the server's list: killed, unless a whole crowd went at once (the attempt cleared)
+  const gone = [...enemies.keys()].filter((id) => !seen.has(id)).length;
   for (const [id, ce] of enemies) {
     if (!seen.has(id)) {
+      if (gone <= 3) audio.playAt(ce.kind === "brute" ? "bruteGrowl" : "crawlerDeath", ce.drawn.x, ce.drawn.z);
       scene.remove(ce.mesh);
       enemies.delete(id);
     }
@@ -1858,11 +1887,13 @@ function updateSpits(incoming: SpitState[]): void {
     ring.position.set(s.tx, 0.04, s.tz);
     scene.add(blob, ring);
     spits.set(s.id, { state: s, blob, ring });
+    audio.playAt("spit", s.x, s.z);
   }
   for (const [id, cs] of spits) {
     if (seen.has(id)) continue;
     // gone from the server: it landed
     impacts.hit("enemy", cs.state.tx, cs.state.tz, cs.state.tx - cs.state.x, cs.state.tz - cs.state.z);
+    audio.playAt("acidSplash", cs.state.tx, cs.state.tz);
     scene.remove(cs.blob, cs.ring);
     spits.delete(id);
   }
@@ -1900,6 +1931,7 @@ function updateGrenades(incoming: GrenadeState[], blasts: { x: number; z: number
     ring.position.set(g.tx, 0.04, g.tz);
     scene.add(mesh, ring);
     thrown.set(g.id, { state: g, mesh, ring });
+    audio.playAt("grenadeThrow", g.x, g.z);
   }
   for (const [id, cg] of thrown) {
     if (seen.has(id)) continue;
@@ -1915,6 +1947,7 @@ const blastFlashes: { ring: THREE.Mesh; born: number }[] = [];
 let blastUntil = 0;
 
 function blastAt(x: number, z: number): void {
+  audio.playAt("explosion", x, z);
   blastLight.position.set(x, 1.2, z);
   blastUntil = performance.now() + 140;
   for (let i = 0; i < 8; i++) {
@@ -2158,6 +2191,7 @@ function zoneAt(x: number, z: number): Zone {
 }
 function stepAudio(): void {
   audio.setZone(zoneAt(viewPoint.x, viewPoint.z));
+  audio.setEar(viewPoint.x, viewPoint.z);
 }
 
 let paintLevel = 1;
@@ -2332,6 +2366,7 @@ let dazeLevel = 0;
 let lastWoundsShown = -1;
 
 function onWounded(wounds: number, torn = false): void {
+  audio.play("playerHurt");
   hurtFlashEl.style.transition = "none";
   hurtFlashEl.style.opacity = "1";
   requestAnimationFrame(() => {
