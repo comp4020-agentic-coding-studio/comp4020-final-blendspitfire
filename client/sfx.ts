@@ -5,6 +5,44 @@
 
 type Out = AudioNode;
 
+/**
+ * Recorded takes (public/sfx, CC0, credited in public/sfx/CREDITS.md),
+ * fetched and decoded once per context. A sound with several takes plays
+ * one at random, a touch off in pitch, so a burst doesn't repeat itself.
+ */
+export const TAKES = {
+  rifleAR15: ["ar15_a", "ar15_b"],
+  rifleSKS: ["sks_a", "sks_b"],
+} as const;
+export type TakeName = keyof typeof TAKES;
+const decoded = new WeakMap<BaseAudioContext, Map<string, AudioBuffer>>();
+export async function loadTakes(ctx: BaseAudioContext): Promise<void> {
+  const have = decoded.get(ctx) ?? new Map<string, AudioBuffer>();
+  decoded.set(ctx, have);
+  const files = [...new Set(Object.values(TAKES).flat())];
+  await Promise.all(
+    files.map(async (f) => {
+      if (have.has(f)) return;
+      const res = await fetch(`sfx/${f}.wav`);
+      have.set(f, await ctx.decodeAudioData(await res.arrayBuffer()));
+    }),
+  );
+}
+/** play one of a sound's takes; false if they're not loaded yet */
+export function playTake(ctx: BaseAudioContext, out: Out, name: TakeName, level = 1): boolean {
+  const list = TAKES[name];
+  const buf = decoded.get(ctx)?.get(list[Math.floor(Math.random() * list.length)]);
+  if (!buf) return false;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.playbackRate.value = 0.96 + Math.random() * 0.08;
+  const g = ctx.createGain();
+  g.gain.value = level * (0.9 + Math.random() * 0.1);
+  src.connect(g).connect(out);
+  src.start();
+  return true;
+}
+
 const noiseCache = new WeakMap<BaseAudioContext, AudioBuffer>();
 /** a second of white noise, shared */
 function noise(ctx: BaseAudioContext): AudioBuffer {

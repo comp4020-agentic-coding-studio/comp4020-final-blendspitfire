@@ -10,7 +10,7 @@
 // Browsers won't play sound before a gesture, so nothing starts until the
 // first click or key; M mutes (remembered per browser).
 
-import { SFX, type SfxName } from "./sfx.ts";
+import { SFX, loadTakes, playTake, type SfxName, type TakeName } from "./sfx.ts";
 
 /** which room the listener is in: sets the bed and how much the reverb takes */
 export type Zone = "surface" | "tutorial" | "core" | "corridor" | "lab" | "hall" | "passage" | "car" | "shaft";
@@ -160,6 +160,7 @@ export class Audio {
     this.buildBelow(ctx, this.below);
     this.buildAbove(ctx, this.above);
     this.apply(true);
+    void loadTakes(ctx);
   }
 
   /**
@@ -254,6 +255,11 @@ export class Audio {
     const ctx = this.ctx;
     if (!ctx || !this.room) return;
     SFX[name](ctx, this.room, level);
+  }
+
+  /** a recorded take at the listener (the sound sheet) */
+  playTake(name: TakeName, level = 1): void {
+    if (this.ctx && this.room) playTake(this.ctx, this.room, name, level);
   }
 
   /** an effect at a spot in the world: quieter and duller with distance, panned to its side of the screen */

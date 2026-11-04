@@ -3,8 +3,14 @@
 // 2026-11-05). The ambience beds play on their own toggles.
 
 import { Audio, type Zone } from "./audio.ts";
-import { SFX, type SfxName } from "./sfx.ts";
+import { type SfxName, type TakeName } from "./sfx.ts";
+import { FIRE_COOLDOWN_MS } from "../shared/protocol.ts";
 
+/** recordings on trial, beside the synthesised sound they'd replace */
+const TAKE_ROWS: [TakeName, string][] = [
+  ["rifleAR15", "RECORDED: AR-15 / M4 (the game's gun is an M4A1), near, two takes"],
+  ["rifleSKS", "RECORDED: SKS, near, two takes: heavier, rounder"],
+];
 const GROUPS: [string, [SfxName, string][]][] = [
   ["gun", [
     ["rifle", "your rifle and a crewmate's: crack, body thump, short tail"],
@@ -63,6 +69,27 @@ bed.onclick = () => {
 };
 rooms.append(bed);
 sheet.append(rooms);
+const trial = document.createElement("h2");
+trial.textContent = "gun: recordings on trial (CC0, The Free Firearm Sound Library)";
+sheet.append(trial);
+for (const [name, what] of TAKE_ROWS) {
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML = `<b>${name}</b><span class="what">${what}</span>`;
+  const play = document.createElement("button");
+  play.textContent = "▶ play";
+  play.onclick = () => audio.playTake(name);
+  const burst = document.createElement("button");
+  burst.textContent = "▶ ×5";
+  // at the game's fire rate
+  burst.onclick = () => [0, 1, 2, 3, 4].forEach((i) => setTimeout(() => audio.playTake(name), i * FIRE_COOLDOWN_MS));
+  const both = document.createElement("span");
+  both.style.display = "flex";
+  both.style.gap = "6px";
+  both.append(play, burst);
+  row.append(both);
+  sheet.append(row);
+}
 for (const [title, list] of GROUPS) {
   const h = document.createElement("h2");
   h.textContent = title;
@@ -74,7 +101,16 @@ for (const [title, list] of GROUPS) {
     const play = document.createElement("button");
     play.textContent = "▶ play";
     play.onclick = () => audio.play(name);
-    row.append(play);
+    if (name === "rifle") {
+      const burst = document.createElement("button");
+      burst.textContent = "▶ ×5";
+      burst.onclick = () => [0, 1, 2, 3, 4].forEach((i) => setTimeout(() => audio.play(name), i * FIRE_COOLDOWN_MS));
+      const both = document.createElement("span");
+      both.style.display = "flex";
+      both.style.gap = "6px";
+      both.append(play, burst);
+      row.append(both);
+    } else row.append(play);
     sheet.append(row);
   }
 }
