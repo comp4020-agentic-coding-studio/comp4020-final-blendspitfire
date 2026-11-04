@@ -3,13 +3,15 @@
 // 2026-11-05). The ambience beds play on their own toggles.
 
 import { Audio, type Zone } from "./audio.ts";
-import { type SfxName, type TakeName } from "./sfx.ts";
+import { PUNCH, type PunchName, type SfxName, type TakeName } from "./sfx.ts";
 import { FIRE_COOLDOWN_MS } from "../shared/protocol.ts";
 
 /** recordings on trial, beside the synthesised sound they'd replace */
 const TAKE_ROWS: [TakeName, string][] = [
-  ["rifleAR15", "RECORDED: AR-15 / M4 (the game's gun is an M4A1), near, two takes"],
-  ["rifleSKS", "RECORDED: SKS, near, two takes: heavier, rounder"],
+  ["rifleAR15", "AR-15 / M4 (the game's gun is an M4A1): sharp, light"],
+  ["rifleAK", "AK-47: harder, more bark"],
+  ["rifleSKS", "SKS: rounder"],
+  ["rifleMosin", "Mosin Nagant: a big bolt-action round, the heaviest"],
 ];
 const GROUPS: [string, [SfxName, string][]][] = [
   ["gun", [
@@ -70,24 +72,28 @@ bed.onclick = () => {
 rooms.append(bed);
 sheet.append(rooms);
 const trial = document.createElement("h2");
-trial.textContent = "gun: recordings on trial (CC0, The Free Firearm Sound Library)";
+trial.textContent = "gun: recordings on trial (CC0, The Free Firearm Sound Library), each at three strengths";
 sheet.append(trial);
+const PUNCHES: PunchName[] = ["raw", "punchy", "heavy"];
 for (const [name, what] of TAKE_ROWS) {
   const row = document.createElement("div");
   row.className = "row";
   row.innerHTML = `<b>${name}</b><span class="what">${what}</span>`;
-  const play = document.createElement("button");
-  play.textContent = "▶ play";
-  play.onclick = () => audio.playTake(name);
-  const burst = document.createElement("button");
-  burst.textContent = "▶ ×5";
-  // at the game's fire rate
-  burst.onclick = () => [0, 1, 2, 3, 4].forEach((i) => setTimeout(() => audio.playTake(name), i * FIRE_COOLDOWN_MS));
-  const both = document.createElement("span");
-  both.style.display = "flex";
-  both.style.gap = "6px";
-  both.append(play, burst);
-  row.append(both);
+  const buttons = document.createElement("span");
+  buttons.style.display = "flex";
+  buttons.style.gap = "6px";
+  buttons.style.flexWrap = "wrap";
+  for (const p of PUNCHES) {
+    const one = document.createElement("button");
+    one.textContent = `${p}`;
+    one.onclick = () => audio.playTake(name, 1, PUNCH[p]);
+    const five = document.createElement("button");
+    five.textContent = "×5";
+    // at the game's fire rate
+    five.onclick = () => [0, 1, 2, 3, 4].forEach((i) => setTimeout(() => audio.playTake(name, 1, PUNCH[p]), i * FIRE_COOLDOWN_MS));
+    buttons.append(one, five);
+  }
+  row.append(buttons);
   sheet.append(row);
 }
 for (const [title, list] of GROUPS) {

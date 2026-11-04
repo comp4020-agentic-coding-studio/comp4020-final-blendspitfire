@@ -13,7 +13,48 @@ type Out = AudioNode;
 export const TAKES = {
   rifleAR15: ["ar15_a", "ar15_b"],
   rifleSKS: ["sks_a", "sks_b"],
+  rifleAK: ["ak_a", "ak_b"],
+  rifleMosin: ["mosin_a", "mosin_b"],
 } as const;
+
+/**
+ * How hard a take is pushed (user 2026-11-05: the plain recordings sounded
+ * wrong, try something that bangs more): a pre-gain into a soft clipper
+ * (squashes the crack, lifts the body), a low shelf for weight, and a
+ * synthesised sub thump and a short noise crack laid under and over it.
+ * "raw" is the take as recorded.
+ */
+export interface Punch {
+  /** into the clipper: 1 is clean, higher crushes more */
+  drive: number;
+  /** low shelf at 180 Hz, dB */
+  low: number;
+  /** the sub thump's level, 0 for none */
+  sub: number;
+  /** the noise crack's level, 0 for none */
+  crack: number;
+}
+export const PUNCH = {
+  raw: { drive: 1, low: 0, sub: 0, crack: 0 },
+  punchy: { drive: 3, low: 5, sub: 0.5, crack: 0.25 },
+  heavy: { drive: 6, low: 9, sub: 0.9, crack: 0.4 },
+} satisfies Record<string, Punch>;
+export type PunchName = keyof typeof PUNCH;
+
+const clipCurves = new Map<number, Float32Array<ArrayBuffer>>();
+/** tanh(drive x), normalised so full scale stays full scale */
+function clipCurve(drive: number): Float32Array<ArrayBuffer> {
+  let c = clipCurves.get(drive);
+  if (!c) {
+    c = new Float32Array(1024);
+    for (let i = 0; i < c.length; i++) {
+      const x = (i / (c.length - 1)) * 2 - 1;
+      c[i] = Math.tanh(drive * x) / Math.tanh(drive);
+    }
+    clipCurves.set(drive, c);
+  }
+  return c;
+}
 export type TakeName = keyof typeof TAKES;
 const decoded = new WeakMap<BaseAudioContext, Map<string, AudioBuffer>>();
 export async function loadTakes(ctx: BaseAudioContext): Promise<void> {
@@ -28,18 +69,34 @@ export async function loadTakes(ctx: BaseAudioContext): Promise<void> {
     }),
   );
 }
-/** play one of a sound's takes; false if they're not loaded yet */
-export function playTake(ctx: BaseAudioContext, out: Out, name: TakeName, level = 1): boolean {
+/** play one of a sound's takes, pushed as hard as `punch`; false if they're not loaded yet */
+export function playTake(ctx: BaseAudioContext, out: Out, name: TakeName, level = 1, punch: Punch = PUNCH.raw): boolean {
   const list = TAKES[name];
   const buf = decoded.get(ctx)?.get(list[Math.floor(Math.random() * list.length)]);
   if (!buf) return false;
+  const t = ctx.currentTime;
   const src = ctx.createBufferSource();
   src.buffer = buf;
   src.playbackRate.value = 0.96 + Math.random() * 0.08;
+  const v = level * (0.9 + Math.random() * 0.1);
+  // the chain: pre-gain -> soft clip -> low shelf -> level
+  const pre = ctx.createGain();
+  pre.gain.value = 1;
+  const clip = ctx.createWaveShaper();
+  clip.curve = clipCurve(punch.drive);
+  clip.oversample = "2x";
+  const shelf = ctx.createBiquadFilter();
+  shelf.type = "lowshelf";
+  shelf.frequency.value = 180;
+  shelf.gain.value = punch.low;
   const g = ctx.createGain();
-  g.gain.value = level * (0.9 + Math.random() * 0.1);
-  src.connect(g).connect(out);
-  src.start();
+  // louder going in comes out about as loud: the clipper evens it, this keeps the levels comparable
+  g.gain.value = v * (punch.drive > 1 ? 0.7 : 1);
+  src.connect(pre).connect(clip).connect(shelf).connect(g).connect(out);
+  src.start(t);
+  // the thump in the chest and the crack at the front
+  if (punch.sub) tone(ctx, out, t, { f: 120, fEnd: 38, gain: punch.sub * v, attack: 0.003, decay: 0.16 });
+  if (punch.crack) burst(ctx, out, t, { type: "highpass", f: 2500, gain: punch.crack * v, decay: 0.03 });
   return true;
 }
 
