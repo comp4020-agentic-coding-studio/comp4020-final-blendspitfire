@@ -143,12 +143,16 @@ export class Audio {
     this.apply(true);
   }
 
-  /** the plant: mains hum and its harmonics, slowly beating; air moving in ducts; a sub rumble */
+  /**
+   * The plant: mains hum and its harmonics, slowly beating, is the bed
+   * (user 2026-11-05: a small hum, mostly); air in the ducts only just
+   * under it. The harmonics carry it, since laptop speakers drop 50 Hz.
+   */
   private buildBelow(ctx: AudioContext, out: GainNode): void {
     const hum = ctx.createGain();
-    hum.gain.value = 0.05;
+    hum.gain.value = 0.035;
     hum.connect(out);
-    for (const [f, g] of [[50, 1], [100, 0.55], [150, 0.25], [200.6, 0.12]] as const) {
+    for (const [f, g] of [[50, 0.8], [100, 0.7], [150, 0.45], [200.6, 0.3], [300.4, 0.12]] as const) {
       const o = ctx.createOscillator();
       o.frequency.value = f;
       const og = ctx.createGain();
@@ -160,7 +164,7 @@ export class Audio {
     const lfo = ctx.createOscillator();
     lfo.frequency.value = 0.13;
     const lg = ctx.createGain();
-    lg.gain.value = 0.015;
+    lg.gain.value = 0.01;
     lfo.connect(lg).connect(hum.gain);
     lfo.start();
     // duct air: brown noise, band-passed low, breathing
@@ -172,13 +176,13 @@ export class Audio {
     bp.frequency.value = 320;
     bp.Q.value = 0.6;
     const ag = ctx.createGain();
-    ag.gain.value = 0.22;
+    ag.gain.value = 0.045;
     air.connect(bp).connect(ag).connect(out);
     air.start();
     const breathe = ctx.createOscillator();
     breathe.frequency.value = 0.07;
     const bg = ctx.createGain();
-    bg.gain.value = 0.08;
+    bg.gain.value = 0.015;
     breathe.connect(bg).connect(ag.gain);
     breathe.start();
   }
@@ -243,52 +247,88 @@ export class Audio {
     const t = ctx.currentTime;
     const r = ROOMS[this.zone];
     if (r.below > 0.3 && t > this.nextGroan) {
-      if (this.nextGroan) (Math.random() < 0.55 ? this.groan : this.knock).call(this, ctx, r.below);
-      this.nextGroan = t + 7 + Math.random() * 14;
+      // the first a few seconds after arriving, then every 8-20 s
+      if (this.nextGroan) (Math.random() < 0.5 ? this.groan : this.knock).call(this, ctx, r.below);
+      this.nextGroan = t + (this.nextGroan ? 8 + Math.random() * 12 : 3 + Math.random() * 3);
     }
+    if (r.below <= 0.3) this.nextGroan = 0;
     if (r.above > 0.5 && t > this.nextBird) {
       if (this.nextBird) this.bird(ctx);
       this.nextBird = t + 3 + Math.random() * 9;
     }
   }
 
-  /** the structure settling: a slow metal moan, a low sine bending down through a resonant filter */
+  /**
+   * The structure settling: a slow metal moan. A sawtooth bending down
+   * through two resonant bands (a big plate's ring, in the range speakers
+   * play), with a slight wobble, swelling in and dying away; panned off to
+   * one side so it's somewhere else.
+   */
   private groan(ctx: AudioContext, level: number): void {
     const t = ctx.currentTime;
     const len = 2.5 + Math.random() * 2;
+    const f0 = 90 + Math.random() * 70;
     const o = ctx.createOscillator();
     o.type = "sawtooth";
-    const f0 = 70 + Math.random() * 60;
     o.frequency.setValueAtTime(f0, t);
-    o.frequency.exponentialRampToValueAtTime(f0 * 0.7, t + len);
-    const bp = ctx.createBiquadFilter();
-    bp.type = "bandpass";
-    bp.Q.value = 12;
-    bp.frequency.setValueAtTime(f0 * 4, t);
-    bp.frequency.exponentialRampToValueAtTime(f0 * 2.5, t + len);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.05 * level, t + len * 0.4);
-    g.gain.linearRampToValueAtTime(0, t + len);
-    o.connect(bp).connect(g).connect(this.room!);
+    o.frequency.exponentialRampToValueAtTime(f0 * 0.72, t + len);
+    const wob = ctx.createOscillator();
+    wob.frequency.value = 5 + Math.random() * 3;
+    const wg = ctx.createGain();
+    wg.gain.value = f0 * 0.015;
+    wob.connect(wg).connect(o.frequency);
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.4);
+    pan.connect(this.room!);
+    for (const [k, q, v] of [[3.2, 14, 1], [6.1, 18, 0.6]] as const) {
+      const bp = ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.Q.value = q;
+      bp.frequency.setValueAtTime(f0 * k, t);
+      bp.frequency.exponentialRampToValueAtTime(f0 * k * 0.8, t + len);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.55 * v * level, t + len * 0.35);
+      g.gain.linearRampToValueAtTime(0, t + len);
+      o.connect(bp).connect(g).connect(pan);
+    }
     o.start(t);
+    wob.start(t);
     o.stop(t + len + 0.1);
+    wob.stop(t + len + 0.1);
   }
 
-  /** something far off in the pipes: two or three dull knocks */
+  /**
+   * Something far off in the pipes: two to four knocks, each a dull thud
+   * and the short ring of the pipe it hit (a tuned band on a noise click,
+   * up where speakers play), panned off to one side.
+   */
   private knock(ctx: AudioContext, level: number): void {
-    const n = 2 + Math.floor(Math.random() * 2);
+    const n = 2 + Math.floor(Math.random() * 3);
+    const ring = 420 + Math.random() * 380;
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = Math.random() * 1.6 - 0.8;
+    pan.connect(this.room!);
+    let t = ctx.currentTime;
     for (let i = 0; i < n; i++) {
-      const t = ctx.currentTime + i * (0.18 + Math.random() * 0.12);
+      t += i ? 0.16 + Math.random() * 0.14 : 0;
       const src = ctx.createBufferSource();
-      src.buffer = noiseBuffer(ctx, 0.15);
-      const lp = ctx.createBiquadFilter();
-      lp.type = "lowpass";
-      lp.frequency.value = 260;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.18 * level, t);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
-      src.connect(lp).connect(g).connect(this.room!);
+      src.buffer = noiseBuffer(ctx, 0.4);
+      const thud = ctx.createBiquadFilter();
+      thud.type = "lowpass";
+      thud.frequency.value = 400;
+      const tg = ctx.createGain();
+      tg.gain.setValueAtTime(0.5 * level, t);
+      tg.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+      src.connect(thud).connect(tg).connect(pan);
+      const bp = ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.value = ring * (1 + (Math.random() - 0.5) * 0.04);
+      bp.Q.value = 30;
+      const rg = ctx.createGain();
+      rg.gain.setValueAtTime(2.2 * level, t);
+      rg.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+      src.connect(bp).connect(rg).connect(pan);
       src.start(t);
     }
   }
