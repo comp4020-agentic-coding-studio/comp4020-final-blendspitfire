@@ -207,17 +207,25 @@ const materialFor: Record<Finish, THREE.Material> = {
  * checkerboard is left out, so what's behind shows through the gaps (the
  * freight shaft's south wall, from inside). Fixed to the render target's
  * pixels, which underground are the game's big pixels: a dither, not a
- * blend, so it stays one look with the rest.
+ * blend, so it stays one look with the rest. Between world x in
+ * SCREEN_DOOR_SOLID's two spans (min, max, min, max) it's drawn solid.
  */
+export const SCREEN_DOOR_SOLID = { value: new THREE.Vector4(1, 0, 1, 0) };
 const screenDoors = new Map<THREE.Material, THREE.Material>();
 export function screenDoor(m: THREE.Material): THREE.Material {
   let d = screenDoors.get(m);
   if (!d) {
     d = m.clone();
     d.onBeforeCompile = (shader) => {
-      shader.fragmentShader = shader.fragmentShader.replace(
+      shader.uniforms.sdSolid = SCREEN_DOOR_SOLID;
+      shader.vertexShader = "varying float vSdX;\n" + shader.vertexShader.replace(
+        "#include <project_vertex>",
+        "#include <project_vertex>\n  vSdX = (modelMatrix * vec4(transformed, 1.0)).x;",
+      );
+      shader.fragmentShader = "varying float vSdX;\nuniform vec4 sdSolid;\n" + shader.fragmentShader.replace(
         "void main() {",
-        "void main() {\n  if (mod(floor(gl_FragCoord.x) + floor(gl_FragCoord.y), 2.0) < 1.0) discard;",
+        "void main() {\n  bool solid = (vSdX >= sdSolid.x && vSdX <= sdSolid.y) || (vSdX >= sdSolid.z && vSdX <= sdSolid.w);\n" +
+          "  if (!solid && mod(floor(gl_FragCoord.x) + floor(gl_FragCoord.y), 2.0) < 1.0) discard;",
       );
     };
     d.customProgramCacheKey = () => "screen-door";

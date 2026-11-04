@@ -6,7 +6,7 @@ import { RISE_MS, blastDoorOpen, evacStage, type EvacState } from "../../shared/
 import { glow } from "../look.ts";
 import { lampFixture } from "../models/facility.ts";
 import { FACING_DIR, LAMPS, LAMP_SPECS } from "./dressing.ts";
-import { glowPart, merge, mesh, multiMesh, part, screenDoor } from "../models/kit.ts";
+import { SCREEN_DOOR_SOLID, glowPart, merge, mesh, multiMesh, part, screenDoor } from "../models/kit.ts";
 
 // The way out after a win (ADR-060), drawn: the blast door across the core's
 // north wall, the freight lift's platform behind it, and the shaft it rises
@@ -458,7 +458,7 @@ export class EvacView {
     const slab = southWall();
     this.shaft.add(slab);
     this.south.push(slab);
-    // seen from inside it's a screen door: the core shows through every other pixel
+    // seen from inside it's a screen door: the core shows through every other pixel (solid over the door, update())
     for (const o of this.south) {
       o.traverse((c) => {
         if (c instanceof THREE.Mesh) c.material = screenDoor(c.material as THREE.Material);
@@ -517,6 +517,12 @@ export class EvacView {
     // slide down a loop and jump back, so the same wall seems to stream past.
     const fallen = rising * RISE_SPEED;
     this.shaft.position.y = -Math.min(fallen, SINK);
+    // the south wall's dither: solid over each door half while the door's still in sight (user 2026-11-04), so a shut door seals the view
+    const doorSeen = fallen <= H;
+    const a = this.halves[0].position.x;
+    const b = this.halves[1].position.x;
+    if (doorSeen) SCREEN_DOOR_SOLID.value.set(a - this.half - WALL_T, a, b, b + this.half + WALL_T);
+    else SCREEN_DOOR_SOLID.value.set(1, 0, 1, 0);
     this.lamps.position.y = fallen > SINK ? -((fallen - SINK) % LOOP) : 0;
     // the climb's light on the deck: steady, with a slow unevenness as the walls go by
     const deckLight = rising ? 0.5 + 0.15 * Math.sin(rising * 2.3) : 0;
