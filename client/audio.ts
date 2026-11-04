@@ -10,7 +10,7 @@
 // Browsers won't play sound before a gesture, so nothing starts until the
 // first click or key; M mutes (remembered per browser).
 
-import { PUNCH, SFX, SPINUPS, loadTakes, playTake, powerOn, spinUp, type Punch, type SfxName, type SpinUpName, type TakeName } from "./sfx.ts";
+import { PUNCH, SFX, SPINUPS, loadTakes, playTake, powerOn, spinUp, takeBuffer, type Punch, type SfxName, type SpinUpName, type TakeName } from "./sfx.ts";
 
 /** which room the listener is in: sets the bed and how much the reverb takes */
 export type Zone = "surface" | "tutorial" | "core" | "corridor" | "lab" | "hall" | "passage" | "car" | "shaft";
@@ -41,6 +41,18 @@ const ROOMS: Record<Zone, Room> = {
 /** how fast a zone change crossfades, seconds (time constant) */
 const GLIDE = 0.6;
 const MUTE_KEY = "blendspitfire.muted";
+/**
+ * The reactor's generator: idle and running playback rates, and its
+ * level at the peak of the spin-up and as the hum after (agent's numbers,
+ * user 2026-11-05 asked for it to settle, not stop or stay loud); heard
+ * fully within REACTOR_NEAR of it, gone by REACTOR_FAR.
+ */
+const REACTOR_IDLE = 0.15;
+const REACTOR_RUN = 1.6;
+const REACTOR_PEAK = 0.9;
+const REACTOR_HUM = 0.22;
+const REACTOR_NEAR = 4;
+const REACTOR_FAR = 30;
 /** effects fade out with distance: full within NEAR, gone by FAR (world units) */
 const NEAR = 3;
 const FAR = 26;
@@ -258,6 +270,7 @@ export class Audio {
   setEar(x: number, z: number): void {
     this.ear.x = x;
     this.ear.z = z;
+    this.placeReactor();
   }
 
   /** an effect at the listener (your own gun, your wound, the UI) */
@@ -277,6 +290,95 @@ export class Audio {
   /** a recorded take at the listener (the sound sheet) */
   playTake(name: TakeName, level = 1, punch?: Punch): void {
     if (this.ctx && this.room) playTake(this.ctx, this.room, name, level, punch);
+  }
+
+  /**
+   * The reactor running (user 2026-11-05): the generator recording spins
+   * up on one smooth curve when it starts, then settles a little below its
+   * peak and stays on as a quiet hum at the reactor --- loud beside it,
+   * faint across the facility, gone on the surface --- until it stops,
+   * when it winds down. Joining while it's already on, it's just there.
+   */
+  setReactor(on: boolean, at: { x: number; z: number }): void {
+    this.reactorAt = at;
+    if (on === this.reactorOn) return;
+    this.reactorOn = on;
+    void this.loaded.then(() => this.driveReactor());
+  }
+
+  private reactorOn = false;
+  private reactorAt = { x: 0, z: 0 };
+  private reactorSrc?: AudioBufferSourceNode;
+  private reactorGain?: GainNode;
+  private reactorPan?: StereoPannerNode;
+  /** how much of it reaches the listener (distance), 0..1 */
+  private get reactorDistance(): GainNode {
+    if (!this.reactorDist) this.reactorDist = this.ctx!.createGain();
+    return this.reactorDist;
+  }
+  private reactorDist?: GainNode;
+  /** the first time it's on since the page opened: if it's already running, no spin-up */
+  private reactorSeen = false;
+
+  private driveReactor(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.room) return;
+    const buf = takeBuffer(ctx, "spinGenerator");
+    if (!buf) return;
+    const t = ctx.currentTime;
+    if (!this.reactorSrc) {
+      this.reactorPan = ctx.createStereoPanner();
+      this.reactorGain = ctx.createGain();
+      this.reactorGain.gain.value = 0;
+      this.reactorSrc = ctx.createBufferSource();
+      this.reactorSrc.buffer = buf;
+      this.reactorSrc.loop = true;
+      this.reactorSrc.playbackRate.value = REACTOR_IDLE;
+      this.reactorSrc.connect(this.reactorGain).connect(this.reactorPan).connect(this.reactorDistance).connect(this.room);
+      this.reactorSrc.start(t, Math.random() * buf.duration);
+    }
+    const rate = this.reactorSrc.playbackRate;
+    const level = this.reactorGain!.gain;
+    rate.cancelScheduledValues(t);
+    level.cancelScheduledValues(t);
+    rate.setValueAtTime(rate.value, t);
+    level.setValueAtTime(level.value, t);
+    if (this.reactorOn) {
+      const fresh = !this.reactorSeen && rate.value <= REACTOR_IDLE + 0.01;
+      this.reactorSeen = true;
+      if (fresh || rate.value < REACTOR_RUN * 0.6) {
+        // spin up: one curve from slow to past its running speed, then ease back down to it
+        const s = SPINUPS.generator;
+        const n = 64;
+        const curve = new Float32Array(n);
+        const from = Math.max(rate.value, s.from);
+        for (let i = 0; i < n; i++) curve[i] = from * Math.pow(s.to / from, Math.pow(i / (n - 1), 1.4));
+        rate.setValueCurveAtTime(curve, t, s.rise);
+        rate.setTargetAtTime(REACTOR_RUN, t + s.rise, 1.2);
+        level.linearRampToValueAtTime(REACTOR_PEAK, t + s.rise * 0.6);
+        level.setValueAtTime(REACTOR_PEAK, t + s.rise);
+        level.setTargetAtTime(REACTOR_HUM, t + s.rise, 1.5);
+      } else {
+        rate.setTargetAtTime(REACTOR_RUN, t, 0.8);
+        level.setTargetAtTime(REACTOR_HUM, t, 0.8);
+      }
+    } else {
+      // wind down: slower and slower, and quiet
+      rate.setTargetAtTime(REACTOR_IDLE, t, 1.8);
+      level.setTargetAtTime(0, t, 1.6);
+    }
+  }
+
+  /** each frame: the reactor's hum heard from where the listener is */
+  private placeReactor(): void {
+    if (!this.reactorPan || !this.ctx) return;
+    const dx = this.reactorAt.x - this.ear.x;
+    const d = Math.hypot(dx, this.reactorAt.z - this.ear.z);
+    // nothing of it reaches the surface, the car or the tutorial
+    const below = ROOMS[this.zone].events ? 1 : 0;
+    const k = below * (d <= REACTOR_NEAR ? 1 : Math.max(0, 1 - (d - REACTOR_NEAR) / (REACTOR_FAR - REACTOR_NEAR)));
+    this.reactorPan.pan.setTargetAtTime(Math.max(-0.7, Math.min(0.7, dx / 14)), this.ctx.currentTime, 0.1);
+    this.reactorDistance.gain.setTargetAtTime(k * k, this.ctx.currentTime, 0.15);
   }
 
   /** the reactor spinning up (one of the variants), at the listener; waits for the recordings */

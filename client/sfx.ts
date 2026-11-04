@@ -77,6 +77,11 @@ export async function loadTakes(ctx: BaseAudioContext): Promise<void> {
     }),
   );
 }
+/** a take's (first) buffer, once loaded */
+export function takeBuffer(ctx: BaseAudioContext, name: TakeName): AudioBuffer | undefined {
+  return decoded.get(ctx)?.get(TAKES[name][0]);
+}
+
 /** play one of a sound's takes, pushed as hard as `punch`; false if they're not loaded yet */
 export function playTake(ctx: BaseAudioContext, out: Out, name: TakeName, level = 1, punch: Punch = PUNCH.raw, rate = 1): boolean {
   const list = TAKES[name];
