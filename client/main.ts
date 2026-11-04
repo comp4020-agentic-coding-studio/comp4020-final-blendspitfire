@@ -2158,7 +2158,6 @@ function zoneAt(x: number, z: number): Zone {
 }
 function stepAudio(): void {
   audio.setZone(zoneAt(viewPoint.x, viewPoint.z));
-  audio.step();
 }
 
 let paintLevel = 1;
