@@ -7,6 +7,7 @@ import { Tutorial } from "./tutorial.ts";
 import {
   HELI_RIDE_MS,
   LESSONS,
+  TUT_ROOMS,
   TUT_SPAWN,
   heliDestination,
   inTutorial,
@@ -132,6 +133,8 @@ interface Connection {
   flyingUntil: number;
   /** joined while an attempt was on: out and watching until it ends (not a death) */
   late: boolean;
+  /** frag grenades on their belt (GRENADE_CARRY at most); gone when they fall or the attempt ends */
+  grenades: number;
   flyTo?: { x: number; z: number; to: string };
 }
 
@@ -156,6 +159,10 @@ const DEV_SPAWN = devPoint(process.env.DEV_SPAWN);
 const DEV_JOIN = devPoint(process.env.DEV_JOIN);
 /** DEV_ARMED=1: everyone joins holding a rifle (local testing only, like the rest) */
 const DEV_ARMED = process.env.DEV_ARMED === "1";
+/** DEV_TUT_STAGE=n: a newcomer starts at lesson n of the tutorial (local testing only) */
+const DEV_TUT_STAGE = Number(process.env.DEV_TUT_STAGE) || 0;
+/** DEV_FUNDS=N: every new site starts with N quota, to try the shop (local testing only) */
+const DEV_FUNDS = Number(process.env.DEV_FUNDS) || 0;
 /** DEV_TUTORIAL=1: everyone joins in the tutorial, as a newcomer would (local testing only) */
 const TUT_ALWAYS = process.env.DEV_TUTORIAL === "1";
 
@@ -298,7 +305,7 @@ export function createRoom(id: string, hooks: RoomHooks): Room {
   );
 
   /** the crew's shared quota (see SUPPLY_TERMINAL in shared/protocol.ts) */
-  let funds = 0;
+  let funds = DEV_FUNDS;
 
   // Blood and bodies (GoreMark in shared/protocol.ts): left on the facility
   // floor until the run is won. Only the new ones go out with each broadcast;
@@ -485,6 +492,7 @@ export function createRoom(id: string, hooks: RoomHooks): Room {
 
   function reviveAt(conn: Connection): void {
     conn.late = false;
+    conn.grenades = 0;
     respawn(conn.player);
     conn.wounds = 0;
     conn.bandaged = 0;
@@ -576,6 +584,11 @@ export function createRoom(id: string, hooks: RoomHooks): Room {
       if (c) act(c.player, what);
     },
     throwing: (id) => [...grenades.values()].some((g) => g.ownerId === id),
+    grenades: (id) => connections.get(id)?.grenades ?? 0,
+    arm: (id, count) => {
+      const c = connections.get(id);
+      if (c) c.grenades = count;
+    },
   });
 
   /** what stops this player: the world, the lift's doors, and the tutorial doors still shut to them */
@@ -619,6 +632,8 @@ export function createRoom(id: string, hooks: RoomHooks): Room {
         conn.player.z = TUT_SPAWN.z;
       } else {
         tutorial.leave(conn.player.id);
+        // a practice grenade doesn't come out of the shed with them
+        conn.grenades = 0;
         conn.player.x = to.x;
         conn.player.z = to.z;
       }
@@ -741,27 +756,34 @@ export function createRoom(id: string, hooks: RoomHooks): Room {
         dz = Math.cos(conn.player.rotation);
       }
       spawnProjectile(conn.player, dx, dz, now, MUZZLE_OFFSET, obstaclesOf(conn));
-    } else if (item.kind === "grenade") {
-      if (!Number.isFinite(x) || !Number.isFinite(z)) return;
-      if (noFireAt(conn.player.x, conn.player.z)) {
-        refuse(conn, "fire", "refused: throwing in the lift");
-        return;
-      }
-      const land = grenadeLanding(conn.player, x, z, obstaclesOf(conn));
-      items.delete(item.id);
-      grenades.set(item.id, {
-        id: item.id,
-        ownerId: conn.player.id,
-        x: conn.player.x,
-        z: conn.player.z,
-        tx: land.x,
-        tz: land.z,
-        thrownAt: now,
-        blowsAt: now + GRENADE_FLIGHT_MS + GRENADE_FUSE_MS,
-      });
-      act(conn.player, `threw grenade ${shortId(item.id)} at ${pos(land.x, land.z)}`);
-      markWorldDirty();
     }
+  }
+
+  /** G: one off the belt, at (x, z), whatever's in their hands */
+  function throwGrenade(conn: Connection, x: number, z: number, now: number): void {
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return;
+    if (conn.grenades <= 0) {
+      refuse(conn, "throw", "refused: throw (no grenades)");
+      return;
+    }
+    if (noFireAt(conn.player.x, conn.player.z)) {
+      refuse(conn, "throw", "refused: throwing in the lift");
+      return;
+    }
+    const land = grenadeLanding(conn.player, x, z, obstaclesOf(conn));
+    conn.grenades -= 1;
+    const id = randomUUID();
+    grenades.set(id, {
+      id,
+      ownerId: conn.player.id,
+      x: conn.player.x,
+      z: conn.player.z,
+      tx: land.x,
+      tz: land.z,
+      thrownAt: now,
+      blowsAt: now + GRENADE_FLIGHT_MS + GRENADE_FUSE_MS,
+    });
+    act(conn.player, `threw grenade ${shortId(id)} at ${pos(land.x, land.z)} (${conn.grenades} left)`);
   }
 
   /**
@@ -800,6 +822,7 @@ export function createRoom(id: string, hooks: RoomHooks): Room {
       name: codename(conn.player),
       ...tutWire(conn),
       flyingUntil: conn.flyingUntil || undefined,
+      grenades: conn.grenades || undefined,
     };
   }
 
@@ -835,9 +858,15 @@ export function createRoom(id: string, hooks: RoomHooks): Room {
     const player = loadOrCreatePlayer(playerId);
     respawn(player, true);
     if (newcomer && !DEV_SPAWN && !DEV_JOIN) {
-      tutorial.enrol(playerId);
+      const t = tutorial.enrol(playerId);
       player.x = TUT_SPAWN.x;
       player.z = TUT_SPAWN.z;
+      // DEV_TUT_STAGE=n: start at that lesson, in its room (local testing only)
+      if (DEV_TUT_STAGE) {
+        t.stage = DEV_TUT_STAGE;
+        player.x = (TUT_ROOMS[t.stage].minX + TUT_ROOMS[t.stage].maxX) / 2;
+        player.z = TUT_ROOMS[t.stage].minZ + 1.5;
+      }
     }
     // (not counting this same player's older tab, which is about to be replaced)
     const taken = [...connections.values()].filter((c) => c.player.id !== playerId).map((c) => c.player.color);
@@ -872,6 +901,7 @@ export function createRoom(id: string, hooks: RoomHooks): Room {
       kills: 0,
       flyingUntil: 0,
       late: false,
+      grenades: 0,
     };
     // the same browser in a second tab (one cookie, one person): the newer
     // tab takes over and the older is closed, never two bodies for one id
@@ -1077,7 +1107,7 @@ export function createRoom(id: string, hooks: RoomHooks): Room {
         // opens its placement panel client-side; buildTurret is what pays for
         // it, atomically with a spot passing (see below)
         if (what !== "heal" && what !== "grenade") return;
-        const verdict = buyVerdict(what, conn.player, { wounds: conn.wounds, holding: heldItem(playerId) !== undefined }, funds, 0);
+        const verdict = buyVerdict(what, conn.player, { wounds: conn.wounds, grenades: conn.grenades }, funds, 0);
         if (verdict !== "ok") {
           refuse(conn, "buy", `refused: ${what} (${verdict})`);
           return;
@@ -1085,11 +1115,9 @@ export function createRoom(id: string, hooks: RoomHooks): Room {
         const cost = SHOP[what].cost;
         funds -= cost;
         tally(conn.player.id, { spent: cost });
-          if (what === "grenade") {
-          const id = randomUUID();
-          items.set(id, { id, kind: "grenade", x: conn.player.x, z: conn.player.z, heldBy: playerId });
-          act(conn.player, `bought grenade ${shortId(id)} for ${cost} quota (${funds} left)`);
-          markWorldDirty();
+        if (what === "grenade") {
+          conn.grenades += 1;
+          act(conn.player, `bought a grenade (${conn.grenades} on the belt) for ${cost} quota (${funds} left)`);
           return;
         }
         // a dressing, not a cure: whatever they had comes back with the next hit
@@ -1153,6 +1181,11 @@ export function createRoom(id: string, hooks: RoomHooks): Room {
         item.heldBy = playerId;
         act(conn.player, `picked up ${item.kind} ${shortId(item.id)} at ${pos(item.x, item.z)}`);
         markWorldDirty();
+        return;
+      }
+
+      if (msg.type === "throw") {
+        throwGrenade(conn, msg.x, msg.z, now);
         return;
       }
 
@@ -1399,6 +1432,7 @@ export function createRoom(id: string, hooks: RoomHooks): Room {
     conn.deadUntil = levelOf(conn.player.z) === "bottom" ? Infinity : now + DEATH_DURATION_MS;
     conn.dirty = true;
     dropHeld(conn.player);
+    conn.grenades = 0;
     leaveGore({ kind: "blood", who: "player", x: conn.player.x, z: conn.player.z, size: 0.75 });
     leaveGore({ kind: "corpse", who: "player", x: conn.player.x, z: conn.player.z, r: conn.player.rotation, color: conn.player.color });
   }

@@ -128,6 +128,7 @@ import {
   GRENADE_RADIUS,
   GRENADE_FLIGHT_MS,
   grenadeLanding,
+  GRENADE_CARRY,
   type GrenadeState,
   atTerminal,
   buyVerdict,
@@ -414,6 +415,8 @@ let watchingId: string | undefined;
 let myWounds = 0;
 /** patched up with this many wounds: the next hit brings them all back */
 let myBandaged = 0;
+/** grenades on our belt (G throws one) */
+let myGrenades = 0;
 /** the warp count we've caught up with: moves are stamped with it (see PlayerState.warp) */
 let myWarp = 0;
 /** when we last appeared somewhere new (joined, respawned, rode the lift): markers shout for a few seconds after */
@@ -628,12 +631,6 @@ function makeItem(state: ItemState): ClientItem {
     lying.rotation.y = restingAngle(state.id);
     held = itemModel("heldGun", heldGun);
     held.position.set(HELD_GUN_OFFSET.x, HELD_GUN_OFFSET.y, HELD_GUN_OFFSET.z);
-  } else if (state.kind === "grenade") {
-    lying = itemModel("grenade", grenade);
-    shape = lying.children[0] as THREE.Mesh;
-    // in the right hand, at the hip
-    held = itemModel("grenade", grenade);
-    held.position.set(0.32, 0.8, 0.2);
   } else {
     // a turret: the only blocking kind
     lying = itemModel("turret", sentryTurret);
@@ -838,8 +835,8 @@ function stepItemVisuals(time: number): void {
   }
 
   const held = myHeldItem();
-  // holding a grenade: a ring on the floor where it'll land, the blast's size
-  const showThrow = !dead && !!localMesh && held?.state.kind === "grenade";
+  // a grenade on the belt: a ring on the floor where G would land it, the blast's size
+  const showThrow = !dead && !!localMesh && myGrenades > 0 && !placingTurret && !noFireAt(localMesh.position.x, localMesh.position.z);
   throwRing.visible = showThrow;
   if (showThrow) {
     const land = grenadeLanding(localMesh!.position, aimPoint.x, aimPoint.z, obstacles);
@@ -969,13 +966,13 @@ function freightNow(): FreightVerdict {
 }
 
 function shopVerdict(item: ShopItem): BuyVerdict {
-  return buyVerdict(item, localMesh!.position, { wounds: myWounds, holding: !!myHeldItem() }, funds, turretCount());
+  return buyVerdict(item, localMesh!.position, { wounds: myWounds, grenades: myGrenades }, funds, turretCount());
 }
 
 const BUY_REASONS: Record<BuyVerdict, string> = {
   ok: "",
   "too far": "move closer",
-  "hands full": "hands full: put it down (Q)",
+  "belt full": `you carry ${GRENADE_CARRY} at most`,
   "can't afford": "not enough quota",
   "sold out": "corp limit reached",
   unhurt: "not hurt",
@@ -1008,7 +1005,7 @@ function renderShop(): void {
     rows +
     '<div class="legend">turret: pick its spot, pay when it\'s built · scrap with E</div>' +
     '<div class="legend">field dressing: patches every wound now; the next hit tears it open</div>' +
-    '<div class="legend">grenade: one throw, blasts a crowd · kills a spitter outright</div>' +
+    `<div class="legend">grenade: on your belt (${GRENADE_CARRY} at most), G throws · blasts a crowd</div>` +
     '<div class="legend">1 / 2 / 3 to order · E / Esc to close</div></div>';
   if (html === lastShopHtml) return;
   lastShopHtml = html;
@@ -1259,11 +1256,8 @@ function tutorialMarkers(p: THREE.Vector3, from: { x: number; z: number }): Mark
     });
   } else if (lesson === "drop") mark("t-goal", DROP_PAD.x, DROP_PAD.z, held ? "put it down here · Q" : "rifle · E, then Q on the mat", 0.6);
   else if (lesson === "grenade") {
-    const g = mine("grenade");
-    if (held?.state.kind === "grenade") {
-      const c = TUT_CLUSTER[0];
-      mark("t-goal", c.x, c.z, "throw it here · click", 1.8);
-    } else if (g) mark("t-goal", g.state.x, g.state.z, "grenade · E to pick up", 0.8);
+    const c = TUT_CLUSTER[0];
+    if (myGrenades > 0) mark("t-goal", c.x, c.z, "aim here · G to throw", 1.8);
   } else if (lesson === "fly") mark("t-goal", HELIPADS.tutorial.x, HELIPADS.tutorial.z, "helicopter · step in, E", 2.4);
   return out;
 }
@@ -1323,6 +1317,7 @@ function renderControls(): void {
     const parts = [held.state.kind === "gun" ? "click / Space, hold: fire" : `click / Space: ${info.primaryLabel}`, "Q: drop"];
     text = `WASD move · ${parts.join(" · ")}`;
   }
+  if (!myOut && myGrenades > 0) text += ` · G: grenade ×${myGrenades}`;
   text += audio.isMuted ? " · M: sound off" : " · M: mute";
   if (text !== lastControlsText) {
     controlsEl.textContent = text;
@@ -1439,6 +1434,8 @@ const net = connect({
         else if (wounds < myWounds && (p.bandaged ?? 0) > 0) showBanner("patched up — the next hit tears it open");
         myWounds = wounds;
         myBandaged = p.bandaged ?? 0;
+        if ((p.grenades ?? 0) > myGrenades) audio.play("pickup");
+        myGrenades = p.grenades ?? 0;
         myTut = p.tut;
         myTutHits = p.tutHits;
         myTutBlasted = !!p.tutBlasted;
@@ -1627,13 +1624,21 @@ function primary(): void {
   if (held.state.kind === "gun") {
     triggerHeld = true;
     fireGun(true);
-  } else if (held.state.kind === "grenade") {
-    if (noFireAt(localMesh.position.x, localMesh.position.z)) {
-      flash("no throwing in the lift");
-      return;
-    }
-    net.primary(aimPoint.x, aimPoint.z);
   }
+}
+
+/** G: a grenade off the belt at the cursor, whatever's in hand */
+function throwGrenade(): void {
+  if (!localMesh || isDead() || placingTurret) return;
+  if (myGrenades <= 0) {
+    flash("no grenades: buy them at the comms desk");
+    return;
+  }
+  if (noFireAt(localMesh.position.x, localMesh.position.z)) {
+    flash("no throwing in the lift");
+    return;
+  }
+  net.throwGrenade(aimPoint.x, aimPoint.z);
 }
 
 // The rifle is automatic: a click fires one shot, and holding the button
@@ -1718,6 +1723,7 @@ window.addEventListener("keydown", (e) => {
   else if (key === "q") drop();
   else if (key === "e") useTarget(eTarget());
   else if (key === "x") toggleReady();
+  else if (key === "g") throwGrenade();
   else if (key === "m") audio.toggleMute();
   else if (key === "escape" && boardOpen) toggleBoard();
   else if (key === "escape" && shopOpen) toggleShop(false);
@@ -1779,7 +1785,7 @@ const BREAK_PROMPTS_MS = 5000;
 const breakPrompts = (): boolean => defenceState.phase === "break" && performance.now() - breakSince >= BREAK_PROMPTS_MS;
 /** the crew's shared quota, as the server last said */
 let funds = 0;
-const ITEM_NAMES: Record<ItemKind, string> = { gun: "rifle", turret: "turret", grenade: "grenade" };
+const ITEM_NAMES: Record<ItemKind, string> = { gun: "rifle", turret: "turret" };
 const enemyBarGeometry = new THREE.PlaneGeometry(0.7, 0.07).rotateX(-Math.PI / 2);
 const ENEMY_BUILDERS: Record<EnemyKind, () => THREE.Group> = { crawler, spitter, brute, runner };
 /**

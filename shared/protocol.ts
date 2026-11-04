@@ -40,6 +40,8 @@ export interface PlayerState {
   tutBlasted?: true;
   /** wire-only: riding a helicopter: server time the ride ends (they're moved then) */
   flyingUntil?: number;
+  /** wire-only: frag grenades on their belt, 0..GRENADE_CARRY (absent = none); G throws one */
+  grenades?: number;
 }
 
 /** the facility's objective: for now just whether someone has switched the reactor on */
@@ -315,7 +317,15 @@ export type ClientMessage =
   | ScrapMessage
   | NameMessage
   | FreightMessage
-  | LeaveMessage;
+  | LeaveMessage
+  | ThrowMessage;
+
+/** G: throw a grenade from the belt at (x, z) (pulled in to range: grenadeLanding) */
+export interface ThrowMessage {
+  type: "throw";
+  x: number;
+  z: number;
+}
 
 /** Esc -> leave site: back to the title screen (below, mid-attempt, that's being out) */
 export interface LeaveMessage {
@@ -363,7 +373,7 @@ export function cleanName(raw: unknown): string | undefined {
  * pickup/drop rules, differing only in what its primary action does. The "equipment slot" is just `heldBy` --- a
  * player holds at most one item, and nothing on screen shows a slot.
  */
-export type ItemKind = "gun" | "turret" | "grenade";
+export type ItemKind = "gun" | "turret";
 
 /** kinds that stand on a 1×1 tile once put down: they block players and shots (enemies walk past them) */
 export const BLOCKING_KINDS: ReadonlySet<ItemKind> = new Set<ItemKind>(["turret"]);
@@ -390,10 +400,10 @@ export interface ItemKindInfo {
 export const ITEM_KINDS: Record<ItemKind, ItemKindInfo> = {
   gun: { primaryLabel: "fire" },
   turret: { primaryLabel: "place" },
-  grenade: { primaryLabel: "throw" },
 };
 
-// The grenade: one use, bought at the terminal. Thrown at the cursor
+// The grenade: one use, bought at the terminal and carried on the belt (up
+// to GRENADE_CARRY, not in the hands: user 2026-11-05), G throws one at the cursor
 // (clamped to GRENADE_RANGE), it flies GRENADE_FLIGHT_MS, sits on the
 // floor for GRENADE_FUSE_MS so everyone can see where it'll go, then
 // blasts everything within GRENADE_RADIUS for GRENADE_DAMAGE --- enough to
@@ -404,7 +414,9 @@ export const GRENADE_FLIGHT_MS = 500;
 export const GRENADE_FUSE_MS = 700;
 export const GRENADE_RADIUS = 2.6;
 export const GRENADE_DAMAGE = 3;
-export const GRENADE_COST = 15;
+/** agent's price (user agreed 2026-11-05; was 15 when it took the hands) */
+export const GRENADE_COST = 8;
+export const GRENADE_CARRY = 2;
 
 /** a grenade thrown and not yet gone off: drawn arcing to (tx, tz), then sitting there until it blows */
 export interface GrenadeState {
@@ -1070,7 +1082,7 @@ export const STATIONS: { kind: ItemKind; x: number; z: number }[] = [
   { kind: "gun", x: -7, z: SPAWN_Z - 1 },
 ];
 export const STATION_RESTOCK_MS = 3000;
-export const ITEM_CAPS: Record<ItemKind, number> = { gun: 12, turret: 8, grenade: 20 };
+export const ITEM_CAPS: Record<ItemKind, number> = { gun: 12, turret: 8 };
 
 // The quota: a shared supply credit the corp issues the crew for every wave
 // they clear (faster = more), spent at the supply terminal on kit. Shared,
@@ -1093,7 +1105,7 @@ export const PAR_MS_PER_ENEMY = 2500;
 export const waveReward = (size: number, clearMs: number): number =>
   WAVE_BASE_REWARD + Math.max(0, Math.round((size * PAR_MS_PER_ENEMY - clearMs) / 1000));
 
-export type BuyVerdict = "ok" | "too far" | "hands full" | "can't afford" | "sold out" | "unhurt";
+export type BuyVerdict = "ok" | "too far" | "belt full" | "can't afford" | "sold out" | "unhurt";
 
 export function atTerminal(player: { x: number; z: number }): boolean {
   const dx = Math.max(0, Math.abs(player.x - SUPPLY_TERMINAL.x) - SUPPLY_TERMINAL.halfX);
@@ -1105,12 +1117,12 @@ export function atTerminal(player: { x: number; z: number }): boolean {
  * Shared, so the terminal's panel says exactly what the server would
  * decide. A turret isn't handed over here --- ordering one just clears the
  * way to place it (see buildTurretVerdict); a dressing is used on the spot;
- * a grenade goes into your hands, so they have to be empty.
+ * a grenade goes on the belt, which holds GRENADE_CARRY.
  */
 export function buyVerdict(
   item: ShopItem,
   player: { x: number; z: number },
-  buyer: { wounds: number; holding?: boolean },
+  buyer: { wounds: number; grenades?: number },
   funds: number,
   turretsInWorld: number,
 ): BuyVerdict {
@@ -1118,7 +1130,7 @@ export function buyVerdict(
   if (item === "turret") {
     if (turretsInWorld >= ITEM_CAPS.turret) return "sold out";
   } else if (item === "grenade") {
-    if (buyer.holding) return "hands full";
+    if ((buyer.grenades ?? 0) >= GRENADE_CARRY) return "belt full";
   } else if (buyer.wounds === 0) return "unhurt";
   if (funds < SHOP[item].cost) return "can't afford";
   return "ok";

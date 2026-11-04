@@ -5,6 +5,7 @@ import {
   SCORE,
   BUY_RANGE,
   GRENADE_COST,
+  GRENADE_CARRY,
   GRENADE_RANGE,
   grenadeLanding,
   HEAL_COST,
@@ -55,9 +56,10 @@ describe("ordering at the supply terminal", () => {
 });
 
 describe("grenades", () => {
-  it("are handed over, so need empty hands", () => {
+  it("go on the belt, two at most, whatever is in your hands", () => {
     expect(buyVerdict("grenade", atTerminal, empty, GRENADE_COST, 0)).toBe("ok");
-    expect(buyVerdict("grenade", atTerminal, { wounds: 0, holding: true }, GRENADE_COST, 0)).toBe("hands full");
+    expect(buyVerdict("grenade", atTerminal, { wounds: 0, grenades: GRENADE_CARRY - 1 }, GRENADE_COST, 0)).toBe("ok");
+    expect(buyVerdict("grenade", atTerminal, { wounds: 0, grenades: GRENADE_CARRY }, GRENADE_COST, 0)).toBe("belt full");
     expect(buyVerdict("grenade", atTerminal, empty, GRENADE_COST - 1, 0)).toBe("can't afford");
   });
 

@@ -108,8 +108,7 @@ export const TARGET_HITS = 3;
 export const TARGET_RADIUS = 0.45;
 /** drop: put the rifle down on this rack mat */
 export const DROP_PAD = { x: TUT_DX - 2.2, z: centre(3).z, r: 1 };
-/** grenade: one lies here; a huddle of dummies stands by the far wall */
-export const TUT_GRENADE_AT = { x: TUT_DX + 2.4, z: TUT_ROOMS[4].minZ + 1.4 };
+/** grenade: one's put on their belt in this room; a huddle of dummies stands by the far wall */
 export const TUT_CLUSTER: { x: number; z: number }[] = [
   [0, 0],
   [-0.7, 0.3],
@@ -180,6 +179,6 @@ export const LESSON_TEXT: Record<Lesson, { title: string; how: string }> = {
   pickup: { title: "pick up", how: "E by the rifle" },
   shoot: { title: "shoot", how: "aim · click or space · drop all three" },
   drop: { title: "put down", how: "on the ring · Q" },
-  grenade: { title: "grenade", how: "E, then click the huddle" },
+  grenade: { title: "grenade", how: "aim at the huddle · G" },
   fly: { title: "fly out", how: "step in · E" },
 };

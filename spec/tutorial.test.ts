@@ -58,14 +58,15 @@ describe("tutorial layout", () => {
 describe("tutorial lessons", () => {
   function setup() {
     const items = new Map<string, ItemState>();
-    const t = new Tutorial({ items, changed: () => {}, log: () => {}, throwing: () => false });
+    const belt = { n: 0 };
+    const t = new Tutorial({ items, changed: () => {}, log: () => {}, throwing: () => false, grenades: () => belt.n, arm: (_id, n) => (belt.n = n) });
     const trainee = t.enrol("p");
     const mine = (kind: string) => [...items.values()].find((i) => i.owner === "p" && i.kind === kind);
-    return { items, t, trainee, mine };
+    return { items, t, trainee, mine, belt };
   }
 
   it("runs move -> pickup -> shoot -> drop -> grenade, each needing its own deed", () => {
-    const { t, trainee, mine, items } = setup();
+    const { t, trainee, mine, items, belt } = setup();
     t.step("p", TUT_SPAWN, undefined);
     expect(trainee.stage).toBe(0);
     t.step("p", MOVE_PAD, undefined);
@@ -101,10 +102,11 @@ describe("tutorial lessons", () => {
     expect(trainee.stage).toBe(4);
     expect(mine("gun")).toBeUndefined();
 
-    // a grenade waits in its room; a blast that misses the huddle doesn't count
+    // a grenade's put on their belt in its room; a blast that misses the huddle doesn't count
     const room4 = { x: TUT_ROOMS[4].maxX - 1, z: TUT_ROOMS[4].minZ + 1 };
     t.step("p", room4, undefined);
-    expect(mine("grenade")).toBeDefined();
+    expect(belt.n).toBe(1);
+    belt.n = 0;
     t.blast("p", TUT_CLUSTER[0].x + 6, TUT_CLUSTER[0].z, 2.6);
     t.step("p", room4, undefined);
     expect(trainee.stage).toBe(4);

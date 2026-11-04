@@ -18,6 +18,8 @@ export interface Net {
   sendMove: (m: Omit<MoveMessage, "type">) => void;
   pickup: (itemId: string) => void;
   primary: (x: number, z: number) => void;
+  /** G: a grenade off the belt at (x, z) */
+  throwGrenade: (x: number, z: number) => void;
   drop: () => void;
   activate: () => void;
   ready: () => void;
@@ -121,6 +123,9 @@ export function connect(handlers: NetHandlers): Net {
     },
     primary(x, z) {
       send({ type: "primary", x, z });
+    },
+    throwGrenade(x, z) {
+      send({ type: "throw", x, z });
     },
     drop() {
       send({ type: "drop" });
