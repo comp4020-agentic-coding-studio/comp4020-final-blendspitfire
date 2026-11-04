@@ -15,7 +15,7 @@ const TAKE_ROWS: [TakeName, string][] = [
 ];
 const GROUPS: [string, [SfxName, string][]][] = [
   ["gun", [
-    ["rifle", "your rifle and a crewmate's: crack, body thump, short tail"],
+    ["rifle", "IN GAME: your rifle and a crewmate's = the SKS recording, heavy (user 2026-11-05)"],
     ["ricochet", "a round off a wall: tick, sometimes a zing"],
     ["fleshHit", "a round into a crawler"],
     ["dryClick", "won't fire (in the lift) / a refused action"],

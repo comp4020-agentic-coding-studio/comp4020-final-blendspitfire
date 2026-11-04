@@ -10,7 +10,7 @@
 // Browsers won't play sound before a gesture, so nothing starts until the
 // first click or key; M mutes (remembered per browser).
 
-import { SFX, loadTakes, playTake, type Punch, type SfxName, type TakeName } from "./sfx.ts";
+import { PUNCH, SFX, loadTakes, playTake, type Punch, type SfxName, type TakeName } from "./sfx.ts";
 
 /** which room the listener is in: sets the bed and how much the reverb takes */
 export type Zone = "surface" | "tutorial" | "core" | "corridor" | "lab" | "hall" | "passage" | "car" | "shaft";
@@ -44,6 +44,14 @@ const MUTE_KEY = "blendspitfire.muted";
 /** effects fade out with distance: full within NEAR, gone by FAR (world units) */
 const NEAR = 3;
 const FAR = 26;
+/**
+ * Effects that are a recording now, not the synthesis (user 2026-11-05:
+ * the rifle is the SKS, pushed heavy). The synthesised one stands in
+ * until the take has loaded.
+ */
+const RECORDED: Partial<Record<SfxName, { take: TakeName; punch: Punch }>> = {
+  rifle: { take: "rifleSKS", punch: PUNCH.heavy },
+};
 
 function noiseBuffer(ctx: AudioContext, seconds: number, brown = false): AudioBuffer {
   const b = ctx.createBuffer(1, Math.round(ctx.sampleRate * seconds), ctx.sampleRate);
@@ -254,7 +262,14 @@ export class Audio {
   play(name: SfxName, level = 1): void {
     const ctx = this.ctx;
     if (!ctx || !this.room) return;
-    SFX[name](ctx, this.room, level);
+    this.sound(ctx, this.room, name, level);
+  }
+
+  /** an effect into `out`: its recording if it has one and it's loaded, else the synthesis */
+  private sound(ctx: AudioContext, out: AudioNode, name: SfxName, level: number): void {
+    const rec = RECORDED[name];
+    if (rec && playTake(ctx, out, rec.take, level, rec.punch)) return;
+    SFX[name](ctx, out, level);
   }
 
   /** a recorded take at the listener (the sound sheet) */
@@ -276,7 +291,7 @@ export class Audio {
     lp.type = "lowpass";
     lp.frequency.value = 2500 + 15000 * k * k;
     lp.connect(pan).connect(this.room);
-    SFX[name](ctx, lp, level * k * k);
+    this.sound(ctx, lp, name, level * k * k);
     // let the nodes go once it's over
     window.setTimeout(() => {
       lp.disconnect();
