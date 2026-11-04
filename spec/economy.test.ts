@@ -109,10 +109,10 @@ describe("gore", () => {
 });
 
 describe("names and scores on the board", () => {
-  it("a typed name is cleaned to upper-case letters and digits, 2 to 12 long", () => {
+  it("a typed name is cleaned to upper-case letters and digits, 1 to 12 long", () => {
     expect(cleanName("  ripley ")).toBe("RIPLEY");
     expect(cleanName("hicks<script>")).toBe("HICKSSCRIPT");
-    expect(cleanName("a")).toBeUndefined();
+    expect(cleanName("a")).toBe("A");
     expect(cleanName("!!")).toBeUndefined();
     expect(cleanName(42)).toBeUndefined();
     expect(cleanName("averyveryverylongname")?.length).toBe(12);

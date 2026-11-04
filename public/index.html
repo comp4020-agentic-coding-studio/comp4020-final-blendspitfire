@@ -16,7 +16,7 @@
         --ui-font: 400 19px/1.05 "VT323", ui-monospace, "SF Mono", Menlo, monospace; }
       html, body { margin: 0; height: 100%; background: #111; overflow: hidden; }
       canvas { display: block; }
-      .ui-frame, #leaderboard, #board .board-panel, #shop .board-panel, .ui-report, .ui-hud, .ui-ready, .ui-name, .ui-settle, .ui-wounds, .ui-spectate, .ui-banner, #connection-lost {
+      .ui-frame, #leaderboard, #board .board-panel, #shop .board-panel, .ui-report, .ui-hud, .ui-ready, .ui-settle, .ui-wounds, .ui-spectate, .ui-banner, #connection-lost {
         position: fixed; color: var(--ui); font: var(--ui-font); letter-spacing: 0.06em; text-transform: uppercase;
         padding: 8px 12px; pointer-events: none; text-shadow: 0 0 6px var(--ui-glow), 0 1px 0 #000;
         border: 2px solid var(--ui-dim); border-radius: 0;
@@ -92,14 +92,6 @@
       .ui-ready .what { font-size: 22px; }
       .ui-ready .who { color: var(--ui-dim); }
       @keyframes ready-pulse { 0% { background: var(--ui); color: #0b0c0e; } 50% { background: transparent; color: var(--ui); } }
-      .ui-name { left: 50%; top: 38%; transform: translate(-50%, -50%); display: none; flex-direction: column; align-items: center; gap: 6px;
-        padding: 16px 28px; border-color: var(--ui); pointer-events: auto; z-index: 20; }
-      .ui-name.open { display: flex; }
-      .ui-name .title { font-size: 28px; }
-      .ui-name .dim { color: var(--ui-dim); }
-      .ui-name input { font: 400 40px/1 "VT323", ui-monospace, monospace; letter-spacing: 0.18em; text-transform: uppercase; text-align: center;
-        width: 9em; color: var(--ui); background: transparent; border: none; border-bottom: 2px solid var(--ui); outline: none; caret-color: var(--ui); }
-      .ui-name .why { color: #ff7a6a; min-height: 1em; }
       /* the settlement: a big company printout over the climb */
       .ui-settle { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(620px, 90vw); display: none; padding: 18px 26px;
         border-color: var(--ui); background-color: rgba(8, 9, 8, 0.86); z-index: 7; }
@@ -158,6 +150,39 @@
       .ui-report .row { display: flex; gap: 10px; padding: 1px 0; }
       .ui-report .row.total { margin-top: 6px; padding-top: 6px; border-top: 2px dashed var(--ui-dim); font-size: 28px; }
       .ui-report .score { margin-left: auto; font-variant-numeric: tabular-nums; }
+      /* the title screen: the seal, a name, the sites to join; the scene dimmed behind */
+      .ui-title, .ui-pause { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+        color: var(--ui); font: var(--ui-font); letter-spacing: 0.06em; text-transform: uppercase; z-index: 30;
+        background: rgba(4, 5, 4, 0.82); text-shadow: 0 0 6px var(--ui-glow), 0 1px 0 #000; -webkit-font-smoothing: none; }
+      .ui-title.open, .ui-pause.open { display: flex; }
+      body:has(.ui-title.open) #leaderboard { display: none; }
+      .ui-title .logo canvas { display: block; margin-bottom: 10px; filter: drop-shadow(0 0 6px var(--ui-glow)); }
+      .ui-title .dim, .ui-pause .dim { color: var(--ui-dim); }
+      .ui-title .small { font-size: 16px; margin-bottom: 10px; }
+      .ui-title .field { display: flex; align-items: baseline; gap: 12px; }
+      .ui-title input { font: 400 34px/1 "VT323", ui-monospace, monospace; letter-spacing: 0.18em; text-transform: uppercase; text-align: center;
+        width: 8em; color: var(--ui); background: transparent; border: none; border-bottom: 2px solid var(--ui); outline: none; caret-color: var(--ui); }
+      .ui-title input::placeholder { color: var(--ui-dim); opacity: 0.6; }
+      .ui-title .head, .ui-title .list { width: min(460px, calc(100vw - 32px)); }
+      .ui-title .head { display: flex; justify-content: space-between; border-bottom: 2px dashed var(--ui-dim); padding-bottom: 3px; font-size: 22px; }
+      .ui-title .list { max-height: 40vh; overflow-y: auto; }
+      .ui-title .row { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 4px 6px; cursor: pointer; }
+      .ui-title .row .id { min-width: 6.5em; }
+      .ui-title .row .state { color: var(--ui-dim); }
+      .ui-title .row .crew { margin-left: auto; font-variant-numeric: tabular-nums; }
+      .ui-title .row .names { flex-basis: 100%; color: var(--ui-dim); font-size: 16px; }
+      .ui-title .row:not(.dim):hover { background: var(--ui); color: #0a0c0a; text-shadow: none; }
+      .ui-title .row:not(.dim):hover .state, .ui-title .row:not(.dim):hover .names { color: #0a0c0a; }
+      .ui-title .row.dim { cursor: not-allowed; opacity: 0.5; }
+      .ui-title .empty { padding: 6px; }
+      .ui-title .why { color: #ff7a6a; min-height: 1em; }
+      .ui-title button, .ui-pause button { font: var(--ui-font); font-size: 24px; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer;
+        color: var(--ui); background: transparent; border: 2px solid var(--ui); padding: 4px 18px; text-shadow: inherit; min-width: 12em; }
+      .ui-title button:hover, .ui-pause button:hover { background: var(--ui); color: #0a0c0a; text-shadow: none; }
+      .ui-pause button:hover .dim { color: #0a0c0a; }
+      .ui-pause .title { font-size: 34px; letter-spacing: 0.16em; }
+      .ui-pause .site { margin-bottom: 10px; }
+      .ui-pause .warn { color: #ff7a6a; min-height: 1em; max-width: min(420px, calc(100vw - 32px)); text-align: center; }
       #fatal-error {
         position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
         background: #111; color: #eee; font: 15px/1.5 system-ui, sans-serif;

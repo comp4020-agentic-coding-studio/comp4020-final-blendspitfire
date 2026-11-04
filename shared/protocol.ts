@@ -55,6 +55,8 @@ export interface WelcomeMessage {
   players: PlayerState[];
   /** package.json's version plus the running commit's short hash (e.g. "0.1.0-0e8b853"), so a deploy is checkable at a glance */
   version: string;
+  /** the site (room) they're in */
+  room: string;
 }
 
 export interface StateMessage {
@@ -312,7 +314,27 @@ export type ClientMessage =
   | BuildTurretMessage
   | ScrapMessage
   | NameMessage
-  | FreightMessage;
+  | FreightMessage
+  | LeaveMessage;
+
+/** Esc -> leave site: back to the title screen (below, mid-attempt, that's being out) */
+export interface LeaveMessage {
+  type: "leave";
+}
+
+/** one site (room) on the title screen's list (GET /api/rooms) */
+export interface RoomInfo {
+  id: string;
+  players: number;
+  max: number;
+  /** the reactor's on: nobody new can join until it's over */
+  started: boolean;
+  wave: number;
+  names: string[];
+}
+
+/** why the server closed a socket before it joined a site: the title screen says so */
+export const ROOM_CLOSE = { gone: 4004, full: 4005, started: 4006 } as const;
 
 /** E at the freight lift's panel: start it (the crew then has FREIGHT_BOARD_MS to get on) */
 export interface FreightMessage {
@@ -322,7 +344,7 @@ export interface FreightMessage {
 /**
  * The name to play (and score) under, arcade style: typed on joining, no
  * login. It's the leaderboard's key, so the same name later is the same
- * entry; a name someone online is using now is refused (ADR-060).
+ * entry (two players may share one: they share its entry).
  */
 export interface NameMessage {
   type: "name";
@@ -333,7 +355,7 @@ export const NAME_MAX = 12;
 export function cleanName(raw: unknown): string | undefined {
   if (typeof raw !== "string") return undefined;
   const s = raw.toUpperCase().replace(/[^A-Z0-9 _-]/g, "").replace(/\s+/g, " ").trim().slice(0, NAME_MAX).trim();
-  return s.length >= 2 ? s : undefined;
+  return s.length >= 1 ? s : undefined;
 }
 
 /**

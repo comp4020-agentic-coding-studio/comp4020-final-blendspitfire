@@ -22,6 +22,7 @@ import { Minimap } from "./ui/minimap.ts";
 import { buildSurface, createSunlight, scoreboardScreen } from "./world/surface.ts";
 import { LiftDoors, liftPanelAt } from "./world/lift.ts";
 import { Settlement } from "./ui/settlement.ts";
+import { PauseMenu, Title } from "./ui/title.ts";
 import { EvacView, SHAFT_AREA } from "./world/evac.ts";
 import { Audio, type Zone } from "./audio.ts";
 import { Gore, Impacts } from "./world/gore.ts";
@@ -476,67 +477,47 @@ function renderLeaderboard(players: PlayerState[]): void {
 
 
 
-// --- Your name --------------------------------------------------------------
-// Arcade style (ADR-060): type a name on joining and that's who you are on
-// screen and on the board; no login. The last one typed is offered again.
-// The game waits behind the card until the server takes a name.
+// --- Your name, your site -------------------------------------------------
+// Arcade style (ADR-060): the name typed on the title screen is who you are
+// on screen and on the board; no login, blank = your codename. The title
+// screen (client/ui/title.ts) also picks the site (room) to play in; Esc in
+// a site opens the pause menu, whose "leave site" comes back here.
 
-/** the name the server has us under (undefined until one's taken) */
+/** the name the server has us under (undefined: playing under the codename) */
 let myHandle: string | undefined;
-const NAME_KEY = "blendspitfire.name";
-const nameEl = document.createElement("div");
-nameEl.className = "ui-name";
-nameEl.innerHTML =
-  '<div class="title">sign in for the shift</div>' +
-  '<div class="dim">your name on the board · 2–12 letters</div>' +
-  `<input maxlength="${NAME_MAX}" spellcheck="false" autocomplete="off" />` +
-  '<div class="why"></div>' +
-  '<div class="dim">enter: clock in</div>';
-document.body.appendChild(nameEl);
-const nameInput = nameEl.querySelector<HTMLInputElement>("input")!;
-const nameWhy = nameEl.querySelector<HTMLDivElement>(".why")!;
-const naming = (): boolean => nameEl.classList.contains("open");
-function askName(): void {
-  pressed.clear();
-  nameEl.classList.add("open");
-  let last = "";
-  try {
-    last = localStorage.getItem(NAME_KEY) ?? "";
-  } catch {
-    // storage blocked: just an empty box
-  }
-  nameInput.value = myHandle ?? last;
-  nameWhy.textContent = "";
-  setTimeout(() => nameInput.focus(), 0);
-}
-nameInput.addEventListener("input", () => {
-  nameInput.value = nameInput.value.toUpperCase();
+/** the site we're in ("" on the title screen) */
+let mySite = "";
+const title = new Title(Math.max(1, Math.round(1 / PIXEL_SCALE)), (pick) => {
+  net.join(pick.room, pick.name);
 });
-nameInput.addEventListener("keydown", (e) => {
-  e.stopPropagation();
-  if (e.key === "Enter") {
-    const name = cleanName(nameInput.value);
-    if (!name) {
-      nameWhy.textContent = "2 to 12 letters or digits";
-      return;
-    }
-    nameWhy.textContent = "…";
-    net.name(name);
-  } else if (e.key === "Escape" && myHandle) nameEl.classList.remove("open");
+const pause = new PauseMenu({
+  resume: () => pause.close(),
+  mute: () => {
+    audio.toggleMute();
+    return audio.isMuted;
+  },
+  leave: () => {
+    pause.close();
+    net.leave();
+  },
 });
+/** the title or the pause menu is up: the game takes no keys */
+const naming = (): boolean => title.isOpen || pause.isOpen;
 function onNameReply(ok: boolean, text: string): void {
-  if (!ok) {
-    nameWhy.textContent = text;
+  if (ok) myHandle = text;
+}
+/**
+ * Back to the title screen. Out of a site the page starts over (nothing of
+ * that site's lift, waves or sound carries into the next); turned away at
+ * the door, the card just says why.
+ */
+function toTitle(code: number): void {
+  if (mySite) {
+    location.assign(code === 1000 ? "/" : `/?closed=${code}`);
     return;
   }
-  myHandle = text;
-  try {
-    localStorage.setItem(NAME_KEY, text);
-  } catch {
-    // remembered for this tab only
-  }
-  nameEl.classList.remove("open");
-  nameInput.blur();
+  pause.close();
+  title.open(Title.closeReason(code) ?? "");
 }
 
 // --- Aim -------------------------------------------------------------------
@@ -1392,7 +1373,7 @@ const net = connect({
   onConnectionChange(connected) {
     connectionLostEl.style.display = connected ? "none" : "block";
   },
-  onWelcome(you, players, t, version) {
+  onWelcome(you, players, t, version, room) {
     // also fires on every reconnect, so start from a clean scene rather
     // than piling a new set of meshes on top of the last session's
     clearSceneState();
@@ -1400,7 +1381,10 @@ const net = connect({
     versionEl.textContent = version;
     myId = you.id;
     myHandle = you.handle;
-    if (!myHandle) askName();
+    mySite = room;
+    title.close();
+    // the address bar is the site's link: share it and others land here
+    history.replaceState(null, "", `/?room=${encodeURIComponent(room)}`);
     myRespawnAt = you.respawnAt ?? 0;
     myOut = !!you.out;
     myLate = !!you.late;
@@ -1422,6 +1406,7 @@ const net = connect({
     renderBoard(b);
   },
   onNameReply,
+  onLeft: toTitle,
   onReplaced() {
     connectionLostEl.textContent = "open in another tab — this one is paused";
     connectionLostEl.style.display = "block";
@@ -1721,6 +1706,7 @@ window.addEventListener("keyup", (e) => {
 // the browser's own right-click menu would pop up over the game
 window.addEventListener("contextmenu", (e) => e.preventDefault());
 window.addEventListener("keydown", (e) => {
+  if (pause.isOpen && e.key === "Escape") return pause.close();
   if (naming()) return;
   const key = e.key.toLowerCase();
   // Space would otherwise scroll, or "click" whatever link has focus
@@ -1731,12 +1717,10 @@ window.addEventListener("keydown", (e) => {
   else if (key === "e") useTarget(eTarget());
   else if (key === "x") toggleReady();
   else if (key === "m") audio.toggleMute();
-  else if (key === "n" && boardOpen) {
-    toggleBoard();
-    askName();
-  } else if (key === "escape" && boardOpen) toggleBoard();
+  else if (key === "escape" && boardOpen) toggleBoard();
   else if (key === "escape" && shopOpen) toggleShop(false);
   else if (key === "escape" && placingTurret) placingTurret = false;
+  else if (key === "escape" && mySite) pause.open(mySite, audio.isMuted, !!localMesh && !myOut && objective.active && levelOf(localMesh.position.z) === "bottom");
   else if (shopOpen) {
     const item = SHOP_ITEMS.find((i) => SHOP[i].key === key);
     if (item) order(item);
@@ -2564,7 +2548,7 @@ function renderBoard(b: BoardMessage): void {
     (rows || '<div class="row dim">nobody yet</div>') +
     (wins ? `<div class="title">reactor stabilised</div>${wins}` : "") +
     '<div class="legend">each name\'s best attempt · ★ the reactor held</div>' +
-    '<div class="legend">N: change name · E / Esc to close</div></div>';
+    '<div class="legend">E / Esc to close</div></div>';
 }
 // walking away closes it
 setInterval(() => {
@@ -2734,3 +2718,11 @@ function renderDebug(dt: number): void {
 
 
 requestAnimationFrame(animate);
+
+// first the title screen; a ?room= link goes straight to that site under the remembered name
+{
+  const params = new URLSearchParams(location.search);
+  const linked = params.get("room");
+  title.open(Title.closeReason(Number(params.get("closed"))) ?? "");
+  if (linked) title.join(linked);
+}
