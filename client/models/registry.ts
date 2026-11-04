@@ -4,7 +4,7 @@ import type { FixtureKind } from "../../shared/protocol.ts";
 import { GUN_REST_HEIGHT, beaconLamp, character, brute, crawler, grenade, gun, heldGun, HELD_GUN_OFFSET, runner, sentryTurret, spitter } from "./index.ts";
 import { fixtureModel } from "./facility.ts";
 import { helicopter } from "./heli.ts";
-import { ammoStack, cabinetRow, diskPyramid, shellPyramid, tapeHeap } from "./cargo.ts";
+import { ammoStack, antenna, cabinetRow, chassisStack, filmReelRack, filmReelStack, modules, shellPyramid, tarp } from "./cargo.ts";
 
 // Every reviewable asset in one list. The model sheet (/gallery.html) is
 // generated from it, and spec/assets.test.ts checks every entry against
@@ -70,9 +70,13 @@ export const ASSETS: AssetEntry[] = [
   { id: "transport helicopter", category: "fixture", build: helicopter, frame: 10 },
   { id: "cargo: ammunition stack", category: "fixture", build: ammoStack, frame: 3.2 },
   { id: "cargo: shell pyramid", category: "fixture", build: shellPyramid, frame: 2.4 },
-  { id: "cargo: mainframe cabinets (half under canvas)", category: "fixture", build: cabinetRow, frame: 4.6 },
-  { id: "cargo: tape heap", category: "fixture", build: tapeHeap, frame: 3.6 },
-  { id: "cargo: disk-pack pyramid", category: "fixture", build: diskPyramid, frame: 2.2 },
+  { id: "cargo: mainframe cabinets (unpowered)", category: "fixture", build: cabinetRow, frame: 4.6 },
+  { id: "cargo: film reels, stacked", category: "fixture", build: filmReelStack, frame: 2.4 },
+  { id: "cargo: film reels, racked", category: "fixture", build: filmReelRack, frame: 2.4 },
+  { id: "cargo: chassis stack", category: "fixture", build: chassisStack, frame: 1.6 },
+  { id: "cargo: antenna in cradle", category: "fixture", build: antenna, frame: 3.4 },
+  { id: "cargo: modules", category: "fixture", build: modules, frame: 1.8 },
+  { id: "cargo: tarpaulin, dragged half off", category: "fixture", build: tarp, frame: 5 },
   { id: "crawler (enemy)", category: "enemy", build: crawler, frame: 2 },
   { id: "spitter (enemy)", category: "enemy", build: spitter, frame: 2 },
   { id: "brute (elite)", category: "enemy", build: brute, frame: 2.4 },
