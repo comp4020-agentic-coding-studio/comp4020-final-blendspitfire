@@ -150,6 +150,11 @@ export const RUST = swatch(0.42, 0.055, 45);
 export const WOOD = swatch(0.5, 0.05, 65);
 export const PAPER = swatch(0.8, 0.012, 90, 0.03);
 export const FOLIAGE = swatch(0.45, 0.05, 140);
+/** the cargo (the freight lift's load): olive drab ammunition cases, shell brass, old computer cabinets' beige-white, the canvas over them */
+export const OLIVE_DRAB = swatch(0.44, 0.05, 115);
+export const BRASS = swatch(0.62, 0.06, 85);
+export const COMPUTER_WHITE = swatch(0.78, 0.015, 90, 0.06);
+export const CANVAS = swatch(0.56, 0.035, 80);
 
 // people (clothes are greyed; the player's own colour is their lamp)
 export const CLOTH = swatch(0.42, 0.012, MOTHER_H);

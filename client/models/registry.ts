@@ -4,6 +4,7 @@ import type { FixtureKind } from "../../shared/protocol.ts";
 import { GUN_REST_HEIGHT, beaconLamp, character, brute, crawler, grenade, gun, heldGun, HELD_GUN_OFFSET, runner, sentryTurret, spitter } from "./index.ts";
 import { fixtureModel } from "./facility.ts";
 import { helicopter } from "./heli.ts";
+import { ammoStack, cabinetRow, diskPacks, shellRack } from "./cargo.ts";
 
 // Every reviewable asset in one list. The model sheet (/gallery.html) is
 // generated from it, and spec/assets.test.ts checks every entry against
@@ -67,6 +68,10 @@ export const ASSETS: AssetEntry[] = [
   fixture("supplyTerminal", 2.2, 0.9, 1.2, 3.5),
   { id: "comms call lamp", category: "item", build: beaconLamp, frame: 0.8 },
   { id: "transport helicopter", category: "fixture", build: helicopter, frame: 10 },
+  { id: "cargo: ammunition stack", category: "fixture", build: ammoStack, frame: 3.2 },
+  { id: "cargo: shell rack", category: "fixture", build: shellRack, frame: 3 },
+  { id: "cargo: mainframe cabinets (half under canvas)", category: "fixture", build: cabinetRow, frame: 4.6 },
+  { id: "cargo: disk packs", category: "fixture", build: diskPacks, frame: 5.6 },
   { id: "crawler (enemy)", category: "enemy", build: crawler, frame: 2 },
   { id: "spitter (enemy)", category: "enemy", build: spitter, frame: 2 },
   { id: "brute (elite)", category: "enemy", build: brute, frame: 2.4 },

@@ -766,6 +766,18 @@ export const FREIGHT_RAILS: Obstacle[] = [
 ];
 /** the freight lift's start panel, on the platform's back wall */
 export const FREIGHT_PANEL = { x: (FREIGHT.minX + FREIGHT.maxX) / 2, z: FREIGHT.minZ + 0.6 };
+/**
+ * The cargo: the point of the whole job (user 2026-11-04: in the setting
+ * the reactor is only there to power this lift). Two lashed-down blocks
+ * across the back half, munitions west and equipment east, with an aisle
+ * to the panel between them; the front half is left for the crew. Solid
+ * to walk into, and under sight height so it's seen over (models:
+ * client/world/evac.ts cargo()).
+ */
+export const FREIGHT_CARGO: Obstacle[] = [
+  { x: (FREIGHT.minX + 0.6 + FREIGHT_PANEL.x - 1.6) / 2, z: FREIGHT.minZ + 3.05, halfX: (FREIGHT_PANEL.x - 1.6 - FREIGHT.minX - 0.6) / 2, halfZ: 2.6, halfHeight: 0.85 },
+  { x: (FREIGHT_PANEL.x + 1.6 + FREIGHT.maxX - 0.6) / 2, z: FREIGHT.minZ + 3.05, halfX: (FREIGHT.maxX - 0.6 - FREIGHT_PANEL.x - 1.6) / 2, halfZ: 2.6, halfHeight: 0.85 },
+];
 export const inFreight = (x: number, z: number, margin = 0): boolean => inRect(FREIGHT, x, z, margin);
 
 /** the facility's walls, drawn and sight-blocking as the facility (the blast door included: it's drawn by its own model) */
@@ -947,6 +959,7 @@ export const OBSTACLES: Obstacle[] = [
   ...GARDEN_HELI_OBSTACLES,
   ...WALLS,
   ...FREIGHT_RAILS,
+  ...FREIGHT_CARGO,
   ...LIFT_HOUSE_WALLS,
   ...FENCES,
   ...FIXTURES.map((f) => (f === REACTOR ? REACTOR_BODY : f)),

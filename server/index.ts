@@ -101,6 +101,8 @@ import {
   type ClientMessage,
   type CrewLine,
   FREIGHT,
+  FREIGHT_CARGO,
+  PLAYER_RADIUS,
   inFreight,
   freightVerdict,
   attemptScore,
@@ -498,10 +500,11 @@ function stepEvac(now: number): void {
 function freightSpot(taken: { x: number; z: number }[]): { x: number; z: number } {
   for (let z = FREIGHT.minZ + 2.5; z <= FREIGHT.maxZ - 2; z += 1.2) {
     for (let x = FREIGHT.minX + 2; x <= FREIGHT.maxX - 2; x += 1.2) {
+      if (overlapsAnyObstacle(x, z, PLAYER_RADIUS, FREIGHT_CARGO)) continue;
       if (taken.every((t) => Math.hypot(t.x - x, t.z - z) > 1)) return { x, z };
     }
   }
-  return { x: (FREIGHT.minX + FREIGHT.maxX) / 2, z: (FREIGHT.minZ + FREIGHT.maxZ) / 2 };
+  return { x: (FREIGHT.minX + FREIGHT.maxX) / 2, z: FREIGHT.maxZ - 1.5 };
 }
 
 /** after a win, once the crew's ridden the freight lift out: start the run over */
