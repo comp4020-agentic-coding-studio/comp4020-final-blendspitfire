@@ -498,7 +498,7 @@ function stepEvac(now: number): void {
 
 /** somewhere free on the freight platform, back from the door */
 function freightSpot(taken: { x: number; z: number }[]): { x: number; z: number } {
-  for (let z = FREIGHT.minZ + 2.5; z <= FREIGHT.maxZ - 2; z += 1.2) {
+  for (let z = FREIGHT.minZ + 2.5; z <= FREIGHT.maxZ - 1; z += 1.2) {
     for (let x = FREIGHT.minX + 2; x <= FREIGHT.maxX - 2; x += 1.2) {
       if (overlapsAnyObstacle(x, z, PLAYER_RADIUS, FREIGHT_CARGO)) continue;
       if (taken.every((t) => Math.hypot(t.x - x, t.z - z) > 1)) return { x, z };

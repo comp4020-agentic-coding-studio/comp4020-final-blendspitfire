@@ -106,16 +106,6 @@ function deck(): THREE.Group {
   for (const x of [FREIGHT.minX + 0.08, FREIGHT.maxX - 0.08]) parts.push(part(box(0.16, 0.12, D), STEEL.base, x, 0.03, CZ));
   parts.push(part(box(W, 1.2, 0.1), STEEL.shade, CX, -0.6, FREIGHT.minZ + 0.05));
   for (const x of [FREIGHT.minX + 0.05, FREIGHT.maxX - 0.05]) parts.push(part(box(0.1, 1.2, D), STEEL.shade, x, -0.6, CZ));
-  // the cargo bay: painted out on the deck round the two blocks, lashing rings at its corners
-  for (const c of FREIGHT_CARGO) {
-    const bw = c.halfX * 2 + 0.5;
-    const bd = c.halfZ * 2 + 0.5;
-    for (const s of [-1, 1]) {
-      parts.push(part(box(bw, 0.075, 0.1), HAZARD.base, c.x, 0.012, c.z + s * (bd / 2)));
-      parts.push(part(box(0.1, 0.075, bd), HAZARD.base, c.x + s * (bw / 2), 0.012, c.z));
-      for (const t of [-1, 1]) parts.push(part(new THREE.TorusGeometry(0.1, 0.03, 4, 8), STEEL.light, c.x + s * (bw / 2 - 0.2), 0.05, c.z + t * (bd / 2 - 0.2), Math.PI / 2, 0, 0));
-    }
-  }
   // the start panel on the back wall: a pedestal, a big mushroom button
   parts.push(part(box(0.9, 1.0, 0.5), STEEL.base, FREIGHT_PANEL.x, 0.5, FREIGHT_PANEL.z - 0.25));
   parts.push(part(box(0.7, 0.04, 0.38), HAZARD.base, FREIGHT_PANEL.x, 1.02, FREIGHT_PANEL.z - 0.25));
@@ -128,8 +118,8 @@ function deck(): THREE.Group {
   g.add(ammo, kit);
   // the load's own light: a warm work lamp's pool over each block, so it's what the eye goes to
   for (const c of FREIGHT_CARGO) {
-    const pool = new THREE.PointLight(0xffe2b8, 16, 7.5, 1.4);
-    pool.position.set(c.x, 2.6, c.z + 0.4);
+    const pool = new THREE.PointLight(0xffe2b8, 18, 9, 1.4);
+    pool.position.set(c.x, 2.8, c.z + 0.4);
     g.add(pool);
   }
   const button = mesh(glowPart(new THREE.CylinderGeometry(0.16, 0.16, 0.08, 10), EMIT_AMBER, FREIGHT_PANEL.x, 1.08, FREIGHT_PANEL.z - 0.25), "emissive");
