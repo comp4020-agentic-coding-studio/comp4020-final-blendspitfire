@@ -2,7 +2,7 @@
 
 > **AI-recorded.** Written and kept current automatically by the coding agent (Claude Code) as its session-to-session handoff, not written by hand. Terse on purpose: it's for the next agent session to pick up from. Decision history lives in [adr.md](adr.md).
 
-Updated: 2026-11-03 (ninth round: turrets/friendly fire/Space done and committed, NOT pushed; ADR synced to ADR-068)
+Updated: 2026-11-04 (ninth round: turrets, friendly fire, Space, p4-p7 done and committed, NOT pushed; ADR synced to ADR-068)
 
 ## Where we are
 - Crit 10 shipped (tag `crit-10` on origin at de1932b). Final project due 2026-11-09 12:00.
@@ -61,12 +61,12 @@ Updated: 2026-11-03 (ninth round: turrets/friendly fire/Space done and committed
    p1. Freight cargo is the mission's real objective: bigger, more, stacked neatly. Two kinds: munitions (olive-drab steel cases, shells) and equipment (white old-IBM-style computers, stacks of disks/tapes, partly covered by cloth).
    p2. Logo on the thanks card isn't pixelated; pixelate it and show the user.
    p3. Under logo + name a "DEMO" stamp (decided 2026-11-03): square incised, white ground, black letters. Part of p8.
-   p4. Freight shaft walls: yellow girder rings too loud and clip the platform. Leave a gap between platform and walls; restyle walls (e.g. columns of tiny lamps); drop the yellow/black hazard rings.
+   p4. DONE 2026-11-04 (0dd0a69, awaiting user look): FREIGHT = FREIGHT_SHAFT less FREIGHT_GAP 0.8 on sides/back; FREIGHT_RAILS (halfHeight 0.3, invisible, in OBSTACLES) at the deck edge; evac.ts wallLamps() columns 2.4 m apart, 0.3 m pitch, slide down a step and loop while climbing; wallRails() still; shaftWalls() also go 4 m down into the drop; hazard rings + parkedShaft removed. Judge: /gallery.html?facility&x=-5&z=-24&evac=rise&at=1500.
    p5. Remove the reactor's "E: start next wave early" prompt box; X ready vote only.
    p6. Wave-end report: bigger.
    p7. Reactor HP bar in the HUD flashes when the reactor takes damage (the reactor model already does).
    p8. Thanks card -> scrolling end credits (user 2026-11-03). Drop "the reactor holds. for now." (agent's own line, never asked for). Sections: (1) logo + name + DEMO stamp (decided: DEMO, the p3 stamp) + "Assets recovered. Thank you for your service.", hold, then scroll; (2) this run's crew names, cast-list style; (3) leaderboard top 10; (4) credits: placeholder only, user fills later; (5) "thanks for playing" holds, fades out, back to the surface. Settlement page 3 keeps only the personal rank / new best (top 5 moves to the credits). Longer than today's 7 s (user wants it longer; exact length and whether players can skip not decided: ask, agent default ~30 s, no skip, everyone returns together).
-   DONE 2026-11-03 (e19b495): p5 reactor offers nothing in a break (X only; click says "X: ready"), p6 report 24px/440px, p7 HUD bar .hit blinks red 0.6 s after any reactor HP loss (note: the reactor model itself has no hit flash, only a slow live pulse). Next: p4 shaft walls -> p1 cargo -> p2+p3+p8 logo/stamp/credits. Show each look to the user before moving on.
+   DONE 2026-11-03 (e19b495): p5 reactor offers nothing in a break (X only; click says "X: ready"), p6 report 24px/440px, p7 HUD bar .hit blinks red 0.6 s after any reactor HP loss (note: the reactor model itself has no hit flash, only a slow live pulse). Next: p1 cargo -> p2+p3+p8 logo/stamp/credits. Show each look to the user before moving on.
 1. DONE 2026-11-03: turrets don't block enemies and can't be broken; friendly fire removed; grid snap removed, Space = fire (yard rifle guide shows mouse / Space, tutorial shoot room says 'click or space'). Bot-verified: holding Space fired 11 shots in 1.2 s, no page scroll.
 2. Ask the user one by one (they asked for single questions, with options): C5 = shared vs per-player quota, extra score parts, turret cost/cap. Then explain C9 (enemy instancing / trimming eye-flare sprites: each enemy ~7 draws, perf headroom when waves get bigger) and let them decide.
 3. Design discussions, one at a time, options not decisions: difficulty + tension (eighth round item 4) -> payslip formula + reveal (item 5) -> sound (moved into this round; user wants to polish it; plan was Web Audio synthesis, per-zone convolution reverb, Alien: industrial bed, oppressive quiet, motion-tracker ping; half-HP tinnitus ties into tension).
