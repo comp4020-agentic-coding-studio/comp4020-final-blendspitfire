@@ -55,10 +55,12 @@ it("a new site is listed, and players in different sites don't see each other", 
   expect(a.name).toBe("RIPLEY");
   expect(a.others).not.toContain(b.id);
   expect(b.others).not.toContain(a.id);
+  // (other spec files quick-join in parallel and can land in an open site, so only who's listed is checked)
   const listed = (await list()).find((r) => r.id === one)!;
-  expect(listed.players).toBe(1);
+  expect(listed.players).toBeGreaterThanOrEqual(1);
   expect(listed.max).toBe(4);
   expect(listed.names).toContain("RIPLEY");
+  expect(listed.names).not.toContain(b.name);
   a.ws.close();
   b.ws.close();
 }, 15000);
