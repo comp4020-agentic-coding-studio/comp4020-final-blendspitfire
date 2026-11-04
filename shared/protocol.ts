@@ -746,13 +746,23 @@ export const LIFT_WALLS: Obstacle[] = [
 
 /** the door: a wall-thick slab from the core's west wall to the north vent */
 export const BLAST_DOOR: Obstacle = wallBetween(ROOMS.core.minX - WALL_HALF, -O, northFrom, -O, FACILITY_WALL_HALF_HEIGHT);
-/** the freight lift's platform, behind the door: as wide as the door's opening, and deep */
-export const FREIGHT: Rect = { minX: ROOMS.core.minX, maxX: northFrom - 0.3, minZ: -FACILITY_HALF - 12, maxZ: -FACILITY_HALF - 2 * WALL_HALF };
+/** the freight lift's shaft, inside its walls: as wide as the door's opening, and deep */
+export const FREIGHT_SHAFT: Rect = { minX: ROOMS.core.minX, maxX: northFrom - 0.3, minZ: -FACILITY_HALF - 12, maxZ: -FACILITY_HALF - 2 * WALL_HALF };
+/** the open drop between the platform's edge and the shaft's walls, on its sides and back (user 2026-11-03: the walls clipped the platform) */
+export const FREIGHT_GAP = 0.8;
+/** the platform itself: the shaft less the gap, its front edge at the door */
+export const FREIGHT: Rect = { minX: FREIGHT_SHAFT.minX + FREIGHT_GAP, maxX: FREIGHT_SHAFT.maxX - FREIGHT_GAP, minZ: FREIGHT_SHAFT.minZ + FREIGHT_GAP, maxZ: FREIGHT_SHAFT.maxZ };
 /** the shaft round the platform: its sides and back */
 export const FREIGHT_WALLS: Obstacle[] = [
-  facilityWall(FREIGHT.minX - WALL_HALF, FREIGHT.minZ - 2 * WALL_HALF, FREIGHT.minX - WALL_HALF, -O),
-  facilityWall(FREIGHT.maxX + WALL_HALF, FREIGHT.minZ - 2 * WALL_HALF, FREIGHT.maxX + WALL_HALF, -O),
-  facilityWall(FREIGHT.minX - 2 * WALL_HALF, FREIGHT.minZ - WALL_HALF, FREIGHT.maxX + 2 * WALL_HALF, FREIGHT.minZ - WALL_HALF),
+  facilityWall(FREIGHT_SHAFT.minX - WALL_HALF, FREIGHT_SHAFT.minZ - 2 * WALL_HALF, FREIGHT_SHAFT.minX - WALL_HALF, -O),
+  facilityWall(FREIGHT_SHAFT.maxX + WALL_HALF, FREIGHT_SHAFT.minZ - 2 * WALL_HALF, FREIGHT_SHAFT.maxX + WALL_HALF, -O),
+  facilityWall(FREIGHT_SHAFT.minX - 2 * WALL_HALF, FREIGHT_SHAFT.minZ - WALL_HALF, FREIGHT_SHAFT.maxX + 2 * WALL_HALF, FREIGHT_SHAFT.minZ - WALL_HALF),
+];
+/** the platform's edge over the gap: knee-high, so it stops feet but not sight or shots (not drawn: the deck's lip shows it) */
+export const FREIGHT_RAILS: Obstacle[] = [
+  wallBetween(FREIGHT.minX - WALL_HALF, FREIGHT.minZ - 2 * WALL_HALF, FREIGHT.minX - WALL_HALF, -O, 0.3),
+  wallBetween(FREIGHT.maxX + WALL_HALF, FREIGHT.minZ - 2 * WALL_HALF, FREIGHT.maxX + WALL_HALF, -O, 0.3),
+  wallBetween(FREIGHT.minX - 2 * WALL_HALF, FREIGHT.minZ - WALL_HALF, FREIGHT.maxX + 2 * WALL_HALF, FREIGHT.minZ - WALL_HALF, 0.3),
 ];
 /** the freight lift's start panel, on the platform's back wall */
 export const FREIGHT_PANEL = { x: (FREIGHT.minX + FREIGHT.maxX) / 2, z: FREIGHT.minZ + 0.6 };
@@ -936,6 +946,7 @@ export const OBSTACLES: Obstacle[] = [
   ...TUT_OBSTACLES,
   ...GARDEN_HELI_OBSTACLES,
   ...WALLS,
+  ...FREIGHT_RAILS,
   ...LIFT_HOUSE_WALLS,
   ...FENCES,
   ...FIXTURES.map((f) => (f === REACTOR ? REACTOR_BODY : f)),

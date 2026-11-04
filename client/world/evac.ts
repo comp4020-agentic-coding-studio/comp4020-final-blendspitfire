@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { CONCRETE_DARK, EMIT_AMBER, EMIT_WHITE, HAZARD, PAINT_CHARCOAL, PAINT_OXIDE, RUBBER, RUST, STEEL, WOOD } from "../../shared/palette.ts";
-import { BLAST_DOOR, FACILITY_WALL_HALF_HEIGHT, FREIGHT, FREIGHT_PANEL } from "../../shared/protocol.ts";
+import { BLAST_DOOR, FACILITY_WALL_HALF_HEIGHT, FREIGHT, FREIGHT_PANEL, FREIGHT_SHAFT } from "../../shared/protocol.ts";
 import { blastDoorOpen, evacStage, type EvacState } from "../../shared/enemies.ts";
 import { glow } from "../look.ts";
 import { glowPart, merge, mesh, multiMesh, part, rng } from "../models/kit.ts";
@@ -11,23 +11,34 @@ import { glowPart, merge, mesh, multiMesh, part, rng } from "../models/kit.ts";
 // every screen sees the door move and the shaft go by together.
 //
 // The rise is staged: the platform never moves. What moves is the shaft
-// round it --- ribs, rails and lamps on its walls sliding down past the
-// platform's edge and looping --- with the camera rumbling, and a band of
-// light sweeping the deck each time a ring of lamps goes by.
+// round it --- columns of small lamps up its walls, sliding down past the
+// platform's edge and looping --- with the camera rumbling. An open drop
+// (FREIGHT_GAP) runs between the deck and the walls on three sides, so the
+// platform reads as a lift in a shaft, not a floor with walls on it.
 
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 const H = FACILITY_WALL_HALF_HEIGHT * 2;
 /** the shaft's walls go this far up: past the camera, so the ribs come down from out of sight */
 const SHAFT_TOP = 18;
-/** one repeat of the shaft wall's pattern: a rib, a rail joint, a lamp */
-const BAY = 3;
+/** the wall lamps' vertical spacing: one repeat of the pattern that slides by */
+const LAMP_STEP = 0.3;
+/** and their columns' spacing round the walls */
+const LAMP_COLUMN = 2.4;
+/** the shaft's walls go up to here: a whole number of lamp steps past SHAFT_TOP */
+const SHAFT_H = SHAFT_TOP + 3;
 /** how fast the shaft goes by, in metres a second */
 const RISE_SPEED = 2.4;
 
+// the platform
 const W = FREIGHT.maxX - FREIGHT.minX;
 const D = FREIGHT.maxZ - FREIGHT.minZ;
 const CX = (FREIGHT.minX + FREIGHT.maxX) / 2;
 const CZ = (FREIGHT.minZ + FREIGHT.maxZ) / 2;
+// the shaft round it, inside its walls
+const SW = FREIGHT_SHAFT.maxX - FREIGHT_SHAFT.minX;
+const SD = FREIGHT_SHAFT.maxZ - FREIGHT_SHAFT.minZ;
+const SCX = (FREIGHT_SHAFT.minX + FREIGHT_SHAFT.maxX) / 2;
+const SCZ = (FREIGHT_SHAFT.minZ + FREIGHT_SHAFT.maxZ) / 2;
 
 /**
  * One half of the blast door: armour slabs bolted in rows, heavy ribs up
@@ -84,9 +95,11 @@ function deck(): THREE.Group {
   const parts: THREE.BufferGeometry[] = [part(box(W, 0.06, D), STEEL.shade, CX, 0.0, CZ)];
   // deck plates and their seams
   for (let x = FREIGHT.minX + 1; x < FREIGHT.maxX; x += 2) parts.push(part(box(0.06, 0.07, D - 0.2), RUBBER.base, x, 0.01, CZ));
-  // hazard edging round the deck, a gap where the door meets it
-  parts.push(part(box(W, 0.075, 0.25), HAZARD.base, CX, 0.012, FREIGHT.minZ + 0.12));
-  for (const x of [FREIGHT.minX + 0.12, FREIGHT.maxX - 0.12]) parts.push(part(box(0.25, 0.075, D), HAZARD.base, x, 0.012, CZ));
+  // the deck's edge over the drop: a steel lip, and the platform's frame under it going down into the dark
+  parts.push(part(box(W, 0.12, 0.16), STEEL.base, CX, 0.03, FREIGHT.minZ + 0.08));
+  for (const x of [FREIGHT.minX + 0.08, FREIGHT.maxX - 0.08]) parts.push(part(box(0.16, 0.12, D), STEEL.base, x, 0.03, CZ));
+  parts.push(part(box(W, 1.2, 0.1), STEEL.shade, CX, -0.6, FREIGHT.minZ + 0.05));
+  for (const x of [FREIGHT.minX + 0.05, FREIGHT.maxX - 0.05]) parts.push(part(box(0.1, 1.2, D), STEEL.shade, x, -0.6, CZ));
   // the cargo: crates and sealed cases lashed down in three uneven stacks,
   // each worth more than the crew; a lane kept clear to the panel
   const stacks: [number, number, number][] = [
@@ -119,43 +132,37 @@ function deck(): THREE.Group {
 }
 
 /**
- * One bay of the shaft, BAY tall, all round the platform's edge (inside
- * the shaft's walls, which block sight): a girder ring, the rails' joints,
- * a caged lamp on each side. Stacked and slid down in a loop while the
- * platform rises; from overhead each ring comes down past the camera,
- * shrinks toward the deck and is gone just above it.
+ * The lamps up the shaft's walls: columns of small lamps on the three sides
+ * without the door, LAMP_STEP apart, from the deck's level to the top, plus
+ * one extra step so the pattern can slide down a step and loop seamlessly.
+ * Dim steel rails between the columns, which don't move, give the walls a
+ * structure to slide against. From overhead the lamps come down out of
+ * sight at the top and go on past the deck into the drop.
  */
-function bay(): THREE.Group {
-  const parts: THREE.BufferGeometry[] = [];
+function wallLamps(): THREE.Mesh {
   const lamps: THREE.BufferGeometry[] = [];
-  const e = 0.6;
-  const ribT = 0.3;
-  // the ring: girders along the back and both sides, hugging the walls,
-  // painted hazard so they carry against the dark as they go by
-  parts.push(part(box(W, ribT, e), HAZARD.shade, CX, 0, FREIGHT.minZ + e / 2));
-  for (const x of [FREIGHT.minX + e / 2, FREIGHT.maxX - e / 2]) parts.push(part(box(e, ribT, D), HAZARD.shade, x, 0, CZ));
-  // and the girders' stripes: what you actually see slide
-  for (let x = FREIGHT.minX + 0.5; x < FREIGHT.maxX; x += 1) parts.push(part(box(0.4, ribT + 0.02, e + 0.02), PAINT_CHARCOAL.shade, x, 0, FREIGHT.minZ + e / 2, 0, 0.6, 0));
-  for (const x of [FREIGHT.minX + e / 2, FREIGHT.maxX - e / 2]) {
-    for (let z = FREIGHT.minZ + 0.5; z < FREIGHT.maxZ; z += 1) parts.push(part(box(e + 0.02, ribT + 0.02, 0.4), PAINT_CHARCOAL.shade, x, 0, z, 0, 0.6, 0));
+  const s = 0.07;
+  const inset = 0.03;
+  const column = (x: number, z: number, nx: number, nz: number): void => {
+    for (let y = -2; y < SHAFT_H; y += LAMP_STEP) lamps.push(glowPart(box(nx ? 0.04 : s, s, nz ? 0.04 : s), EMIT_WHITE, x + nx * inset, y, z + nz * inset));
+  };
+  for (let x = FREIGHT_SHAFT.minX + LAMP_COLUMN / 2; x < FREIGHT_SHAFT.maxX; x += LAMP_COLUMN) column(x, FREIGHT_SHAFT.minZ, 0, 1);
+  for (let z = FREIGHT_SHAFT.minZ + LAMP_COLUMN / 2; z < FREIGHT_SHAFT.maxZ; z += LAMP_COLUMN) {
+    column(FREIGHT_SHAFT.minX, z, 1, 0);
+    column(FREIGHT_SHAFT.maxX, z, -1, 0);
   }
-  // braces down to the next ring, and the rail joints: what reads as the shaft's structure
-  for (const z of [FREIGHT.minZ + 2.5, CZ, FREIGHT.maxZ - 1.5]) {
-    for (const x of [FREIGHT.minX + 0.12, FREIGHT.maxX - 0.12]) parts.push(part(box(0.16, BAY, 0.26), RUST.base, x, BAY / 2, z));
+  return mesh(merge(lamps, "none"), "emissive");
+}
+
+/** the walls' steel rails, between the lamp columns, still while the lamps go by */
+function wallRails(): THREE.Mesh {
+  const parts: THREE.BufferGeometry[] = [];
+  const h = SHAFT_H + 2;
+  for (let x = FREIGHT_SHAFT.minX + LAMP_COLUMN; x < FREIGHT_SHAFT.maxX - 0.1; x += LAMP_COLUMN * 2) parts.push(part(box(0.12, h, 0.1), STEEL.shade, x, h / 2 - 2, FREIGHT_SHAFT.minZ + 0.05));
+  for (let z = FREIGHT_SHAFT.minZ + LAMP_COLUMN; z < FREIGHT_SHAFT.maxZ - 0.1; z += LAMP_COLUMN * 2) {
+    for (const x of [FREIGHT_SHAFT.minX + 0.05, FREIGHT_SHAFT.maxX - 0.05]) parts.push(part(box(0.1, h, 0.12), STEEL.shade, x, h / 2 - 2, z));
   }
-  for (let x = FREIGHT.minX + 3; x < FREIGHT.maxX - 2; x += 4) parts.push(part(box(0.26, BAY, 0.16), RUST.base, x, BAY / 2, FREIGHT.minZ + 0.12));
-  // lamps along the ring: white on the back, amber down the sides
-  const spots: [number, number, number][] = [];
-  for (const x of [CX - W / 3, CX, CX + W / 3]) spots.push([x, FREIGHT.minZ + 0.4, EMIT_WHITE]);
-  for (const z of [FREIGHT.minZ + D / 4, CZ + D / 4]) for (const x of [FREIGHT.minX + 0.4, FREIGHT.maxX - 0.4]) spots.push([x, z, EMIT_AMBER]);
-  for (const [x, z, c] of spots) lamps.push(glowPart(box(0.3, 0.12, 0.3), c, x, 0.25, z));
-  const g = multiMesh({ matte: [merge(parts, "none")], emissive: lamps });
-  for (const [x, z, c] of spots) {
-    const s = glow(c, 1.8, 0.6);
-    s.position.set(x, 0.3, z);
-    g.add(s);
-  }
-  return g;
+  return mesh(merge(parts, "none"));
 }
 
 /**
@@ -163,33 +170,21 @@ function bay(): THREE.Group {
  * the facility's walls stop at head height under a ceiling the sight mask
  * paints black, but a shaft has no ceiling, so from the platform the view
  * is wall on every side, past the camera. They start where the walls they
- * stand on stop (FREIGHT_WALLS, drawn with the facility). Plain: the bays
- * sliding down them are what move.
+ * stand on stop (FREIGHT_WALLS, drawn with the facility), and below the
+ * deck they carry on down into the drop. Plain: the lamps sliding down
+ * them are what move.
  */
 const WALL_T = 0.6;
-const SHAFT_H = SHAFT_TOP + BAY;
+const DROP = 4;
 function shaftWalls(): THREE.Mesh {
   const t = WALL_T;
   const h = SHAFT_H - H;
-  const parts: THREE.BufferGeometry[] = [part(box(W + 2 * t, h, t), CONCRETE_DARK.shade, CX, H + h / 2, FREIGHT.minZ - t / 2)];
-  for (const x of [FREIGHT.minX - t / 2, FREIGHT.maxX + t / 2]) parts.push(part(box(t, h, D + t), CONCRETE_DARK.shade, x, H + h / 2, CZ - t / 2));
+  const parts: THREE.BufferGeometry[] = [part(box(SW + 2 * t, h, t), CONCRETE_DARK.shade, SCX, H + h / 2, FREIGHT_SHAFT.minZ - t / 2)];
+  for (const x of [FREIGHT_SHAFT.minX - t / 2, FREIGHT_SHAFT.maxX + t / 2]) parts.push(part(box(t, h, SD + t), CONCRETE_DARK.shade, x, H + h / 2, SCZ - t / 2));
+  // under the deck's level: the same walls going on down
+  parts.push(part(box(SW + 2 * t, DROP, t), CONCRETE_DARK.shade, SCX, -DROP / 2, FREIGHT_SHAFT.minZ - t / 2));
+  for (const x of [FREIGHT_SHAFT.minX - t / 2, FREIGHT_SHAFT.maxX + t / 2]) parts.push(part(box(t, DROP, SD + t), CONCRETE_DARK.shade, x, -DROP / 2, SCZ - t / 2));
   return mesh(merge(parts, "none"));
-}
-
-/**
- * The parked shaft, while the platform waits at the bottom: the same
- * girder rings as the moving bays, but fixed, every 3 m up the walls, and
- * lit, so the walls read as a tall shaft going up rather than a dark band.
- * Hidden while the bays scroll (they take over).
- */
-function parkedShaft(): THREE.Group {
-  const g = new THREE.Group();
-  for (let y = H + 0.6; y < SHAFT_H - 1; y += BAY) {
-    const b = bay();
-    b.position.y = y;
-    g.add(b);
-  }
-  return g;
 }
 
 /** the shaft wall over one half of the blast door, riding on it: the door shuts and the wall closes over the way out with it */
@@ -199,7 +194,7 @@ function doorWall(half: number, side: -1 | 1): THREE.Mesh {
 }
 
 /** the shaft's footprint, its walls included: where there's no roof to hide (postprocess setOpenTop) */
-export const SHAFT_AREA = { minX: FREIGHT.minX - WALL_T, maxX: FREIGHT.maxX + WALL_T, minZ: FREIGHT.minZ - WALL_T, maxZ: BLAST_DOOR.z + BLAST_DOOR.halfZ };
+export const SHAFT_AREA = { minX: FREIGHT_SHAFT.minX - WALL_T, maxX: FREIGHT_SHAFT.maxX + WALL_T, minZ: FREIGHT_SHAFT.minZ - WALL_T, maxZ: BLAST_DOOR.z + BLAST_DOOR.halfZ };
 
 /** the camera's shake while the door grinds and the platform climbs, 0..1 */
 export interface EvacFx {
@@ -213,8 +208,7 @@ export class EvacView {
   private readonly halves: [THREE.Mesh, THREE.Mesh];
   private readonly half: number;
   private readonly beacons: THREE.Group[] = [];
-  private readonly shaft = new THREE.Group();
-  private readonly parked = parkedShaft();
+  private readonly lamps = wallLamps();
   private readonly deck: THREE.Group;
   private readonly sweep: THREE.PointLight;
 
@@ -237,14 +231,7 @@ export class EvacView {
     }
     this.deck = deck();
     this.group.add(this.deck);
-    for (let y = 0; y < SHAFT_TOP + BAY; y += BAY) {
-      const b = bay();
-      b.position.y = y;
-      this.shaft.add(b);
-    }
-    this.group.add(this.shaft);
-    this.group.add(shaftWalls());
-    this.group.add(this.parked);
+    this.group.add(shaftWalls(), wallRails(), this.lamps);
     this.sweep = new THREE.PointLight(0xfff0d8, 0, 14, 1.4);
     this.sweep.position.set(CX, 2.5, CZ);
     this.group.add(this.sweep);
@@ -274,21 +261,12 @@ export class EvacView {
       // the climb starts with a lurch and settles into a grind
       shake = 0.5 + 0.5 * Math.max(0, 1 - st.ms / 1500);
     }
-    // the shaft goes by: bays slide down, wrapping from the bottom back to the top
-    const span = this.shaft.children.length * BAY;
-    const off = (rising * RISE_SPEED) % BAY;
-    for (const [i, b] of this.shaft.children.entries()) {
-      b.position.y = ((i * BAY - off + span) % span) + 0.4;
-      // gone just before it would reach the deck (it'd cut through the crew), back at the top
-      b.visible = b.position.y > 0.8;
-    }
-    // a lamp ring passing deck level lights it up a moment
-    const phase = ((rising * RISE_SPEED) % BAY) / BAY;
-    const deckLight = st?.stage === "rising" ? 0.35 + 0.65 * Math.max(0, 1 - Math.abs(phase - 0.5) * 4) : 0;
+    // the shaft goes by: the lamps slide down a step and jump back, so they seem to stream past
+    const climbing = st?.stage === "rising" || st?.stage === "thanks";
+    this.lamps.position.y = climbing ? -((rising * RISE_SPEED) % LAMP_STEP) : 0;
+    // the climb's light on the deck: steady, with a slow unevenness as the walls go by
+    const deckLight = st?.stage === "rising" ? 0.5 + 0.15 * Math.sin(rising * 2.3) : 0;
     this.sweep.intensity = deckLight * 14;
-    // the shaft above is only there once the platform's on its way
-    this.shaft.visible = st?.stage === "rising" || st?.stage === "thanks";
-    this.parked.visible = !this.shaft.visible;
     return { shake, deckLight };
   }
 
