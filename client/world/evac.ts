@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { CONCRETE_DARK, EMIT_AMBER, EMIT_WHITE, HAZARD, PAINT_CHARCOAL, PAINT_OXIDE, RUBBER, RUST, STEEL, WOOD } from "../../shared/palette.ts";
+import { CONCRETE_DARK, EMIT_AMBER, HAZARD, PAINT_CHARCOAL, PAINT_OXIDE, RUBBER, RUST, STEEL, WOOD } from "../../shared/palette.ts";
 import { BLAST_DOOR, FACILITY_WALL_HALF_HEIGHT, FREIGHT, FREIGHT_PANEL, FREIGHT_SHAFT } from "../../shared/protocol.ts";
 import { blastDoorOpen, evacStage, type EvacState } from "../../shared/enemies.ts";
 import { glow } from "../look.ts";
@@ -20,10 +20,10 @@ const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 const H = FACILITY_WALL_HALF_HEIGHT * 2;
 /** the shaft's walls go this far up: past the camera, so the ribs come down from out of sight */
 const SHAFT_TOP = 18;
-/** the wall lamps' vertical spacing: one repeat of the pattern that slides by */
-const LAMP_STEP = 0.3;
-/** and their columns' spacing round the walls */
-const LAMP_COLUMN = 2.4;
+/** the wall lamps' vertical spacing (user 2026-11-04: about a metre apart) */
+const LAMP_STEP = 1;
+/** the moving pattern's repeat: three lamps and one panel seam, so it loops without a jump */
+const LOOP = 3;
 /** the shaft's walls go up to here: a whole number of lamp steps past SHAFT_TOP */
 const SHAFT_H = SHAFT_TOP + 3;
 /** how fast the shaft goes by, in metres a second */
@@ -131,36 +131,56 @@ function deck(): THREE.Group {
   return g;
 }
 
+// The walls, after the lift shafts of industrial sci-fi (Alien's Nostromo,
+// Blade Runner, the Expanse): plain concrete in tall panels, a couple of
+// steel guide rails per wall, and a lamp beside each rail every metre in
+// its own dark housing --- lit from within, not throwing light. Lamps and
+// the panels' seams slide down together while the platform climbs; the
+// rails, being continuous, don't need to.
+
+/** where the lamp columns stand: two up each side wall, three across the back (user 2026-11-04: fewer columns) */
+const BACK_COLUMNS = [0.2, 0.5, 0.8].map((k) => FREIGHT_SHAFT.minX + k * (FREIGHT_SHAFT.maxX - FREIGHT_SHAFT.minX));
+const SIDE_COLUMNS = [0.3, 0.75].map((k) => FREIGHT_SHAFT.minZ + k * (FREIGHT_SHAFT.maxZ - FREIGHT_SHAFT.minZ));
+/** a lamp's face: a warm white held well under the light fittings', so it reads as glowing without lighting anything */
+const LAMP_FACE = 0xd8cbb0;
+
 /**
- * The lamps up the shaft's walls: columns of small lamps on the three sides
- * without the door, LAMP_STEP apart, from the deck's level to the top, plus
- * one extra step so the pattern can slide down a step and loop seamlessly.
- * Dim steel rails between the columns, which don't move, give the walls a
- * structure to slide against. From overhead the lamps come down out of
- * sight at the top and go on past the deck into the drop.
+ * What slides by: the lamps (housing + face) and the panel seams, from
+ * below the deck to the top plus one LOOP so sliding down a LOOP and
+ * jumping back is seamless. Each lamp sits a hand's width to one side of
+ * its column's rail.
  */
-function wallLamps(): THREE.Mesh {
-  const lamps: THREE.BufferGeometry[] = [];
-  const s = 0.07;
-  const inset = 0.03;
-  const column = (x: number, z: number, nx: number, nz: number): void => {
-    for (let y = -2; y < SHAFT_H; y += LAMP_STEP) lamps.push(glowPart(box(nx ? 0.04 : s, s, nz ? 0.04 : s), EMIT_WHITE, x + nx * inset, y, z + nz * inset));
+function wallLamps(): THREE.Group {
+  const housings: THREE.BufferGeometry[] = [];
+  const faces: THREE.BufferGeometry[] = [];
+  // along the wall the lamp is 0.36 wide and 0.22 tall; it stands 0.08 off the wall
+  const lamp = (x: number, y: number, z: number, nx: number, nz: number): void => {
+    const along = (w: number, h: number, d: number) => box(nx ? d : w, h, nz ? d : w);
+    housings.push(part(along(0.46, 0.32, 0.06), STEEL.shade, x + nx * 0.03, y, z + nz * 0.03));
+    faces.push(glowPart(along(0.36, 0.22, 0.04), LAMP_FACE, x + nx * 0.06, y, z + nz * 0.06));
   };
-  for (let x = FREIGHT_SHAFT.minX + LAMP_COLUMN / 2; x < FREIGHT_SHAFT.maxX; x += LAMP_COLUMN) column(x, FREIGHT_SHAFT.minZ, 0, 1);
-  for (let z = FREIGHT_SHAFT.minZ + LAMP_COLUMN / 2; z < FREIGHT_SHAFT.maxZ; z += LAMP_COLUMN) {
-    column(FREIGHT_SHAFT.minX, z, 1, 0);
-    column(FREIGHT_SHAFT.maxX, z, -1, 0);
+  for (let y = -2; y < SHAFT_H + LOOP; y += LAMP_STEP) {
+    for (const x of BACK_COLUMNS) lamp(x + 0.35, y, FREIGHT_SHAFT.minZ, 0, 1);
+    for (const z of SIDE_COLUMNS) {
+      lamp(FREIGHT_SHAFT.minX, y, z + 0.35, 1, 0);
+      lamp(FREIGHT_SHAFT.maxX, y, z + 0.35, -1, 0);
+    }
   }
-  return mesh(merge(lamps, "none"), "emissive");
+  // the panels' horizontal seams, every LOOP
+  for (let y = -2; y < SHAFT_H + LOOP; y += LOOP) {
+    housings.push(part(box(FREIGHT_SHAFT.maxX - FREIGHT_SHAFT.minX, 0.06, 0.03), PAINT_CHARCOAL.shade, (FREIGHT_SHAFT.minX + FREIGHT_SHAFT.maxX) / 2, y + 0.5, FREIGHT_SHAFT.minZ + 0.015));
+    for (const x of [FREIGHT_SHAFT.minX + 0.015, FREIGHT_SHAFT.maxX - 0.015]) housings.push(part(box(0.03, 0.06, FREIGHT_SHAFT.maxZ - FREIGHT_SHAFT.minZ), PAINT_CHARCOAL.shade, x, y + 0.5, (FREIGHT_SHAFT.minZ + FREIGHT_SHAFT.maxZ) / 2));
+  }
+  return multiMesh({ matte: [merge(housings, "none")], emissive: faces });
 }
 
-/** the walls' steel rails, between the lamp columns, still while the lamps go by */
+/** the guide rails, one per lamp column, the whole height: still while the lamps go by */
 function wallRails(): THREE.Mesh {
   const parts: THREE.BufferGeometry[] = [];
   const h = SHAFT_H + 2;
-  for (let x = FREIGHT_SHAFT.minX + LAMP_COLUMN; x < FREIGHT_SHAFT.maxX - 0.1; x += LAMP_COLUMN * 2) parts.push(part(box(0.12, h, 0.1), STEEL.shade, x, h / 2 - 2, FREIGHT_SHAFT.minZ + 0.05));
-  for (let z = FREIGHT_SHAFT.minZ + LAMP_COLUMN; z < FREIGHT_SHAFT.maxZ - 0.1; z += LAMP_COLUMN * 2) {
-    for (const x of [FREIGHT_SHAFT.minX + 0.05, FREIGHT_SHAFT.maxX - 0.05]) parts.push(part(box(0.1, h, 0.12), STEEL.shade, x, h / 2 - 2, z));
+  for (const x of BACK_COLUMNS) parts.push(part(box(0.16, h, 0.14), STEEL.base, x, h / 2 - 2, FREIGHT_SHAFT.minZ + 0.07));
+  for (const z of SIDE_COLUMNS) {
+    for (const x of [FREIGHT_SHAFT.minX + 0.07, FREIGHT_SHAFT.maxX - 0.07]) parts.push(part(box(0.14, h, 0.16), STEEL.base, x, h / 2 - 2, z));
   }
   return mesh(merge(parts, "none"));
 }
@@ -263,7 +283,7 @@ export class EvacView {
     }
     // the shaft goes by: the lamps slide down a step and jump back, so they seem to stream past
     const climbing = st?.stage === "rising" || st?.stage === "thanks";
-    this.lamps.position.y = climbing ? -((rising * RISE_SPEED) % LAMP_STEP) : 0;
+    this.lamps.position.y = climbing ? -((rising * RISE_SPEED) % LOOP) : 0;
     // the climb's light on the deck: steady, with a slow unevenness as the walls go by
     const deckLight = st?.stage === "rising" ? 0.5 + 0.15 * Math.sin(rising * 2.3) : 0;
     this.sweep.intensity = deckLight * 14;
