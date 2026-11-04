@@ -3,7 +3,7 @@
 // 2026-11-05). The ambience beds play on their own toggles.
 
 import { Audio, type Zone } from "./audio.ts";
-import { PUNCH, type PunchName, type SfxName, type TakeName } from "./sfx.ts";
+import { PUNCH, type PunchName, type SfxName, type StartUpName, type TakeName } from "./sfx.ts";
 import { FIRE_COOLDOWN_MS } from "../shared/protocol.ts";
 
 /** recordings on trial, beside the synthesised sound they'd replace */
@@ -39,6 +39,10 @@ const GROUPS: [string, [SfxName, string][]][] = [
     ["reactorAlarm", "the reactor takes a hit"],
     ["pickup", "picking something up"],
     ["trackerPing", "motion tracker ping (Alien): could mark enemies nearby"],
+  ]],
+  ["out of the game, waiting on a recording", [
+    ["bump", "synthesised: something bumped (read as an instrument)"],
+    ["drop", "synthesised: something dropped, clattering"],
   ]],
 ];
 const ROOMS: [Zone, string][] = [["core", "core (big)"], ["corridor", "corridor"], ["lab", "lab"], ["car", "lift car"], ["shaft", "freight shaft"], ["surface", "garden"]];
@@ -110,6 +114,23 @@ for (const [label, what, play] of [
   const b = document.createElement("button");
   b.textContent = "▶ play";
   b.onclick = play;
+  row.append(b);
+  sheet.append(row);
+}
+const start = document.createElement("h2");
+start.textContent = "the reactor starting: a riser, layered";
+sheet.append(start);
+for (const [name, what] of [
+  ["full", "everything: sub sweep, FM metal, the groan's grains, crushed buzz, crackle, whine, the hit (9 s)"],
+  ["groan", "the groan's grains carry it: organic, heavy, the structure waking (9 s)"],
+  ["machine", "digital and electrical: FM metal, crushed buzz, crackle, the whine, higher (7 s)"],
+] as [StartUpName, string][]) {
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML = `<b>start: ${name}</b><span class="what">${what}</span>`;
+  const b = document.createElement("button");
+  b.textContent = "▶ play";
+  b.onclick = () => audio.reactorStart(name);
   row.append(b);
   sheet.append(row);
 }

@@ -10,7 +10,7 @@
 // Browsers won't play sound before a gesture, so nothing starts until the
 // first click or key; M mutes (remembered per browser).
 
-import { PUNCH, SFX, loadTakes, playTake, type Punch, type SfxName, type TakeName } from "./sfx.ts";
+import { PUNCH, SFX, STARTUPS, loadTakes, playTake, reactorStart, type Punch, type SfxName, type StartUpName, type TakeName } from "./sfx.ts";
 
 /** which room the listener is in: sets the bed and how much the reverb takes */
 export type Zone = "surface" | "tutorial" | "core" | "corridor" | "lab" | "hall" | "passage" | "car" | "shaft";
@@ -106,6 +106,8 @@ export class Audio {
 
   /** the listener's spot and facing-free screen axes: +x is right, +z is down the screen */
   private ear = { x: 0, z: 0 };
+  /** the recorded takes, fetched once the context starts */
+  private loaded: Promise<void> = Promise.resolve();
   /** the beds playing (the sound sheet starts with them off) */
   private beds = true;
 
@@ -168,7 +170,7 @@ export class Audio {
     this.buildBelow(ctx, this.below);
     this.buildAbove(ctx, this.above);
     this.apply(true);
-    void loadTakes(ctx);
+    this.loaded = loadTakes(ctx);
   }
 
   /**
@@ -277,6 +279,14 @@ export class Audio {
     if (this.ctx && this.room) playTake(this.ctx, this.room, name, level, punch);
   }
 
+  /** the reactor starting up (one of the variants), at the listener */
+  reactorStart(name: StartUpName = "full", level = 1): void {
+    // its grains are cut from the groan: wait for the recordings if they're still coming
+    void this.loaded.then(() => {
+      if (this.ctx && this.room) reactorStart(this.ctx, this.room, level, STARTUPS[name]);
+    });
+  }
+
   /**
    * The structure groaning somewhere off: a recording, slowed (deeper,
    * bigger), dulled and off to one side. `far` 0..1 takes it further away.
@@ -342,83 +352,26 @@ export class Audio {
     set(this.bedTone.frequency, r.tone);
   }
 
-  /** the place's one-off sounds: clanks below (not in the car), birds above */
+  /**
+   * The place's one-off sounds, part of the ambience (so off with the beds):
+   * below (not in the car) the structure groaning far off (user 2026-11-05:
+   * the recording, "far"); the synthesised bump and drop are kept out until
+   * they're recordings too (they read as an instrument). Birds above.
+   */
   private events(): void {
     const ctx = this.ctx;
-    if (!ctx || !this.room) return;
+    if (!ctx || !this.room || !this.beds) return;
     const t = ctx.currentTime;
     const r = ROOMS[this.zone];
     if (r.events && t > this.nextGroan) {
-      // the first a few seconds after arriving, then every 4-11 s
-      if (this.nextGroan) (Math.random() < 0.6 ? this.bump : this.drop).call(this, ctx, r.below);
-      this.nextGroan = t + (this.nextGroan ? 4 + Math.random() * 7 : 2 + Math.random() * 3);
+      // the first a few seconds after arriving, then every 10-25 s (each is a couple of seconds long)
+      if (this.nextGroan) this.groan(1);
+      this.nextGroan = t + (this.nextGroan ? 10 + Math.random() * 15 : 3 + Math.random() * 3);
     }
     if (!r.events) this.nextGroan = 0;
     if (r.above > 0.5 && t > this.nextBird) {
       if (this.nextBird) this.bird(ctx);
       this.nextBird = t + 3 + Math.random() * 9;
-    }
-  }
-
-  /**
-   * One hit on a piece of metal, at `t`: a short noise click for the
-   * contact and a few inharmonic partials ringing down (a struck plate or
-   * bar's modes), so it reads as metal and not as a drum.
-   */
-  private clank(ctx: AudioContext, out: AudioNode, t: number, f0: number, level: number, ring: number): void {
-    const click = ctx.createBufferSource();
-    click.buffer = noiseBuffer(ctx, 0.05);
-    const hp = ctx.createBiquadFilter();
-    hp.type = "bandpass";
-    hp.frequency.value = f0 * 3;
-    hp.Q.value = 1.2;
-    const cg = ctx.createGain();
-    cg.gain.setValueAtTime(0.35 * level, t);
-    cg.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
-    click.connect(hp).connect(cg).connect(out);
-    click.start(t);
-    for (const [k, v, d] of [[1, 1, 1], [2.76, 0.6, 0.7], [5.4, 0.35, 0.45], [8.93, 0.2, 0.3]] as const) {
-      const o = ctx.createOscillator();
-      o.frequency.value = f0 * k * (1 + (Math.random() - 0.5) * 0.02);
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.09 * v * level, t);
-      g.gain.exponentialRampToValueAtTime(0.0005, t + ring * d);
-      o.connect(g).connect(out);
-      o.start(t);
-      o.stop(t + ring * d + 0.05);
-    }
-  }
-
-  /** somewhere off to one side, a way off */
-  private far(ctx: AudioContext): AudioNode {
-    const pan = ctx.createStereoPanner();
-    pan.pan.value = (Math.random() < 0.5 ? -1 : 1) * (0.3 + Math.random() * 0.6);
-    const lp = ctx.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.frequency.value = 3500 + Math.random() * 2500;
-    lp.connect(pan).connect(this.room!);
-    return lp;
-  }
-
-  /** something bumped (user 2026-11-05: one hit, not knocking): a single clank, a pipe or a panel */
-  private bump(ctx: AudioContext, level: number): void {
-    const f0 = 260 + Math.random() * 420;
-    this.clank(ctx, this.far(ctx), ctx.currentTime + 0.02, f0, level, 0.5 + Math.random() * 0.7);
-  }
-
-  /** something dropped: a clank, then it bounces and clatters, each bounce sooner and softer */
-  private drop(ctx: AudioContext, level: number): void {
-    const out = this.far(ctx);
-    const f0 = 500 + Math.random() * 600;
-    let t = ctx.currentTime + 0.02;
-    let gap = 0.16 + Math.random() * 0.1;
-    let v = 1;
-    const n = 3 + Math.floor(Math.random() * 4);
-    for (let i = 0; i < n; i++) {
-      this.clank(ctx, out, t, f0 * (1 + (Math.random() - 0.5) * 0.08), level * v, 0.25 + 0.2 * v);
-      t += gap;
-      gap *= 0.62 + Math.random() * 0.12;
-      v *= 0.6;
     }
   }
 
