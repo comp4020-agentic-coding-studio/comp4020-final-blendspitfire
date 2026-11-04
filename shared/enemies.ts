@@ -99,12 +99,17 @@ export const EVAC_SHUT_MS = 4000;
 /** the settlement's pages, played while the platform rises */
 export const SETTLE_PAGES_MS = [11000, 13000, 9000] as const;
 export const RISE_MS = SETTLE_PAGES_MS.reduce((a, b) => a + b, 0);
-/** the screen fading to black at the end of the rise */
-export const EVAC_FADE_MS = 2500;
-/** the thanks card, on black: a beat of black, the card fades in, holds, fades back to black (THANKS_IN/OUT_MS) */
+/** the last page fading out at the end of the rise; the shaft stays lit behind it */
+export const EVAC_FADE_MS = 1000;
+/**
+ * The thanks card (user 2026-11-04: the card first, then the dark): it
+ * fades in over the shaft still going by (THANKS_IN_MS), then the scene
+ * behind it darkens to black (THANKS_DIM_MS), it holds, and fades out
+ * (THANKS_OUT_MS).
+ */
 export const THANKS_MS = 7000;
-export const THANKS_BLACK_MS = 800;
 export const THANKS_IN_MS = 1200;
+export const THANKS_DIM_MS = 2000;
 export const THANKS_OUT_MS = 1500;
 
 export type EvacStage =
@@ -115,7 +120,7 @@ export type EvacStage =
   | { stage: "shutting"; k: number }
   /** page 0..2 of the settlement, `k` 0..1 through it; `fade` 0..1 at the end */
   | { stage: "rising"; ms: number; page: number; k: number; fade: number }
-  | { stage: "thanks"; k: number }
+  | { stage: "thanks"; ms: number; k: number }
   | { stage: "done" };
 
 /** where the evacuation stands at server time `now` */
@@ -134,7 +139,7 @@ export function evacStage(e: EvacState, now: number): EvacStage {
     return { stage: "rising", ms: rise, page, k: (rise - start) / SETTLE_PAGES_MS[page], fade: Math.max(0, 1 - (RISE_MS - rise) / EVAC_FADE_MS) };
   }
   const thanks = rise - RISE_MS;
-  if (thanks < THANKS_MS) return { stage: "thanks", k: thanks / THANKS_MS };
+  if (thanks < THANKS_MS) return { stage: "thanks", ms: thanks, k: thanks / THANKS_MS };
   return { stage: "done" };
 }
 /** how open the blast door is, 0..1, at server time `now` (0 with no evacuation on) */

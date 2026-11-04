@@ -1,5 +1,5 @@
 import type { BoardMessage, CrewLine, Report } from "../../shared/protocol.ts";
-import { SETTLE_PAGES_MS, THANKS_BLACK_MS, THANKS_IN_MS, THANKS_MS, THANKS_OUT_MS, type EvacStage } from "../../shared/enemies.ts";
+import { SETTLE_PAGES_MS, THANKS_DIM_MS, THANKS_IN_MS, THANKS_MS, THANKS_OUT_MS, type EvacStage } from "../../shared/enemies.ts";
 import { pixelLogo } from "./logo.ts";
 
 // The settlement (ADR-060): played while the freight lift climbs, after
@@ -87,14 +87,14 @@ export class Settlement {
     this.el.classList.toggle("open", rising);
     this.thanks.classList.toggle("open", thanks);
     if (thanks) {
-      // black first, then the card fades in, holds, and fades back out to black
-      const ms = st.k * THANKS_MS;
-      const a = Math.min(clamp01((ms - THANKS_BLACK_MS) / THANKS_IN_MS), clamp01((THANKS_MS - ms) / THANKS_OUT_MS));
+      // the card fades in over the shaft, then the scene behind it goes dark; it holds, and fades out on black
+      const ms = st.ms;
+      const a = Math.min(clamp01(ms / THANKS_IN_MS), clamp01((THANKS_MS - ms) / THANKS_OUT_MS));
       this.thanks.style.opacity = `${stepped(a)}`;
       this.page = -1;
       this.wasBlack = true;
       this.backAt = 0;
-      return 1;
+      return clamp01((ms - THANKS_IN_MS) / THANKS_DIM_MS);
     }
     if (st?.stage === "done") {
       // the server's about to bring everyone up: stay black till it does
@@ -124,9 +124,9 @@ export class Settlement {
     rows.forEach((r, i) => r.classList.toggle("in", i < shown));
     const total = this.el.querySelector<HTMLElement>(".total");
     if (total) total.classList.toggle("in", shown > rows.length);
-    // the last page goes dark with the screen, not over it
+    // the last page fades out on its own: the shaft stays lit for the card to come in over
     this.el.style.opacity = `${1 - st.fade}`;
-    return st.fade;
+    return 0;
   }
 
   private crew(): CrewLine[] {

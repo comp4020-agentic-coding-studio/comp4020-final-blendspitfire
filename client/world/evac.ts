@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { CONCRETE_DARK, EMIT_AMBER, HAZARD, PAINT_ASH, PAINT_CHARCOAL, PAINT_OXIDE, RUBBER, STEEL } from "../../shared/palette.ts";
 import { BLAST_DOOR, FACILITY_WALL_HALF_HEIGHT, FREIGHT, CARGO_W, FREIGHT_CARGO, FREIGHT_PANEL, FREIGHT_SHAFT, FREIGHT_WALLS } from "../../shared/protocol.ts";
 import { equipmentCargo, munitionsCargo } from "../models/cargo.ts";
-import { blastDoorOpen, evacStage, type EvacState } from "../../shared/enemies.ts";
+import { RISE_MS, blastDoorOpen, evacStage, type EvacState } from "../../shared/enemies.ts";
 import { glow } from "../look.ts";
 import { lampFixture } from "../models/facility.ts";
 import { FACING_DIR, LAMPS, LAMP_SPECS } from "./dressing.ts";
@@ -499,20 +499,20 @@ export class EvacView {
     let rising = 0;
     let shake = 0;
     if (st?.stage === "opening" || st?.stage === "shutting") shake = 0.35;
-    if (st?.stage === "rising") {
-      rising = st.ms / 1000;
+    if (st?.stage === "rising" || st?.stage === "thanks") {
+      // the climb goes on under the thanks card until the screen's dark
+      rising = (st.stage === "rising" ? st.ms : RISE_MS + st.ms) / 1000;
       // the climb starts with a lurch and settles into a grind
-      shake = 0.5 + 0.5 * Math.max(0, 1 - st.ms / 1500);
+      shake = 0.5 + 0.5 * Math.max(0, 1 - rising / 1.5);
     }
     // the shaft goes by. First the whole of it sinks (door, foot, walls) until
     // the door's out of sight; from then on it's held and the lamps and seams
     // slide down a loop and jump back, so the same wall seems to stream past.
-    const climbing = st?.stage === "rising" || st?.stage === "thanks";
-    const fallen = climbing ? (st?.stage === "thanks" ? Infinity : rising * RISE_SPEED) : 0;
+    const fallen = rising * RISE_SPEED;
     this.shaft.position.y = -Math.min(fallen, SINK);
     this.lamps.position.y = fallen > SINK ? -((fallen - SINK) % LOOP) : 0;
     // the climb's light on the deck: steady, with a slow unevenness as the walls go by
-    const deckLight = st?.stage === "rising" ? 0.5 + 0.15 * Math.sin(rising * 2.3) : 0;
+    const deckLight = rising ? 0.5 + 0.15 * Math.sin(rising * 2.3) : 0;
     this.sweep.intensity = deckLight * 14;
     return { shake, deckLight };
   }

@@ -27,8 +27,8 @@ const START_C = 105;
 const CODE_C = 99;
 const STOP = 106;
 
-/** what the bars say: "COMP4020" (user trying it, 2026-10-29) or "4020" (thicker bars, survives pixelation) */
-const PAYLOAD = "COMP4020";
+/** what the bars say: "4020", whose thicker bars survive pixelation (user 2026-11-04; "COMP4020" was tried and didn't) */
+const PAYLOAD = "4020";
 
 /** letters in set B, trailing digit pairs in set C: black runs as [startModule, widthModules], and the total width */
 function code128(text: string): { runs: [number, number][]; width: number } {
