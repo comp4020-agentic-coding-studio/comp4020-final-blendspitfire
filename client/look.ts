@@ -308,7 +308,8 @@ export function crawlerEyes(seed: number): CrawlerEyes {
 export function lampHalos(): THREE.Group {
   const g = new THREE.Group();
   for (const lamp of LAMPS) {
-    if (lamp.dead) continue;
+    // (the freight shaft's lamps get their halos from EvacView, which moves them)
+    if (lamp.dead || lamp.shaft) continue;
     const spec = LAMP_SPECS[lamp.kind];
     if (lamp.mount === "wall") {
       const d = FACING_DIR[lamp.facing ?? "south"];

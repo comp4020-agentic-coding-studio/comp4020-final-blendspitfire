@@ -608,10 +608,20 @@ function breachModel(b: Breach, height: number): THREE.BufferGeometry {
  * light even where its light isn't in the active pool.
  */
 function lampModel(lamp: Lamp, bins: Bins): void {
+  // the freight shaft's lamps are drawn with the shaft, which moves
+  if (lamp.shaft) return;
+  const f = lampFixture(lamp);
+  if (!f) return;
+  bins.matte.push(f.housing);
+  bins.emissive.push(f.glowing);
+}
+
+/** a wall lamp's fixture, in world space: its housing and its glowing part (undefined for a ceiling lamp) */
+export function lampFixture(lamp: Lamp): { housing: THREE.BufferGeometry; glowing: THREE.BufferGeometry } | undefined {
   // A ceiling lamp's fixture is above the camera's cut through the ceiling,
   // so it isn't drawn: what shows is the light it throws (lampHalos). Only
   // wall lamps have a model.
-  if (lamp.mount !== "wall") return;
+  if (lamp.mount !== "wall") return undefined;
   const spec = LAMP_SPECS[lamp.kind];
   const housing: THREE.BufferGeometry[] = [];
   const glowing: THREE.BufferGeometry[] = [];
@@ -631,8 +641,7 @@ function lampModel(lamp: Lamp, bins: Bins): void {
     housing.push(part(box(0.22, 0.08, 0.3), STEEL.base, 0, y - 0.1, 0.15).applyMatrix4(m));
     glowing.push(glowPart(new THREE.IcosahedronGeometry(0.15, 0), emit, 0, y, 0.24).applyMatrix4(m));
   }
-  bins.matte.push(merge(housing, "none"));
-  for (const g of glowing) bins.emissive.push(g);
+  return { housing: merge(housing, "none"), glowing: merge(glowing, "none") };
 }
 
 // --- Floor ------------------------------------------------------------------------

@@ -24,6 +24,7 @@ import {
   SOLID,
   SURFACE,
   WALLS,
+  FREIGHT_WALLS,
   inFreight,
   ZONE_RECTS,
 } from "../shared/protocol.ts";
@@ -63,7 +64,7 @@ function facilityView(): void {
   scene.add(
     buildFacility({
       zones: ZONE_RECTS,
-      walls: WALLS.filter((w) => w !== BLAST_DOOR),
+      walls: WALLS.filter((w) => w !== BLAST_DOOR && !FREIGHT_WALLS.includes(w)),
       doorways: DOORWAYS.concat(TOP_DOOR),
       solids: SOLID,
       fixtures: FIXTURES,
@@ -135,7 +136,9 @@ function facilityView(): void {
   const evac: EvacState | undefined =
     evacMode === "open" ? { doorAt: -1e9 } : evacMode === "rise" ? { doorAt: -1e9, boardBy: -1e7, shutAt: -1e7 } : evacMode === "opening" ? { doorAt: 0 } : undefined;
   // a clock for the stage: "rise" starts the climb at &at= ms in (so its pages and shaft can be judged)
-  const evacNow = (): number => (evacMode === "rise" ? -1e7 + EVAC_SHUT_MS + evacAt + clock.getElapsedTime() * 1000 : evacMode === "opening" ? evacAt + clock.getElapsedTime() * 1000 : 0);
+  // &freeze holds the stage at &at= (for stills)
+  const evacClock = (): number => (params.has("freeze") ? 0 : clock.getElapsedTime() * 1000);
+  const evacNow = (): number => (evacMode === "rise" ? -1e7 + EVAC_SHUT_MS + evacAt + evacClock() : evacMode === "opening" ? evacAt + evacClock() : 0);
   const visibility = new VisibilityMask(sightBlockers(WALLS.filter((w) => w !== BLAST_DOOR), FIXTURES), SOLID, SIGHT_BOUNDS);
   const masked = close && !params.has("nomask");
   if (masked) post.setMask(visibility.postMask(FACILITY_WALL_HALF_HEIGHT * 2 - 0.05));
@@ -154,7 +157,8 @@ function facilityView(): void {
       visibility.update(renderer, cx, cz);
     }
     // the overview is lit everywhere at once, so every lamp gets a light
-    lighting.update(cx, cz, clock.getElapsedTime(), { reactorActive: live });
+    const footGone = evacView.footGone(evac, evacNow());
+    lighting.update(cx, cz, clock.getElapsedTime(), { reactorActive: live }, footGone ? (lamp) => !lamp.shaft : undefined);
     post.render(scene, cam);
     requestAnimationFrame(render);
   };

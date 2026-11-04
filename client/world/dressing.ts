@@ -45,6 +45,8 @@ export interface Lamp {
   flicker?: boolean;
   /** a dead tube: drawn, gives no light */
   dead?: boolean;
+  /** on the freight shaft's walls: drawn by EvacView (client/world/evac.ts) so it sinks with the shaft, and dark once it has */
+  shaft?: boolean;
 }
 
 export interface LampSpec {
@@ -158,7 +160,7 @@ export const LAMPS: Lamp[] = [
   wall("emergency", -12, -4.35, "south"),
   wall("emergency", 12, -4.35, "south"),
   // the freight lift: work lights on its back wall over the cargo, tubes down the deck
-  ...[-10, 0].map((x) => wall("sodium", x, -29.95, "south")),
+  ...[-10, 0].map((x) => wall("sodium", x, -29.95, "south", { shaft: true })),
   ...[-10, -5, 0].map((x) => ceiling("fluoro", x, -23.5)),
 ];
 

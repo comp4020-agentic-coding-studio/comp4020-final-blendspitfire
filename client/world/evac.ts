@@ -1,8 +1,10 @@
 import * as THREE from "three";
 import { CONCRETE_DARK, EMIT_AMBER, HAZARD, PAINT_CHARCOAL, PAINT_OXIDE, RUBBER, RUST, STEEL, WOOD } from "../../shared/palette.ts";
-import { BLAST_DOOR, FACILITY_WALL_HALF_HEIGHT, FREIGHT, FREIGHT_PANEL, FREIGHT_SHAFT } from "../../shared/protocol.ts";
+import { BLAST_DOOR, FACILITY_WALL_HALF_HEIGHT, FREIGHT, FREIGHT_PANEL, FREIGHT_SHAFT, FREIGHT_WALLS } from "../../shared/protocol.ts";
 import { blastDoorOpen, evacStage, type EvacState } from "../../shared/enemies.ts";
 import { glow } from "../look.ts";
+import { lampFixture } from "../models/facility.ts";
+import { FACING_DIR, LAMPS, LAMP_SPECS } from "./dressing.ts";
 import { glowPart, merge, mesh, multiMesh, part, rng } from "../models/kit.ts";
 
 // The way out after a win (ADR-060), drawn: the blast door across the core's
@@ -10,11 +12,13 @@ import { glowPart, merge, mesh, multiMesh, part, rng } from "../models/kit.ts";
 // up. All of it is moved by the evacuation's server times (evacStage), so
 // every screen sees the door move and the shaft go by together.
 //
-// The rise is staged: the platform never moves. What moves is the shaft
-// round it --- columns of small lamps up its walls, sliding down past the
-// platform's edge and looping --- with the camera rumbling. An open drop
-// (FREIGHT_GAP) runs between the deck and the walls on three sides, so the
-// platform reads as a lift in a shaft, not a floor with walls on it.
+// The rise is staged: the platform never moves (deck, cargo, panel, its
+// railing, the crew). Everything round it is the shaft and the map, and
+// goes down together (user 2026-11-04): the blast door and the walls at
+// the shaft's foot sink out of sight, and the same shaft wall on all four
+// sides --- rails, a lamp every metre, panel seams --- streams down after
+// them, with the camera rumbling. An open drop (FREIGHT_GAP) runs between
+// the deck and the walls on three sides, behind a plain steel railing.
 
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 const H = FACILITY_WALL_HALF_HEIGHT * 2;
@@ -28,6 +32,8 @@ const LOOP = 3;
 const SHAFT_H = SHAFT_TOP + 3;
 /** how fast the shaft goes by, in metres a second */
 const RISE_SPEED = 2.4;
+/** how far the shaft sinks as a whole before only its lamps move: the door's top well under the deck, a whole number of LOOPs */
+const SINK = 6;
 
 // the platform
 const W = FREIGHT.maxX - FREIGHT.minX;
@@ -141,6 +147,8 @@ function deck(): THREE.Group {
 /** where the lamp columns stand: two up each side wall, three across the back (user 2026-11-04: fewer columns) */
 const BACK_COLUMNS = [0.2, 0.5, 0.8].map((k) => FREIGHT_SHAFT.minX + k * (FREIGHT_SHAFT.maxX - FREIGHT_SHAFT.minX));
 const SIDE_COLUMNS = [0.3, 0.75].map((k) => FREIGHT_SHAFT.minZ + k * (FREIGHT_SHAFT.maxZ - FREIGHT_SHAFT.minZ));
+/** the south wall's inner face, over the blast door */
+const SOUTH_FACE = BLAST_DOOR.z - BLAST_DOOR.halfZ;
 /** a lamp's face: a warm white held well under the light fittings', so it reads as glowing without lighting anything */
 const LAMP_FACE = 0xd8cbb0;
 
@@ -160,7 +168,11 @@ function wallLamps(): THREE.Group {
     faces.push(glowPart(along(0.36, 0.22, 0.04), LAMP_FACE, x + nx * 0.06, y, z + nz * 0.06));
   };
   for (let y = -2; y < SHAFT_H + LOOP; y += LAMP_STEP) {
-    for (const x of BACK_COLUMNS) lamp(x + 0.35, y, FREIGHT_SHAFT.minZ, 0, 1);
+    for (const x of BACK_COLUMNS) {
+      lamp(x + 0.35, y, FREIGHT_SHAFT.minZ, 0, 1);
+      // the south wall, over the door: from the door's top up, same as the rest
+      if (y > H + 0.4) lamp(x + 0.35, y, SOUTH_FACE, 0, -1);
+    }
     for (const z of SIDE_COLUMNS) {
       lamp(FREIGHT_SHAFT.minX, y, z + 0.35, 1, 0);
       lamp(FREIGHT_SHAFT.maxX, y, z + 0.35, -1, 0);
@@ -178,7 +190,10 @@ function wallLamps(): THREE.Group {
 function wallRails(): THREE.Mesh {
   const parts: THREE.BufferGeometry[] = [];
   const h = SHAFT_H + 2;
-  for (const x of BACK_COLUMNS) parts.push(part(box(0.16, h, 0.14), STEEL.base, x, h / 2 - 2, FREIGHT_SHAFT.minZ + 0.07));
+  for (const x of BACK_COLUMNS) {
+    parts.push(part(box(0.16, h, 0.14), STEEL.base, x, h / 2 - 2, FREIGHT_SHAFT.minZ + 0.07));
+    parts.push(part(box(0.16, SHAFT_H - H - 0.2, 0.14), STEEL.base, x, (SHAFT_H + H + 0.2) / 2, SOUTH_FACE - 0.07));
+  }
   for (const z of SIDE_COLUMNS) {
     for (const x of [FREIGHT_SHAFT.minX + 0.07, FREIGHT_SHAFT.maxX - 0.07]) parts.push(part(box(0.14, h, 0.16), STEEL.base, x, h / 2 - 2, z));
   }
@@ -186,20 +201,22 @@ function wallRails(): THREE.Mesh {
 }
 
 /**
- * The shaft's walls all the way up, on its three sides without the door:
- * the facility's walls stop at head height under a ceiling the sight mask
- * paints black, but a shaft has no ceiling, so from the platform the view
- * is wall on every side, past the camera. They start where the walls they
- * stand on stop (FREIGHT_WALLS, drawn with the facility), and below the
- * deck they carry on down into the drop. Plain: the lamps sliding down
- * them are what move.
+ * The shaft's four walls above head height, the door's side the same as
+ * the rest: the facility's walls stop under a ceiling the sight mask paints
+ * black, but a shaft has no ceiling, so from the platform the view is wall
+ * on every side, past the camera. Below the deck they carry on into the
+ * drop. The south wall stands over the blast door, which is the map's.
  */
 const WALL_T = 0.6;
 const DROP = 4;
 function shaftWalls(): THREE.Mesh {
   const t = WALL_T;
   const h = SHAFT_H - H;
-  const parts: THREE.BufferGeometry[] = [part(box(SW + 2 * t, h, t), CONCRETE_DARK.shade, SCX, H + h / 2, FREIGHT_SHAFT.minZ - t / 2)];
+  const southZ = BLAST_DOOR.z;
+  const parts: THREE.BufferGeometry[] = [
+    part(box(SW + 2 * t, h, t), CONCRETE_DARK.shade, SCX, H + h / 2, FREIGHT_SHAFT.minZ - t / 2),
+    part(box(SW + 2 * t, h - 0.15, BLAST_DOOR.halfZ * 2), CONCRETE_DARK.shade, SCX, H + 0.15 + (h - 0.15) / 2, southZ),
+  ];
   for (const x of [FREIGHT_SHAFT.minX - t / 2, FREIGHT_SHAFT.maxX + t / 2]) parts.push(part(box(t, h, SD + t), CONCRETE_DARK.shade, x, H + h / 2, SCZ - t / 2));
   // under the deck's level: the same walls going on down
   parts.push(part(box(SW + 2 * t, DROP, t), CONCRETE_DARK.shade, SCX, -DROP / 2, FREIGHT_SHAFT.minZ - t / 2));
@@ -207,10 +224,42 @@ function shaftWalls(): THREE.Mesh {
   return mesh(merge(parts, "none"));
 }
 
-/** the shaft wall over one half of the blast door, riding on it: the door shuts and the wall closes over the way out with it */
-function doorWall(half: number, side: -1 | 1): THREE.Mesh {
-  const h = SHAFT_H - H;
-  return mesh(merge([part(box(half, h, BLAST_DOOR.halfZ * 2), CONCRETE_DARK.shade, (side * half) / 2, H + 0.15 + h / 2, 0)], "none"));
+/**
+ * The shaft's foot: the facility's own walls round it (FREIGHT_WALLS),
+ * drawn here rather than with the facility so they can sink with the door
+ * when the platform leaves. Plain concrete to head height, like the walls
+ * they meet.
+ */
+function footWalls(): THREE.Mesh {
+  return mesh(merge(FREIGHT_WALLS.map((w) => part(box(w.halfX * 2, H, w.halfZ * 2), CONCRETE_DARK.base, w.x, H / 2, w.z)), "ground", 0.4));
+}
+
+/**
+ * The railing round the platform's sides and back, at its edge over the
+ * drop: plain steel posts and two rails, waist high, open toward the door.
+ * Stops feet going over and anyone walking into the walls (FREIGHT_RAILS
+ * is its footprint). It's the platform's, so it stays put while the shaft goes by.
+ */
+function railing(): THREE.Mesh {
+  const parts: THREE.BufferGeometry[] = [];
+  const e = 0.12;
+  const run = (x1: number, z1: number, x2: number, z2: number): void => {
+    const len = Math.hypot(x2 - x1, z2 - z1);
+    const mx = (x1 + x2) / 2;
+    const mz = (z1 + z2) / 2;
+    const alongX = Math.abs(x2 - x1) > Math.abs(z2 - z1);
+    for (const [y, t] of [[0.55, 0.06], [1.0, 0.1]]) parts.push(part(box(alongX ? len : t, t, alongX ? t : len), STEEL.light, mx, y, mz));
+    const n = Math.max(1, Math.round(len / 1.5));
+    for (let i = 0; i <= n; i++) parts.push(part(box(0.09, 1.04, 0.09), STEEL.base, x1 + ((x2 - x1) * i) / n, 0.51, z1 + ((z2 - z1) * i) / n));
+  };
+  const minX = FREIGHT.minX + e;
+  const maxX = FREIGHT.maxX - e;
+  const minZ = FREIGHT.minZ + e;
+  const maxZ = FREIGHT.maxZ - 0.4;
+  run(minX, minZ, maxX, minZ);
+  run(minX, minZ, minX, maxZ);
+  run(maxX, minZ, maxX, maxZ);
+  return mesh(merge(parts, "ground", 0.3));
 }
 
 /** the shaft's footprint, its walls included: where there's no roof to hide (postprocess setOpenTop) */
@@ -229,6 +278,8 @@ export class EvacView {
   private readonly half: number;
   private readonly beacons: THREE.Group[] = [];
   private readonly lamps = wallLamps();
+  /** what goes down while the platform climbs: the shaft's walls, the door, the foot */
+  private readonly shaft = new THREE.Group();
   private readonly deck: THREE.Group;
   private readonly sweep: THREE.PointLight;
 
@@ -237,21 +288,30 @@ export class EvacView {
     const doorMaxX = BLAST_DOOR.x + BLAST_DOOR.halfX;
     this.half = (doorMaxX - doorMinX) / 2;
     this.halves = [doorHalf(this.half, -1), doorHalf(this.half, 1)];
-    for (const [i, h] of this.halves.entries()) {
-      h.add(doorWall(this.half, i === 0 ? -1 : 1));
+    for (const h of this.halves) {
       h.position.set(BLAST_DOOR.x, 0, BLAST_DOOR.z);
-      this.group.add(h);
+      this.shaft.add(h);
     }
     for (let i = 0; i < 4; i++) {
       const b = beacon();
       b.position.set(doorMinX + 1.5 + (i * (doorMaxX - doorMinX - 3)) / 3, H + 0.15, BLAST_DOOR.z + 0.5);
       b.visible = false;
       this.beacons.push(b);
-      this.group.add(b);
+      this.shaft.add(b);
     }
     this.deck = deck();
-    this.group.add(this.deck);
-    this.group.add(shaftWalls(), wallRails(), this.lamps);
+    this.group.add(this.deck, railing());
+    this.shaft.add(shaftWalls(), footWalls(), wallRails(), this.lamps);
+    // the work lights on the shaft's back wall: theirs, so they go down with it
+    for (const lamp of LAMPS.filter((l) => l.shaft)) {
+      const f = lampFixture(lamp)!;
+      this.shaft.add(mesh(f.housing), mesh(f.glowing, "emissive"));
+      const d = FACING_DIR[lamp.facing ?? "south"];
+      const halo = glow(LAMP_SPECS[lamp.kind].emit, 1.4, 0.35);
+      halo.position.set(lamp.x + d.x * 0.25, LAMP_SPECS[lamp.kind].height, lamp.z + d.z * 0.25);
+      this.shaft.add(halo);
+    }
+    this.group.add(this.shaft);
     this.sweep = new THREE.PointLight(0xfff0d8, 0, 14, 1.4);
     this.sweep.position.set(CX, 2.5, CZ);
     this.group.add(this.sweep);
@@ -281,13 +341,23 @@ export class EvacView {
       // the climb starts with a lurch and settles into a grind
       shake = 0.5 + 0.5 * Math.max(0, 1 - st.ms / 1500);
     }
-    // the shaft goes by: the lamps slide down a step and jump back, so they seem to stream past
+    // the shaft goes by. First the whole of it sinks (door, foot, walls) until
+    // the door's out of sight; from then on it's held and the lamps and seams
+    // slide down a loop and jump back, so the same wall seems to stream past.
     const climbing = st?.stage === "rising" || st?.stage === "thanks";
-    this.lamps.position.y = climbing ? -((rising * RISE_SPEED) % LOOP) : 0;
+    const fallen = climbing ? (st?.stage === "thanks" ? Infinity : rising * RISE_SPEED) : 0;
+    this.shaft.position.y = -Math.min(fallen, SINK);
+    this.lamps.position.y = fallen > SINK ? -((fallen - SINK) % LOOP) : 0;
     // the climb's light on the deck: steady, with a slow unevenness as the walls go by
     const deckLight = st?.stage === "rising" ? 0.5 + 0.15 * Math.sin(rising * 2.3) : 0;
     this.sweep.intensity = deckLight * 14;
     return { shake, deckLight };
+  }
+
+  /** the shaft has sunk past the door's top: the map's walls round the foot are under the deck, so the lamps that hang on them shouldn't light it */
+  footGone(evac: EvacState | undefined, now: number): boolean {
+    const st = evac ? evacStage(evac, now) : undefined;
+    return st?.stage === "thanks" || (st?.stage === "rising" && (st.ms / 1000) * RISE_SPEED > H);
   }
 
   /** the door as a sight blocker while it's shut (the facility's base sight walls leave it out) */

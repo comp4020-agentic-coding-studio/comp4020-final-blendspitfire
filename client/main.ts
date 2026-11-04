@@ -83,6 +83,7 @@ import {
   FIXTURES,
   REACTOR,
   BUILT_WALLS,
+  FREIGHT_WALLS,
   BLAST_DOOR,
   FREIGHT,
   FREIGHT_PANEL,
@@ -236,7 +237,8 @@ scene.add(
   buildFacility({
     zones: ZONE_RECTS,
     // (the blast door is its own moving model: client/world/evac.ts)
-    walls: BUILT_WALLS.filter((w) => w !== BLAST_DOOR),
+    // (the blast door and the freight shaft's walls sink with the shaft: client/world/evac.ts)
+    walls: BUILT_WALLS.filter((w) => w !== BLAST_DOOR && !FREIGHT_WALLS.includes(w)),
     doorways: DOORWAYS.concat(TOP_DOOR),
     solids: SOLID,
     fixtures: FIXTURES,
@@ -2061,10 +2063,12 @@ function animate(): void {
   const power = powerNow(time);
   halos.visible = power !== "out";
   const shutCar = carShutAround(view.x, view.z);
+  const footGone = evacView.footGone(objective.active && defenceState.phase === "won" ? defenceState.evac : undefined, serverClock.now());
   lighting.update(view.x, view.z, time, { reactorActive: objective.active, power, since: powerSince }, (lamp) => {
     const at = lampSource(lamp);
     // a shut car is sealed both ways: inside it only its own bulbs, outside none of them
     if (!carLightPasses(shutCar, at.x, at.z)) return false;
+    if (lamp.shaft && footGone) return false;
     if (power === "full") return true;
     // a lamp lights the scene only if its light could reach what we see: in sight, or close
     return Math.hypot(at.x - view.x, at.z - view.z) < LAMP_SPECS[lamp.kind].range * 0.5 || canSee(view.x, view.z, at.x, at.z, visibility.segs);
