@@ -221,3 +221,34 @@ export function pixelLogo(width: number, cell: number, color: string): HTMLCanva
   img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   return canvas;
 }
+
+/** DEMO in hand-set 5x7 pixel letters: at the game's pixel size a font's M closes up */
+const DEMO_GLYPHS = [
+  ["1110.", "1..1.", "1...1", "1...1", "1...1", "1..1.", "1110."],
+  ["11111", "1....", "1....", "1111.", "1....", "1....", "11111"],
+  ["1...1", "11.11", "1.1.1", "1.1.1", "1...1", "1...1", "1...1"],
+  [".111.", "1...1", "1...1", "1...1", "1...1", "1...1", ".111."],
+];
+
+/**
+ * The DEMO stamp under the seal (user 2026-11-03/04): a solid block of ink
+ * with the word cut out of it, on the same pixel grid as pixelLogo.
+ */
+export function demoStamp(cell: number, color: string): HTMLCanvasElement {
+  const gw = 32;
+  const gh = 13;
+  const canvas = document.createElement("canvas");
+  canvas.width = gw;
+  canvas.height = gh;
+  canvas.style.width = `${gw * cell}px`;
+  canvas.style.imageRendering = "pixelated";
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, gw, gh);
+  const x0 = Math.floor((gw - (4 * 5 + 3 * 2)) / 2);
+  const y0 = Math.floor((gh - 7) / 2);
+  DEMO_GLYPHS.forEach((glyph, i) =>
+    glyph.forEach((row, r) => [...row].forEach((v, c) => v === "1" && ctx.clearRect(x0 + i * 7 + c, y0 + r, 1, 1))),
+  );
+  return canvas;
+}
