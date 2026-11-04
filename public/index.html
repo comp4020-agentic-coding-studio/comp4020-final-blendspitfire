@@ -118,7 +118,19 @@
       .ui-thanks .sub { color: var(--ui); font-size: 26px; letter-spacing: 0.3em; padding-left: 0.3em; }
       .ui-thanks .stamp canvas { display: block; filter: drop-shadow(0 0 6px var(--ui-glow)); }
       .ui-thanks .line { color: var(--ui-dim); font-size: 22px; }
-      .ui-thanks .line.big { color: var(--ui); font-size: 34px; margin-top: 18px; }
+      .ui-thanks .line.big { color: var(--ui); font-size: 34px; }
+      /* the end credits: one column, scrolled by transform from the first card to the last */
+      .ui-thanks { justify-content: flex-start; overflow: hidden; }
+      .ui-thanks .roll { display: flex; flex-direction: column; align-items: center; will-change: transform; }
+      .ui-thanks .card { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 26vh; }
+      .ui-thanks .card.last { margin-bottom: 0; }
+      .ui-thanks .head { color: var(--ui-dim); font-size: 22px; letter-spacing: 0.3em; margin-bottom: 8px; }
+      .ui-thanks .cast { display: grid; grid-template-columns: 7em 9em 4em; gap: 18px; font-size: 26px; }
+      .ui-thanks .cast .role { color: var(--ui-dim); text-align: right; }
+      .ui-thanks .cast .pts { color: var(--ui-dim); font-variant-numeric: tabular-nums; }
+      .ui-thanks .cast.me .who { text-shadow: 0 0 12px var(--ui-glow); color: #fff; }
+      .ui-thanks .dim { color: var(--ui-dim); }
+      .ui-thanks .cast.solo { display: block; text-align: center; }
       .ui-wounds { left: 14px; bottom: 40px; display: none; }
       .ui-wounds .pip { display: inline-block; width: 12px; height: 12px; margin-right: 4px; border: 2px solid var(--ui-dim); }
       .ui-wounds .pip.hit { background: #ff5a5a; border-color: #ff5a5a; }

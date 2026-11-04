@@ -102,15 +102,20 @@ export const RISE_MS = SETTLE_PAGES_MS.reduce((a, b) => a + b, 0);
 /** the last page fading out at the end of the rise; the shaft stays lit behind it */
 export const EVAC_FADE_MS = 1000;
 /**
- * The thanks card (user 2026-11-04: the card first, then the dark): it
- * fades in over the shaft still going by (THANKS_IN_MS), then the scene
- * behind it darkens to black (THANKS_DIM_MS), it holds, and fades out
- * (THANKS_OUT_MS).
+ * The end credits (user 2026-11-03/04; ~30 s, no skip, everyone back
+ * together: the agent's defaults, awaiting the user). The first card --- the
+ * seal, the name, the DEMO stamp, the line --- fades in over the shaft still
+ * going by (THANKS_IN_MS), the scene behind darkens (THANKS_DIM_MS), it holds
+ * until CREDITS_ROLL_AT, then the whole roll scrolls up over CREDITS_ROLL_MS
+ * (crew, high scores, credits) until "thanks for playing" stops mid-screen,
+ * holds, and fades out on black (THANKS_OUT_MS).
  */
-export const THANKS_MS = 7000;
+export const THANKS_MS = 30000;
 export const THANKS_IN_MS = 1200;
 export const THANKS_DIM_MS = 2000;
 export const THANKS_OUT_MS = 1500;
+export const CREDITS_ROLL_AT = 5000;
+export const CREDITS_ROLL_MS = 20000;
 
 export type EvacStage =
   | { stage: "lights" }

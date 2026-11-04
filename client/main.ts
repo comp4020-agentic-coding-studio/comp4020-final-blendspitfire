@@ -74,6 +74,7 @@ import {
   WAVES_TO_WIN,
   blastDoorOpen,
   evacStage,
+  THANKS_MS,
   waveSize,
   type DefenceState, type EnemyKind, type EnemyState, type SpitState } from "../shared/enemies.ts";
 import {
@@ -160,6 +161,7 @@ import {
   type PlayerState,
   type ProjectileState,
   type Report,
+  type CrewLine,
   WIPE_HOLD_MS,
   PROJECTILE_SPEED,
 } from "../shared/protocol.ts";
@@ -2723,6 +2725,27 @@ requestAnimationFrame(animate);
 {
   const params = new URLSearchParams(location.search);
   const linked = params.get("room");
+  // ?credits=ms (judging stills only): the end credits frozen that far in, over a made-up crew, no site
+  if (params.has("credits")) previewCredits(Number(params.get("credits")));
+  else {
   title.open(Title.closeReason(Number(params.get("closed"))) ?? "");
   if (linked) title.join(linked);
+  }
+}
+
+function previewCredits(ms: number): void {
+  const line = (name: string, score: number, out = false): CrewLine => ({ name, score, out, kills: 0, shots: 0, hits: 0, wounds: 0, spent: 0, turrets: 0 });
+  settlement.set(
+    { type: "attempt", outcome: "won", reason: "", attempt: 3, waves: 6, blackoutMs: 0, crew: [line("RIPLEY", 412), line("HICKS", 377), line("VASQUEZ", 350, true), line("Teal-5174", 120)] },
+    { type: "board", run: { attempts: 0, best: 0 }, wins: [], top: ["RIPLEY", "BISHOP", "HICKS", "HUDSON", "VASQUEZ", "GORMAN", "APONE", "DRAKE", "FROST", "DIETRICH"].map((name, i) => ({ name, score: 600 - i * 41, kills: 0, waves: 6, won: i < 3 })) },
+    "RIPLEY",
+  );
+  const t0 = performance.now() - ms;
+  const frozen = new URLSearchParams(location.search).has("freeze");
+  const step = (): void => {
+    const at = frozen ? ms : performance.now() - t0;
+    evacFadeEl.style.opacity = `${settlement.update(at < THANKS_MS ? { stage: "thanks", ms: at, k: at / THANKS_MS } : { stage: "done" })}`;
+    requestAnimationFrame(step);
+  };
+  step();
 }

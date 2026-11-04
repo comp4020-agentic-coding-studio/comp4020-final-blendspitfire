@@ -812,7 +812,7 @@ export function createRoom(id: string, hooks: RoomHooks): Room {
   // The arcade board goes out when something on it changed, at most once a
   // second, rather than with every tick.
   let boardDirty = true;
-  const BOARD_SIZE = 8;
+  const BOARD_SIZE = 10;
   function boardMessage(): string {
     return JSON.stringify({
       type: "board",

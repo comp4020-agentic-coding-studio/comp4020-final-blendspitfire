@@ -1,13 +1,15 @@
 import type { BoardMessage, CrewLine, Report } from "../../shared/protocol.ts";
-import { SETTLE_PAGES_MS, THANKS_DIM_MS, THANKS_IN_MS, THANKS_MS, THANKS_OUT_MS, type EvacStage } from "../../shared/enemies.ts";
+import { CREDITS_ROLL_AT, CREDITS_ROLL_MS, SETTLE_PAGES_MS, THANKS_DIM_MS, THANKS_IN_MS, THANKS_MS, THANKS_OUT_MS, type EvacStage } from "../../shared/enemies.ts";
 import { demoStamp, pixelLogo } from "./logo.ts";
 
 // The settlement (ADR-060): played while the freight lift climbs, after
 // Lethal Company's end-of-shift screens. Three pages on the server's clock,
 // so everyone's on the same page at once: the crew's shift report (and its
 // MVP), your payslip --- a big number eaten line by line down to $20 ---
-// and where your name stands on the board. Then black, and a thanks card.
-// All the wording and every number on the payslip are the agent's.
+// and where your name stands on the board. Then black, and the end credits
+// (user 2026-11-03): the seal and its line, this run's crew, the top ten,
+// the credits, and "thanks for playing". All the wording and every number on
+// the payslip are the agent's, except the credits' sections and first line.
 
 type Attempt = Extract<Report, { type: "attempt" }>;
 
@@ -50,6 +52,10 @@ export function payslip(me: CrewLine | undefined, crewSize: number): [string, nu
 export class Settlement {
   private readonly el: HTMLDivElement;
   private readonly thanks: HTMLDivElement;
+  /** the part of the credits that scrolls (the first card's in it, at the top) */
+  private readonly roll: HTMLDivElement;
+  /** the credits are filled in once per ending (crew and board as they stood) */
+  private rolled = false;
   private page = -1;
   private report?: Attempt;
   private board?: BoardMessage;
@@ -66,11 +72,13 @@ export class Settlement {
     this.thanks = document.createElement("div");
     this.thanks.className = "ui-thanks";
     this.thanks.innerHTML =
-      '<div class="logo"></div><div class="sub">asset nexus unlimited</div><div class="stamp"></div>' +
-      '<div class="line">the reactor holds. for now.</div><div class="line big">thanks for playing</div>';
+      '<div class="roll"><div class="card first"><div class="logo"></div><div class="sub">asset nexus unlimited</div><div class="stamp"></div>' +
+      '<div class="line">assets recovered. thank you for your service.</div></div><div class="more"></div>' +
+      '<div class="card last"><div class="line big">thanks for playing</div></div></div>';
     const ink = getComputedStyle(document.documentElement).getPropertyValue("--ui").trim() || "#f2ead6";
     this.thanks.querySelector(".logo")!.append(pixelLogo(Math.min(440, window.innerWidth * 0.8), cell, ink));
     this.thanks.querySelector(".stamp")!.append(demoStamp(cell, ink));
+    this.roll = this.thanks.querySelector(".roll")!;
     document.body.appendChild(this.thanks);
   }
 
@@ -88,10 +96,16 @@ export class Settlement {
     this.el.classList.toggle("open", rising);
     this.thanks.classList.toggle("open", thanks);
     if (thanks) {
-      // the card fades in over the shaft, then the scene behind it goes dark; it holds, and fades out on black
+      // the first card fades in over the shaft, then the scene behind it goes dark;
+      // it holds, the roll scrolls up to "thanks for playing", which holds and fades out on black
       const ms = st.ms;
+      if (!this.rolled) {
+        this.rolled = true;
+        this.thanks.querySelector(".more")!.innerHTML = this.credits();
+      }
       const a = Math.min(clamp01(ms / THANKS_IN_MS), clamp01((THANKS_MS - ms) / THANKS_OUT_MS));
       this.thanks.style.opacity = `${stepped(a)}`;
+      this.scroll(clamp01((ms - CREDITS_ROLL_AT) / CREDITS_ROLL_MS));
       this.page = -1;
       this.wasBlack = true;
       this.backAt = 0;
@@ -103,6 +117,7 @@ export class Settlement {
       this.backAt = 0;
       return 1;
     }
+    this.rolled = false;
     if (!rising) {
       // just brought up after the card: the garden fades in from black
       if (this.page === -1 && this.wasBlack) {
@@ -164,21 +179,45 @@ export class Settlement {
         `<div class="total"><span class="name">net pay</span><span class="num">${money(net)}</span></div>`
       );
     }
-    const top = (this.board?.top ?? []).slice(0, 5);
     const mine = crew
       .map(
         (c) =>
           `<div class="row${c.name === this.me ? " me" : ""}"><span class="name">${esc(c.name)}</span><span class="num">${c.rank ? `#${c.rank}` : "unranked"}${c.best ? ' <b class="tag">new best</b>' : ""}</span></div>`,
       )
       .join("");
-    const board = top
-      .map((p, i) => `<div class="row${p.name === this.me ? " me" : ""}"><span>${i + 1}</span><span class="name">${esc(p.name)}</span><span class="num">${p.score}</span></div>`)
+    return '<div class="title">standings</div><div class="sub">your crew on the board</div>' + mine;
+  }
+
+  /**
+   * Scroll the roll: `k` 0 = the first card centred on screen, 1 = "thanks
+   * for playing" centred. Whole pixels of the game's grid, so it doesn't
+   * shimmer.
+   */
+  private scroll(k: number): void {
+    const first = this.roll.querySelector<HTMLElement>(".first")!;
+    const last = this.roll.querySelector<HTMLElement>(".last")!;
+    const mid = (el: HTMLElement): number => el.offsetTop + el.offsetHeight / 2;
+    const from = window.innerHeight / 2 - mid(first);
+    const to = window.innerHeight / 2 - mid(last);
+    // ease in and out of the hold at each end
+    const e = k * k * (3 - 2 * k);
+    this.roll.style.transform = `translateY(${Math.round(from + (to - from) * e)}px)`;
+  }
+
+  /** the middle of the roll: this run's crew, the board's top ten, and the credits */
+  private credits(): string {
+    const crew = this.crew()
+      .map((c) => `<div class="cast"><span class="role">${c.out ? "fallen" : "crew"}</span><span class="who">${esc(c.name)}</span></div>`)
+      .join("");
+    const top = (this.board?.top ?? [])
+      .slice(0, 10)
+      .map((p, i) => `<div class="cast${p.name === this.me ? " me" : ""}"><span class="role">${i + 1}</span><span class="who">${esc(p.name)}</span><span class="pts">${p.score}</span></div>`)
       .join("");
     return (
-      '<div class="title">standings</div><div class="sub">your crew on the board</div>' +
-      mine +
-      '<div class="title small">high scores</div>' +
-      (board || '<div class="row">nobody yet</div>')
+      `<div class="card"><div class="head">the crew</div>${crew || '<div class="cast solo"><span class="who">nobody aboard</span></div>'}</div>` +
+      `<div class="card"><div class="head">high scores</div>${top || '<div class="cast solo"><span class="who">nobody yet</span></div>'}</div>` +
+      // the credits proper are the user's to write (user 2026-11-03): a placeholder until then
+      '<div class="card"><div class="head">credits</div><div class="cast solo"><span class="who dim">to come</span></div></div>'
     );
   }
 }
