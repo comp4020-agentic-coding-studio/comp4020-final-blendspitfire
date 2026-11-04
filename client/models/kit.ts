@@ -202,6 +202,30 @@ const materialFor: Record<Finish, THREE.Material> = {
   emissive: emissiveMaterial,
 };
 
+/**
+ * A shared material drawn as a screen door: every other pixel of a
+ * checkerboard is left out, so what's behind shows through the gaps (the
+ * freight shaft's south wall, from inside). Fixed to the render target's
+ * pixels, which underground are the game's big pixels: a dither, not a
+ * blend, so it stays one look with the rest.
+ */
+const screenDoors = new Map<THREE.Material, THREE.Material>();
+export function screenDoor(m: THREE.Material): THREE.Material {
+  let d = screenDoors.get(m);
+  if (!d) {
+    d = m.clone();
+    d.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "void main() {",
+        "void main() {\n  if (mod(floor(gl_FragCoord.x) + floor(gl_FragCoord.y), 2.0) < 1.0) discard;",
+      );
+    };
+    d.customProgramCacheKey = () => "screen-door";
+    screenDoors.set(m, d);
+  }
+  return d;
+}
+
 export function mesh(geometry: THREE.BufferGeometry, finish: Finish = "matte"): THREE.Mesh {
   const m = new THREE.Mesh(geometry, materialFor[finish]);
   m.castShadow = finish !== "emissive";

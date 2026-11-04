@@ -6,7 +6,7 @@ import { RISE_MS, blastDoorOpen, evacStage, type EvacState } from "../../shared/
 import { glow } from "../look.ts";
 import { lampFixture } from "../models/facility.ts";
 import { FACING_DIR, LAMPS, LAMP_SPECS } from "./dressing.ts";
-import { glowPart, merge, mesh, multiMesh, part } from "../models/kit.ts";
+import { glowPart, merge, mesh, multiMesh, part, screenDoor } from "../models/kit.ts";
 
 // The way out after a win (ADR-060), drawn: the blast door across the core's
 // north wall, the freight lift's platform behind it, and the shaft it rises
@@ -343,7 +343,8 @@ function dressing(dress: (d: Dressing) => void): { still: THREE.Mesh; moving: TH
  * the platform the view is wall on every side, past the camera. Below the
  * deck they carry on into the drop. The south wall (over the blast door,
  * which is the map's) is its own: from outside it'd stand between the
- * camera and the platform, so it's only up while you're in the shaft.
+ * camera and the platform, so it's only up while you're in the shaft, and
+ * then as a screen door (user 2026-11-04), so the core shows through it.
  */
 const WALL_T = 0.6;
 const DROP = 4;
@@ -457,6 +458,12 @@ export class EvacView {
     const slab = southWall();
     this.shaft.add(slab);
     this.south.push(slab);
+    // seen from inside it's a screen door: the core shows through every other pixel
+    for (const o of this.south) {
+      o.traverse((c) => {
+        if (c instanceof THREE.Mesh) c.material = screenDoor(c.material as THREE.Material);
+      });
+    }
     this.setInside(false);
     // the work lights on the shaft's back wall: theirs, so they go down with it
     for (const lamp of LAMPS.filter((l) => l.shaft)) {
@@ -473,7 +480,7 @@ export class EvacView {
     this.group.add(this.sweep);
   }
 
-  /** the viewer's in the shaft (or not): the south wall's up only then, so from the core the platform shows through the open door */
+  /** the viewer's in the shaft (or not): the south wall's up only then (and only half there, a dither), so from the core the platform shows through the open door */
   setInside(inside: boolean): void {
     for (const o of this.south) o.visible = inside;
   }
