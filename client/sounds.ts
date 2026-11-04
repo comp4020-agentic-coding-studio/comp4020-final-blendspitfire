@@ -96,6 +96,23 @@ for (const [name, what] of TAKE_ROWS) {
   row.append(buttons);
   sheet.append(row);
 }
+const groans = document.createElement("h2");
+groans.textContent = "the structure groaning (public domain, SoundBible: Submarine Creaking)";
+sheet.append(groans);
+for (const [label, what, play] of [
+  ["groan raw", "as recorded: a submarine hull creaking, three cuts at random", () => audio.playTake("groan")],
+  ["groan near", "slowed a quarter (deeper), dulled a little, off to a side", () => audio.groan(0)],
+  ["groan far", "slowed more, much duller and quieter: somewhere else in the facility", () => audio.groan(1)],
+] as const) {
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML = `<b>${label}</b><span class="what">${what}</span>`;
+  const b = document.createElement("button");
+  b.textContent = "▶ play";
+  b.onclick = play;
+  row.append(b);
+  sheet.append(row);
+}
 for (const [title, list] of GROUPS) {
   const h = document.createElement("h2");
   h.textContent = title;

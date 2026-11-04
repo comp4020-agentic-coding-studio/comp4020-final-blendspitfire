@@ -12,3 +12,9 @@ reverb supplies the space).
 | ak_a.wav, ak_b.wav | "AK-47" C_28P.wav (single shots, near) |
 | sks_a.wav, sks_b.wav | "SKS" U_14P.wav (near) |
 | mosin_a.wav, mosin_b.wav | "Mosin Nagant" M_21P.wav (near) |
+
+## Other
+
+| files | from | licence |
+|---|---|---|
+| groan_a.wav, groan_b.wav, groan_c.wav | SoundBible, "Submarine Creaking" (soundbible.com/1625), uploaded by stephan. Three cuts, mono 48 kHz, faded in and out. | Public Domain |

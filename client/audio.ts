@@ -277,6 +277,26 @@ export class Audio {
     if (this.ctx && this.room) playTake(this.ctx, this.room, name, level, punch);
   }
 
+  /**
+   * The structure groaning somewhere off: a recording, slowed (deeper,
+   * bigger), dulled and off to one side. `far` 0..1 takes it further away.
+   */
+  groan(far = 0.5): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.room) return;
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = (Math.random() < 0.5 ? -1 : 1) * (0.3 + Math.random() * 0.5);
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 2400 - far * 1600;
+    lp.connect(pan).connect(this.room);
+    playTake(ctx, lp, "groan", 0.9 - far * 0.5, undefined, 0.75 - far * 0.2);
+    window.setTimeout(() => {
+      lp.disconnect();
+      pan.disconnect();
+    }, 6000);
+  }
+
   /** an effect at a spot in the world: quieter and duller with distance, panned to its side of the screen */
   playAt(name: SfxName, x: number, z: number, level = 1): void {
     const ctx = this.ctx;

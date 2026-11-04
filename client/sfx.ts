@@ -15,6 +15,8 @@ export const TAKES = {
   rifleSKS: ["sks_a", "sks_b"],
   rifleAK: ["ak_a", "ak_b"],
   rifleMosin: ["mosin_a", "mosin_b"],
+  /** the structure groaning (SoundBible "Submarine Creaking", public domain) */
+  groan: ["groan_a", "groan_b", "groan_c"],
 } as const;
 
 /**
@@ -70,14 +72,14 @@ export async function loadTakes(ctx: BaseAudioContext): Promise<void> {
   );
 }
 /** play one of a sound's takes, pushed as hard as `punch`; false if they're not loaded yet */
-export function playTake(ctx: BaseAudioContext, out: Out, name: TakeName, level = 1, punch: Punch = PUNCH.raw): boolean {
+export function playTake(ctx: BaseAudioContext, out: Out, name: TakeName, level = 1, punch: Punch = PUNCH.raw, rate = 1): boolean {
   const list = TAKES[name];
   const buf = decoded.get(ctx)?.get(list[Math.floor(Math.random() * list.length)]);
   if (!buf) return false;
   const t = ctx.currentTime;
   const src = ctx.createBufferSource();
   src.buffer = buf;
-  src.playbackRate.value = 0.96 + Math.random() * 0.08;
+  src.playbackRate.value = rate * (0.96 + Math.random() * 0.08);
   const v = level * (0.9 + Math.random() * 0.1);
   // the chain: pre-gain -> soft clip -> low shelf -> level
   const pre = ctx.createGain();
@@ -94,6 +96,7 @@ export function playTake(ctx: BaseAudioContext, out: Out, name: TakeName, level 
   g.gain.value = v * (punch.drive > 1 ? 0.7 : 1);
   src.connect(pre).connect(clip).connect(shelf).connect(g).connect(out);
   src.start(t);
+  src.stop(t + buf.duration / src.playbackRate.value + 0.05);
   // the thump in the chest and the crack at the front
   if (punch.sub) tone(ctx, out, t, { f: 120, fEnd: 38, gain: punch.sub * v, attack: 0.003, decay: 0.16 });
   if (punch.crack) burst(ctx, out, t, { type: "highpass", f: 2500, gain: punch.crack * v, decay: 0.03 });
