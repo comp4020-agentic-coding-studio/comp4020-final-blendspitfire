@@ -3,7 +3,7 @@
 // 2026-11-05). The ambience beds play on their own toggles.
 
 import { Audio, type Zone } from "./audio.ts";
-import { PUNCH, type PunchName, type SfxName, type StartUpName, type TakeName } from "./sfx.ts";
+import { PUNCH, type PunchName, type SfxName, type TakeName } from "./sfx.ts";
 import { FIRE_COOLDOWN_MS } from "../shared/protocol.ts";
 
 /** recordings on trial, beside the synthesised sound they'd replace */
@@ -118,19 +118,25 @@ for (const [label, what, play] of [
   sheet.append(row);
 }
 const start = document.createElement("h2");
-start.textContent = "the reactor starting: a riser, layered";
+start.textContent = "the reactor spinning up: machine recordings (CC0) running faster and faster, one continuous curve";
 sheet.append(start);
-for (const [name, what] of [
-  ["full", "everything: sub sweep, FM metal, the groan's grains, crushed buzz, crackle, whine, the hit (9 s)"],
-  ["groan", "the groan's grains carry it: organic, heavy, the structure waking (9 s)"],
-  ["machine", "digital and electrical: FM metal, crushed buzz, crackle, the whine, higher (7 s)"],
-] as [StartUpName, string][]) {
+const SPIN_ROWS: [string, string, () => void][] = [
+  ["generator", "a low motor (8 s up, holds 2 s)", () => audio.spinUp("generator")],
+  ["boiler", "a metal, steamy machine loop", () => audio.spinUp("boiler")],
+  ["fan", "a fan's blades: the beat you hear speed up", () => audio.spinUp("fan")],
+  ["disk", "a hard disk's spin: thin, mechanical", () => audio.spinUp("disk")],
+  ["generator + fan", "the generator's weight under the fan's whirr", () => audio.spinUp("generatorFan")],
+  ["boiler + disk", "the boiler's metal under the disk's spin", () => audio.spinUp("boilerDisk")],
+  ["power-on ×1", "a machine power-off, reversed (2 s, as recorded)", () => audio.powerOn(1)],
+  ["power-on ×3", "the same, stretched to 6 s: slower, deeper", () => audio.powerOn(3)],
+];
+for (const [name, what, play] of SPIN_ROWS) {
   const row = document.createElement("div");
   row.className = "row";
-  row.innerHTML = `<b>start: ${name}</b><span class="what">${what}</span>`;
+  row.innerHTML = `<b>${name}</b><span class="what">${what}</span>`;
   const b = document.createElement("button");
   b.textContent = "▶ play";
-  b.onclick = () => audio.reactorStart(name);
+  b.onclick = play;
   row.append(b);
   sheet.append(row);
 }

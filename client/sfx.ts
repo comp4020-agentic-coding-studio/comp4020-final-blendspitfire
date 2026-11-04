@@ -17,6 +17,12 @@ export const TAKES = {
   rifleMosin: ["mosin_a", "mosin_b"],
   /** the structure groaning (SoundBible "Submarine Creaking", public domain) */
   groan: ["groan_a", "groan_b", "groan_c"],
+  /** machines for the reactor's spin-up (OpenGameArt, CC0), each a seamless loop but poweron */
+  spinGenerator: ["spin_generator"],
+  spinBoiler: ["spin_boiler"],
+  spinFan: ["spin_fan"],
+  spinDisk: ["spin_disk"],
+  spinPowerOn: ["spin_poweron"],
 } as const;
 
 /**
@@ -374,201 +380,73 @@ export function drop(ctx: BaseAudioContext, out: Out, level = 1): void {
 }
 
 // --- The reactor starting --------------------------------------------------
-// User 2026-11-05: something rising from low to high, with every hard,
-// granular, rare-sounding texture that fits laid on in the same shape. A
-// riser, layered: a sub sweep up, an FM metal layer whose ratio drifts
-// (inharmonic, edged), a granular cloud of the groan recording whose
-// grains get denser and higher, a bit-crushed buzz, electrical crackle
-// thickening, a ring-modulated whine near the top; then the hit, and the
-// plant's new hum settling. `RISE` seconds to the hit.
+// User 2026-11-05: not a tone sliding up (the synthesised riser read as an
+// instrument), but something running faster and faster: one continuous
+// spin-up, no stages. Recordings of machines (CC0) looped, their playback
+// rate ramped on one smooth curve, so the machine's own pattern (blades,
+// a motor's beat) speeds up; a reversed power-off is a power-on as is.
 
-export interface StartUp {
-  /** seconds from the first sound to the hit */
+export interface SpinUp {
+  /** the loops played together (each at its own level) */
+  loops: [TakeName, number][];
+  /** seconds from still to full speed */
   rise: number;
-  /** how far the sub climbs (Hz at the top) */
-  top: number;
-  /** each layer's level (0 for none) */
-  fm: number;
-  grains: number;
-  crush: number;
-  crackle: number;
-  whine: number;
-  /** the hit and the hum after it */
-  hit: number;
+  /** playback rate at the start and at full speed */
+  from: number;
+  to: number;
+  /** how long it holds at speed before it fades, seconds */
+  hold: number;
 }
-export const STARTUPS = {
-  /** everything, the full ten seconds */
-  full: { rise: 9, top: 900, fm: 0.5, grains: 0.8, crush: 0.25, crackle: 0.6, whine: 0.15, hit: 1 },
-  /** the groan's grains carry it: organic, heavy, the structure waking */
-  groan: { rise: 9, top: 500, fm: 0.15, grains: 1.2, crush: 0, crackle: 0.3, whine: 0, hit: 1 },
-  /** digital and electrical: FM metal, crushed buzz, crackle, the whine */
-  machine: { rise: 7, top: 1400, fm: 0.8, grains: 0.2, crush: 0.45, crackle: 0.9, whine: 0.3, hit: 0.9 },
-} satisfies Record<string, StartUp>;
-export type StartUpName = keyof typeof STARTUPS;
+export const SPINUPS = {
+  generator: { loops: [["spinGenerator", 1]], rise: 8, from: 0.2, to: 2.2, hold: 2 },
+  boiler: { loops: [["spinBoiler", 1]], rise: 8, from: 0.25, to: 2, hold: 2 },
+  fan: { loops: [["spinFan", 1]], rise: 8, from: 0.15, to: 1.8, hold: 2 },
+  disk: { loops: [["spinDisk", 1]], rise: 8, from: 0.1, to: 1.6, hold: 2 },
+  /** the generator's weight under the fan's whirr */
+  generatorFan: { loops: [["spinGenerator", 1], ["spinFan", 0.6]], rise: 8, from: 0.2, to: 2, hold: 2 },
+  /** the boiler's metal under the disk's spin */
+  boilerDisk: { loops: [["spinBoiler", 1], ["spinDisk", 0.5]], rise: 8, from: 0.2, to: 1.8, hold: 2 },
+} satisfies Record<string, SpinUp>;
+export type SpinUpName = keyof typeof SPINUPS;
 
-/** a curve along the rise: slow at first, fast at the end */
-const ease = (k: number): number => k * k * k;
-
-/** a bit-crusher's curve: `steps` levels */
-function crushCurve(steps: number): Float32Array<ArrayBuffer> {
-  const c = new Float32Array(2048);
-  for (let i = 0; i < c.length; i++) {
-    const x = (i / (c.length - 1)) * 2 - 1;
-    c[i] = Math.round(x * steps) / steps;
-  }
-  return c;
-}
-
-export function reactorStart(ctx: BaseAudioContext, out: Out, level = 1, o: StartUp = STARTUPS.full): void {
+/** one spin-up: each loop's rate climbs from `from` to `to` on one curve (slow to start, quickening), holds, fades */
+export function spinUp(ctx: BaseAudioContext, out: Out, level = 1, o: SpinUp = SPINUPS.generator): void {
   const t0 = ctx.currentTime + 0.05;
-  const R = o.rise;
-  const end = t0 + R;
-  const ramp = (p: AudioParam, from: number, to: number, shape = 3): void => {
-    // the rise is exponential-ish: set it as points so it bends late
-    const n = 24;
-    for (let i = 0; i <= n; i++) {
-      const k = i / n;
-      p.setValueAtTime(from + (to - from) * Math.pow(k, shape), t0 + k * R);
-    }
-  };
-  const bus = ctx.createGain();
-  bus.gain.value = level;
-  bus.connect(out);
-
-  // the sub: a sine and a saw an octave up, climbing, swelling
-  const sub = ctx.createOscillator();
-  const saw = ctx.createOscillator();
-  saw.type = "sawtooth";
-  ramp(sub.frequency, 30, o.top);
-  ramp(saw.frequency, 60, o.top * 2);
-  const sawLp = ctx.createBiquadFilter();
-  sawLp.type = "lowpass";
-  ramp(sawLp.frequency, 120, 6000, 2);
-  sawLp.Q.value = 6;
-  const subG = ctx.createGain();
-  ramp(subG.gain, 0.0001, 0.45, 1.5);
-  const sawG = ctx.createGain();
-  ramp(sawG.gain, 0.0001, 0.12, 2);
-  sub.connect(subG).connect(bus);
-  saw.connect(sawLp).connect(sawG).connect(bus);
-
-  // FM metal: a carrier modulated at a drifting, non-integer ratio, hard and edged
-  if (o.fm) {
-    const car = ctx.createOscillator();
-    const mod = ctx.createOscillator();
-    ramp(car.frequency, 80, o.top * 1.5);
-    ramp(mod.frequency, 80 * 1.41, o.top * 1.5 * 2.73);
-    const depth = ctx.createGain();
-    ramp(depth.gain, 40, o.top * 3, 2);
-    mod.connect(depth).connect(car.frequency);
+  const top = t0 + o.rise;
+  const end = top + o.hold;
+  for (const [name, v] of o.loops) {
+    const buf = decoded.get(ctx)?.get(TAKES[name][0]);
+    if (!buf) continue;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    // the curve: rate = from * (to/from)^(k^1.4) --- exponential in pitch, eased in, one line
+    const n = 64;
+    const curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) curve[i] = o.from * Math.pow(o.to / o.from, Math.pow(i / (n - 1), 1.4));
+    src.playbackRate.setValueCurveAtTime(curve, t0, o.rise);
     const g = ctx.createGain();
-    ramp(g.gain, 0.0001, 0.08 * o.fm, 2.5);
-    const hp = ctx.createBiquadFilter();
-    hp.type = "highpass";
-    hp.frequency.value = 200;
-    car.connect(hp).connect(g).connect(bus);
-    for (const x of [car, mod]) {
-      x.start(t0);
-      x.stop(end + 0.1);
-    }
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(v * level, t0 + o.rise * 0.5);
+    g.gain.setValueAtTime(v * level, end);
+    g.gain.exponentialRampToValueAtTime(0.0001, end + 1.5);
+    src.connect(g).connect(out);
+    src.start(t0, Math.random() * buf.duration);
+    src.stop(end + 1.6);
   }
+}
 
-  // a bit-crushed buzz: a square through a few levels, so it's coarse and digital
-  if (o.crush) {
-    const sq = ctx.createOscillator();
-    sq.type = "square";
-    ramp(sq.frequency, 45, o.top * 0.75);
-    const crush = ctx.createWaveShaper();
-    crush.curve = crushCurve(3);
-    const bp = ctx.createBiquadFilter();
-    bp.type = "bandpass";
-    ramp(bp.frequency, 300, 4000, 2);
-    bp.Q.value = 1.5;
-    const g = ctx.createGain();
-    ramp(g.gain, 0.0001, 0.12 * o.crush, 2);
-    sq.connect(crush).connect(bp).connect(g).connect(bus);
-    sq.start(t0);
-    sq.stop(end + 0.1);
-  }
-
-  // the groan's grains: tiny slices of the recording, sparse and low at first, a dense high swarm at the top
-  const groanBufs = [...(decoded.get(ctx)?.entries() ?? [])].filter(([k]) => k.startsWith("groan")).map(([, b]) => b);
-  if (o.grains && groanBufs.length) {
-    let t = t0;
-    while (t < end) {
-      const k = (t - t0) / R;
-      const buf = groanBufs[Math.floor(Math.random() * groanBufs.length)];
-      const src = ctx.createBufferSource();
-      src.buffer = buf;
-      src.playbackRate.value = 0.5 + ease(k) * 3.5 + Math.random() * 0.2;
-      const len = 0.04 + (1 - k) * 0.12;
-      const g = ctx.createGain();
-      const v = 0.25 * o.grains * (0.3 + 0.7 * k);
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(v, t + len * 0.3);
-      g.gain.linearRampToValueAtTime(0, t + len);
-      const pan = ctx.createStereoPanner();
-      pan.pan.value = Math.random() * 1.4 - 0.7;
-      src.connect(g).connect(pan).connect(bus);
-      src.start(t, Math.random() * Math.max(0, buf.duration - len * 4), len * 4);
-      // grains come faster as it climbs: one every 80 ms at first, a swarm (every 3 ms) at the top
-      t += 0.08 - 0.077 * Math.pow(k, 1.6) + Math.random() * 0.006;
-    }
-  }
-
-  // electrical crackle: sharp pops, a few at first, thickening into a sizzle
-  if (o.crackle) {
-    let t = t0 + 0.8;
-    while (t < end) {
-      const k = (t - t0) / R;
-      burst(ctx, bus, t, { type: "highpass", f: 3000 + Math.random() * 5000, gain: 0.15 * o.crackle * (0.3 + 0.7 * Math.random()), decay: 0.004 + Math.random() * 0.01 });
-      t += (0.35 - 0.33 * ease(k)) * (0.3 + Math.random() * 1.4);
-    }
-  }
-
-  // a ring-modulated whine near the top: two high tones beating, metallic and thin
-  if (o.whine) {
-    const a = ctx.createOscillator();
-    const b = ctx.createOscillator();
-    a.frequency.setValueAtTime(1500, t0 + R * 0.55);
-    a.frequency.exponentialRampToValueAtTime(4200, end);
-    b.frequency.setValueAtTime(1730, t0 + R * 0.55);
-    b.frequency.exponentialRampToValueAtTime(4700, end);
-    const ring = ctx.createGain();
-    ring.gain.value = 0;
-    b.connect(ring.gain);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t0 + R * 0.55);
-    g.gain.exponentialRampToValueAtTime(0.06 * o.whine, end);
-    a.connect(ring).connect(g).connect(bus);
-    for (const x of [a, b]) {
-      x.start(t0 + R * 0.55);
-      x.stop(end + 0.05);
-    }
-  }
-
-  for (const x of [sub, saw]) {
-    x.start(t0);
-    x.stop(end + 0.05);
-  }
-
-  // the hit: a crack, a deep boom, and the plant's new hum rising out of it and settling
-  if (o.hit) {
-    burst(ctx, bus, end, { type: "highpass", f: 1500, gain: 0.5 * o.hit, decay: 0.08 });
-    burst(ctx, bus, end, { type: "lowpass", f: 2000, fEnd: 100, gain: 0.7 * o.hit, decay: 1.6 });
-    tone(ctx, bus, end, { f: 70, fEnd: 30, gain: 0.8 * o.hit, decay: 1.2 });
-    for (const [f, v] of [[110, 1], [220, 0.5], [330, 0.25]] as const) {
-      const h = ctx.createOscillator();
-      h.frequency.value = f;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, end);
-      g.gain.exponentialRampToValueAtTime(0.09 * v * o.hit, end + 0.4);
-      g.gain.exponentialRampToValueAtTime(0.0001, end + 4);
-      h.connect(g).connect(bus);
-      h.start(end);
-      h.stop(end + 4.1);
-    }
-  }
+/** the reversed power-off: a machine winding up as recorded, stretched to `stretch` times as long */
+export function powerOn(ctx: BaseAudioContext, out: Out, level = 1, stretch = 1): void {
+  const buf = decoded.get(ctx)?.get(TAKES.spinPowerOn[0]);
+  if (!buf) return;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.playbackRate.value = 1 / stretch;
+  const g = ctx.createGain();
+  g.gain.value = level;
+  src.connect(g).connect(out);
+  src.start();
 }
 
 /** every effect by name, for the preview page and for audio.ts */

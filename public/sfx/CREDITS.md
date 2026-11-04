@@ -18,3 +18,8 @@ reverb supplies the space).
 | files | from | licence |
 |---|---|---|
 | groan_a.wav, groan_b.wav, groan_c.wav | SoundBible, "Submarine Creaking" (soundbible.com/1625), uploaded by stephan. Three cuts, mono 48 kHz, faded in and out. | Public Domain |
+| spin_generator.wav | OpenGameArt, "Generator (loop)" (opengameart.org/content/generator-loop), trimmed to a seamless loop | CC0 |
+| spin_boiler.wav | OpenGameArt, "Steam boiler sound loop" by the Tempest in the Aether author (opengameart.org/content/steam-boiler-sound-loop), trimmed | CC0 (attribution appreciated) |
+| spin_fan.wav | OpenGameArt, "(defect) motor loop", a GFX card fan (opengameart.org/content/defect-motor-loop), trimmed | CC0 |
+| spin_disk.wav | OpenGameArt, "Electronic device loop" by qubodup, a hard disk (opengameart.org/content/electronic-device-loop), trimmed | CC0 |
+| spin_poweron.wav | OpenGameArt, "Machine shutting down" (opengameart.org/content/machine-shutting-down), reversed | CC0 |

@@ -10,7 +10,7 @@
 // Browsers won't play sound before a gesture, so nothing starts until the
 // first click or key; M mutes (remembered per browser).
 
-import { PUNCH, SFX, STARTUPS, loadTakes, playTake, reactorStart, type Punch, type SfxName, type StartUpName, type TakeName } from "./sfx.ts";
+import { PUNCH, SFX, SPINUPS, loadTakes, playTake, powerOn, spinUp, type Punch, type SfxName, type SpinUpName, type TakeName } from "./sfx.ts";
 
 /** which room the listener is in: sets the bed and how much the reverb takes */
 export type Zone = "surface" | "tutorial" | "core" | "corridor" | "lab" | "hall" | "passage" | "car" | "shaft";
@@ -279,11 +279,17 @@ export class Audio {
     if (this.ctx && this.room) playTake(this.ctx, this.room, name, level, punch);
   }
 
-  /** the reactor starting up (one of the variants), at the listener */
-  reactorStart(name: StartUpName = "full", level = 1): void {
-    // its grains are cut from the groan: wait for the recordings if they're still coming
+  /** the reactor spinning up (one of the variants), at the listener; waits for the recordings */
+  spinUp(name: SpinUpName = "generator", level = 1): void {
     void this.loaded.then(() => {
-      if (this.ctx && this.room) reactorStart(this.ctx, this.room, level, STARTUPS[name]);
+      if (this.ctx && this.room) spinUp(this.ctx, this.room, level, SPINUPS[name]);
+    });
+  }
+
+  /** the reversed power-off, stretched */
+  powerOn(stretch = 1, level = 1): void {
+    void this.loaded.then(() => {
+      if (this.ctx && this.room) powerOn(this.ctx, this.room, level, stretch);
     });
   }
 
