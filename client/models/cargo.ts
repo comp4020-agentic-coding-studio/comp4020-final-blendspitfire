@@ -124,7 +124,7 @@ function openCaseParts(parts: Parts, x: number, z: number): void {
 
 /**
  * munitions, packed pallet to pallet: case walls at the back stepping from
- * six courses (by the aisle) to five, shell pyramids in two rows, then case
+ * six courses (at the heap's middle) to five, shell pyramids in two rows, then case
  * stacks stepping down to the front, a few things knocked loose at its foot
  */
 export function munitionsCargo(w: number, d: number): THREE.Group {
@@ -132,7 +132,7 @@ export function munitionsCargo(w: number, d: number): THREE.Group {
   const random = rng(11);
   const back = -d / 2;
   const g = 0.04; // gap between pallets
-  // the back: three stacks wall to wall, the tallest against the aisle (east), the tag on it
+  // the back: three stacks wall to wall, the tallest at the heap's middle (east), the tag on it
   const bz = back + 0.05 + 2 * CASE.d;
   const sw = 3 * CASE.w;
   const xs = [w / 2 - sw / 2, w / 2 - 1.5 * sw - g, w / 2 - 2.5 * sw - 2 * g];
@@ -333,7 +333,7 @@ function tarpParts(parts: Parts, x0: number, x1: number, back: number, front: nu
 
 /**
  * equipment, packed pallet to pallet: cabinets at the back with chassis
- * stacked against the aisle, reels heaped and racked in the middle, then
+ * stacked at the heap's middle, reels heaped and racked in the middle, then
  * modules, chassis, reels and monitors stepping down to the front; the
  * tarp over the back, dragged half off over the reels
  */
@@ -342,7 +342,7 @@ export function equipmentCargo(w: number, d: number): THREE.Group {
   const random = rng(23);
   const back = -d / 2;
   const g = 0.04;
-  // the back: two rows of cabinets back to back, from the outer side in; chassis stacked high against the aisle (west)
+  // the back: two rows of cabinets back to back, from the outer side in; chassis stacked high at the heap's middle (west)
   const rowW = 5 * CABINET.w;
   const rowX = w / 2 - rowW / 2;
   const row1 = back + 0.05 + CABINET.d / 2;
@@ -352,7 +352,7 @@ export function equipmentCargo(w: number, d: number): THREE.Group {
   assetTag(parts, w / 2 - 0.5 * CABINET.w, 0.1 + CABINET.h + 0.06, row2 - 0.1);
   chassisStackParts(parts, -w / 2 + 0.5, row1, random);
   chassisStackParts(parts, -w / 2 + 0.5, row2, random);
-  // the middle: film reels heaped flat, the tallest pile in the middle, racks of reels on edge against the aisle
+  // the middle: film reels heaped flat, the tallest pile in the middle, racks of reels on edge at the heap's middle
   const s = REEL_R * 2 + 0.06;
   const reelZ = row2 + CABINET.d / 2 + 0.1 + s;
   reelStackParts(parts, w / 2 - 1.5 * s, reelZ, [

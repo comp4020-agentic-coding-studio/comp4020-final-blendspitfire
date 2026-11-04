@@ -1227,7 +1227,7 @@ function currentMarkers(): Marker[] {
     const panel = { x: FREIGHT_PANEL.x, z: FREIGHT_PANEL.z };
     if (st?.stage === "lights" || st?.stage === "opening") add({ id: "m-evac", at: v3(BLAST_DOOR.x, 2.8, BLAST_DOOR.z), near: { x: BLAST_DOOR.x, z: BLAST_DOOR.z + 2 }, label: "blast door opening", loud: true });
     else if (st?.stage === "open") add({ id: "m-evac", at: v3(panel.x, 2.2, panel.z), near: panel, label: "freight lift · start it", loud: true });
-    else if (st?.stage === "boarding" && !inFreight(p.x, p.z)) add({ id: "m-evac", at: v3(FREIGHT_PANEL.x, 2.2, (FREIGHT.minZ + FREIGHT.maxZ) / 2), near: { x: FREIGHT_PANEL.x, z: FREIGHT.maxZ }, label: "get on the freight lift", detail: `${Math.ceil(st.left / 1000)}s`, loud: true });
+    else if (st?.stage === "boarding" && !inFreight(p.x, p.z)) add({ id: "m-evac", at: v3((FREIGHT.minX + FREIGHT.maxX) / 2, 2.2, (FREIGHT.minZ + FREIGHT.maxZ) / 2), near: { x: (FREIGHT.minX + FREIGHT.maxX) / 2, z: FREIGHT.maxZ }, label: "get on the freight lift", detail: `${Math.ceil(st.left / 1000)}s`, loud: true });
   }
   // underground the lift is always findable before the attempt locks it in
   if (!objective.active) {

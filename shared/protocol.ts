@@ -764,23 +764,27 @@ export const FREIGHT_RAILS: Obstacle[] = [
   wallBetween(FREIGHT.maxX + WALL_HALF, FREIGHT.minZ - 2 * WALL_HALF, FREIGHT.maxX + WALL_HALF, -O, 0.3),
   wallBetween(FREIGHT.minX - 2 * WALL_HALF, FREIGHT.minZ - WALL_HALF, FREIGHT.maxX + 2 * WALL_HALF, FREIGHT.minZ - WALL_HALF, 0.3),
 ];
-/** the freight lift's start panel, on the platform's back wall */
-export const FREIGHT_PANEL = { x: (FREIGHT.minX + FREIGHT.maxX) / 2, z: FREIGHT.minZ + 0.6 };
+/**
+ * the freight lift's start panel: by the door, where a real freight lift's
+ * is (user 2026-11-04), on a post at the south end of the east railing, so
+ * whoever starts it is standing at the way in and the cargo is behind them
+ */
+export const FREIGHT_PANEL = { x: FREIGHT.maxX - 0.35, z: FREIGHT.maxZ - 0.7 };
+/** the panel's post: solid, so nobody walks through it at the door */
+export const FREIGHT_PANEL_BODY: Obstacle = { x: FREIGHT_PANEL.x, z: FREIGHT_PANEL.z, halfX: 0.25, halfZ: 0.25, halfHeight: 0.5 };
 /**
  * The cargo: the point of the whole job (user 2026-11-04: in the setting
- * the reactor is only there to power this lift). Two lashed-down blocks
- * over half the platform (user 2026-11-04), munitions west and equipment east, with an aisle
- * to the panel between them; the front half is left for the crew. Solid
- * to walk into, and under sight height so it's seen over (models:
- * client/world/evac.ts cargo()).
+ * the reactor is only there to power this lift). One lashed-down heap
+ * against the back of the platform over half its area, munitions west and
+ * equipment east hard up against each other (user 2026-11-04: two blocks
+ * with an aisle read as furniture in a room); the front is left for the
+ * crew. Solid to walk into, and under sight height so it's seen over
+ * (models: client/world/evac.ts deck()).
  */
-/** half the aisle to the panel between the two blocks: room for one at a time (user 2026-11-04: narrower, the blocks closer) */
-const CARGO_AISLE = 0.75;
-/** each block's width: from the aisle out, leaving a strip along the railing */
-const CARGO_W = 5.4;
+/** each half's width (munitions, equipment); the heap is two of them side by side */
+export const CARGO_W = 5.4;
 export const FREIGHT_CARGO: Obstacle[] = [
-  { x: FREIGHT_PANEL.x - CARGO_AISLE - CARGO_W / 2, z: FREIGHT.minZ + 4.0, halfX: CARGO_W / 2, halfZ: 3.75, halfHeight: 0.9 },
-  { x: FREIGHT_PANEL.x + CARGO_AISLE + CARGO_W / 2, z: FREIGHT.minZ + 4.0, halfX: CARGO_W / 2, halfZ: 3.75, halfHeight: 0.9 },
+  { x: (FREIGHT.minX + FREIGHT.maxX) / 2, z: FREIGHT.minZ + 4.0, halfX: CARGO_W + 0.05, halfZ: 3.75, halfHeight: 0.9 },
 ];
 export const inFreight = (x: number, z: number, margin = 0): boolean => inRect(FREIGHT, x, z, margin);
 
@@ -964,6 +968,7 @@ export const OBSTACLES: Obstacle[] = [
   ...WALLS,
   ...FREIGHT_RAILS,
   ...FREIGHT_CARGO,
+  FREIGHT_PANEL_BODY,
   ...LIFT_HOUSE_WALLS,
   ...FENCES,
   ...FIXTURES.map((f) => (f === REACTOR ? REACTOR_BODY : f)),

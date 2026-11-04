@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { CONCRETE_DARK, EMIT_AMBER, HAZARD, PAINT_CHARCOAL, RUBBER, STEEL } from "../../shared/palette.ts";
-import { BLAST_DOOR, FACILITY_WALL_HALF_HEIGHT, FREIGHT, FREIGHT_CARGO, FREIGHT_PANEL, FREIGHT_SHAFT, FREIGHT_WALLS } from "../../shared/protocol.ts";
+import { BLAST_DOOR, FACILITY_WALL_HALF_HEIGHT, FREIGHT, CARGO_W, FREIGHT_CARGO, FREIGHT_PANEL, FREIGHT_SHAFT, FREIGHT_WALLS } from "../../shared/protocol.ts";
 import { equipmentCargo, munitionsCargo } from "../models/cargo.ts";
 import { blastDoorOpen, evacStage, type EvacState } from "../../shared/enemies.ts";
 import { glow } from "../look.ts";
@@ -106,23 +106,29 @@ function deck(): THREE.Group {
   for (const x of [FREIGHT.minX + 0.08, FREIGHT.maxX - 0.08]) parts.push(part(box(0.16, 0.12, D), STEEL.base, x, 0.03, CZ));
   parts.push(part(box(W, 1.2, 0.1), STEEL.shade, CX, -0.6, FREIGHT.minZ + 0.05));
   for (const x of [FREIGHT.minX + 0.05, FREIGHT.maxX - 0.05]) parts.push(part(box(0.1, 1.2, D), STEEL.shade, x, -0.6, CZ));
-  // the start panel on the back wall: a pedestal, a big mushroom button
-  parts.push(part(box(0.9, 1.0, 0.5), STEEL.base, FREIGHT_PANEL.x, 0.5, FREIGHT_PANEL.z - 0.25));
-  parts.push(part(box(0.7, 0.04, 0.38), HAZARD.base, FREIGHT_PANEL.x, 1.02, FREIGHT_PANEL.z - 0.25));
+  // the start panel by the door, on a post at the railing's end: a pedestal, a big mushroom button
+  parts.push(part(box(0.5, 1.0, 0.5), STEEL.base, FREIGHT_PANEL.x, 0.5, FREIGHT_PANEL.z));
+  parts.push(part(box(0.4, 0.04, 0.4), HAZARD.base, FREIGHT_PANEL.x, 1.02, FREIGHT_PANEL.z));
   const g = multiMesh({ matte: [merge(parts, "ground", 0.4)] });
-  const [west, east] = FREIGHT_CARGO;
-  const ammo = munitionsCargo(west.halfX * 2, west.halfZ * 2);
-  ammo.position.set(west.x, 0, west.z);
-  const kit = equipmentCargo(east.halfX * 2, east.halfZ * 2);
-  kit.position.set(east.x, 0, east.z);
+  // the cargo: one heap, the two halves hard up against each other
+  const [heap] = FREIGHT_CARGO;
+  const halves = [heap.x - CARGO_W / 2 - 0.025, heap.x + CARGO_W / 2 + 0.025];
+  const ammo = munitionsCargo(CARGO_W, heap.halfZ * 2);
+  ammo.position.set(halves[0], 0, heap.z);
+  const kit = equipmentCargo(CARGO_W, heap.halfZ * 2);
+  kit.position.set(halves[1], 0, heap.z);
   g.add(ammo, kit);
-  // the load's own light: a warm work lamp's pool over each block, so it's what the eye goes to
-  for (const c of FREIGHT_CARGO) {
+  // the load's own light: a warm work lamp's pool over each half, so it's what the eye goes to
+  for (const x of halves) {
     const pool = new THREE.PointLight(0xffe2b8, 18, 9, 1.4);
-    pool.position.set(c.x, 2.8, c.z + 0.4);
+    pool.position.set(x, 2.8, heap.z + 0.4);
     g.add(pool);
   }
-  const button = mesh(glowPart(new THREE.CylinderGeometry(0.16, 0.16, 0.08, 10), EMIT_AMBER, FREIGHT_PANEL.x, 1.08, FREIGHT_PANEL.z - 0.25), "emissive");
+  // and a small one over the panel, so the way to start it is findable at the door
+  const panelLight = new THREE.PointLight(0xffc890, 6, 3.5, 1.6);
+  panelLight.position.set(FREIGHT_PANEL.x - 0.4, 2.2, FREIGHT_PANEL.z - 0.3);
+  g.add(panelLight);
+  const button = mesh(glowPart(new THREE.CylinderGeometry(0.16, 0.16, 0.08, 10), EMIT_AMBER, FREIGHT_PANEL.x, 1.08, FREIGHT_PANEL.z), "emissive");
   button.name = "button";
   g.add(button);
   return g;
