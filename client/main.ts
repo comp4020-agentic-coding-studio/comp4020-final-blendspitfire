@@ -2211,7 +2211,7 @@ document.body.appendChild(heliFadeEl);
 // door and the shaft move on the server's clock, the camera rumbles with
 // them, and the settlement plays over the climb, then black and the thanks
 // card until the server brings everyone up.
-const settlement = new Settlement();
+const settlement = new Settlement(Math.max(1, Math.round(1 / PIXEL_SCALE)));
 const evacFadeEl = document.createElement("div");
 evacFadeEl.className = "ui-wipe";
 document.body.appendChild(evacFadeEl);

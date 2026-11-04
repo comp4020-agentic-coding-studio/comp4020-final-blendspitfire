@@ -1,4 +1,4 @@
-// The company's seal, for the thanks card: a rectangular stamp whose face is
+// The company's seal, for the thanks card (pixelLogo puts it on the game's grid): a rectangular stamp whose face is
 // a Code 128 barcode for PAYLOAD. The bar tops are cut
 // into the surface --- regular blocks with windows, trees, and vine cables
 // hung between the towers that punch holes through the bars --- and the
@@ -175,4 +175,49 @@ export function logoSvg(): string {
     `<g shape-rendering="crispEdges">${bars}</g>${solids()}</g></g>` +
     `</svg>`
   );
+}
+
+/**
+ * The seal on the game's own pixel grid: the SVG sampled 8x8 per pixel of
+ * `cell` screen px, then each pixel full ink if at least half covered, dim
+ * ink if a fifth, else none (user 2026-11-04, of six tried: keeps hard
+ * pixels but lets the thin frame and vines survive a step darker). Shown
+ * scaled back up nearest-neighbour. `width` is its size on screen in CSS
+ * px; `color` the ink, since an image can't take currentColor.
+ */
+export function pixelLogo(width: number, cell: number, color: string): HTMLCanvasElement {
+  const SS = 8;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(width / cell);
+  canvas.height = Math.round((width * H) / W / cell);
+  canvas.style.width = `${canvas.width * cell}px`;
+  canvas.style.imageRendering = "pixelated";
+  const img = new Image();
+  img.onload = () => {
+    const hi = document.createElement("canvas");
+    hi.width = canvas.width * SS;
+    hi.height = canvas.height * SS;
+    const hx = hi.getContext("2d")!;
+    hx.drawImage(img, 0, 0, hi.width, hi.height);
+    const src = hx.getImageData(0, 0, hi.width, hi.height).data;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const out = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    for (let y = 0; y < canvas.height; y++) {
+      for (let x = 0; x < canvas.width; x++) {
+        let sum = 0;
+        for (let j = 0; j < SS; j++) for (let i = 0; i < SS; i++) sum += src[((y * SS + j) * hi.width + x * SS + i) * 4 + 3];
+        const cover = sum / (255 * SS * SS);
+        out.data[(y * canvas.width + x) * 4 + 3] = cover >= 0.5 ? 255 : cover >= 0.2 ? 115 : 0;
+      }
+    }
+    ctx.putImageData(out, 0, 0);
+  };
+  // without the worn filter: its grain breaks thin lines into dashes on so coarse a grid
+  const svg = logoSvg()
+    .replace(' filter="url(#anu-worn)"', "")
+    .replace("<svg ", `<svg width="${W}" height="${H}" color="#fff" `);
+  img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  return canvas;
 }

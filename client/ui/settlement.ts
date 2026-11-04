@@ -1,6 +1,6 @@
 import type { BoardMessage, CrewLine, Report } from "../../shared/protocol.ts";
 import { SETTLE_PAGES_MS, THANKS_BLACK_MS, THANKS_IN_MS, THANKS_MS, THANKS_OUT_MS, type EvacStage } from "../../shared/enemies.ts";
-import { logoSvg } from "./logo.ts";
+import { pixelLogo } from "./logo.ts";
 
 // The settlement (ADR-060): played while the freight lift climbs, after
 // Lethal Company's end-of-shift screens. Three pages on the server's clock,
@@ -58,15 +58,18 @@ export class Settlement {
   private wasBlack = false;
   private backAt = 0;
 
-  constructor() {
+  /** `cell`: how many screen px one of the game's pixels is, so the seal sits on the same grid */
+  constructor(cell: number) {
     this.el = document.createElement("div");
     this.el.className = "ui-settle";
     document.body.appendChild(this.el);
     this.thanks = document.createElement("div");
     this.thanks.className = "ui-thanks";
     this.thanks.innerHTML =
-      `<div class="logo">${logoSvg()}</div><div class="sub">asset nexus unlimited</div>` +
+      '<div class="logo"></div><div class="sub">asset nexus unlimited</div>' +
       '<div class="line">the reactor holds. for now.</div><div class="line big">thanks for playing</div>';
+    const ink = getComputedStyle(document.documentElement).getPropertyValue("--ui").trim() || "#f2ead6";
+    this.thanks.querySelector(".logo")!.append(pixelLogo(Math.min(440, window.innerWidth * 0.8), cell, ink));
     document.body.appendChild(this.thanks);
   }
 
