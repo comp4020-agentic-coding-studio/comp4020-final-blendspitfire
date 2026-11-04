@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-11-03, the ninth round's end-credits decision
+Synced from the draft up to: 2026-11-05, the overnight build (rooms, credits, grenades, rotors)
 
 ---
 
@@ -914,3 +914,55 @@ Suggested minimal topology: safe room, one main corridor (bottleneck), a fork in
 **Decision.** The developer picked "Assets recovered. Thank you for your service." but found it clashed with "thanks for playing" beneath, so the card becomes film-style end credits that scroll up, separate from the logo and line. The developer's idea was to put the leaderboard there and "thanks for playing" at the very bottom. Five sections, as the agent proposed: the logo, name, DEMO stamp and the line, holding before the scroll; this run's crew, like a cast list; the top ten; a credits section kept as a placeholder for the developer to fill; "thanks for playing", holding, then fading out to the surface. The settlement's third page keeps only the player's own rank and new best. The credits can run longer; the developer already found the current card too short. Asked beta or demo, the agent argued for DEMO (the run is complete from tutorial to credits, DEMO implies more to come, and a stamp reading DEMO fits a company marking a sample) and the developer chose it.
 
 **Why.** The developer's reasons as above: the line had to stop clashing, and the ending felt too short.
+
+## ADR-069: Freight lift — panel by the door, the cargo one heap, the shaft built around the platform
+*2026-11-04 · Status: Accepted*
+
+**Context.** In the game's setting the reactor only exists to power the freight lift; the cargo is the mission, so it has to read as the focus. The panel stood at the platform's far wall, reached by walking through the cargo, which no real freight lift does. The shaft's yellow-black hazard beams looked poor and clipped the platform.
+
+**Options.** A: move the panel to a post at the door end of the railing and merge the two cargo stacks into one heap against the back. B: move only the panel, keeping the two stacks and the aisle between them.
+
+**Decision.** A. The developer also set the shaft's structure: the blast door belongs to the map, not the lift, so it sinks with the walls as the platform rises; the south wall matches the other three; a simple railing keeps people off the walls. Shaft lamps about one a metre, bigger and self-lit rather than bright. From outside, the south wall above the door isn't drawn (option 2 of 2, the smallest change); from inside it's a dithered screen door, solid where the door halves still cover it. The wall clutter (conduit, cable tray, caged ladder, landing doors, faint red pilot lights) is the agent's pick, awaiting the developer's look.
+
+**Why.** "More like a freight lift"; the aisle only existed to reach the panel; two stacks looked like furniture in a big room, one heap reads as cargo.
+
+## ADR-070: The ending's seal, stamp and order
+*2026-11-04 · Status: Accepted*
+
+**Context.** The end card's logo was a full-resolution vector, out of place in the game's quarter-resolution pixels.
+
+**Decision.** The seal is drawn on the game's 4 px grid, two-level (full ink at half coverage, dim ink at a fifth; the developer picked this of six renderings), without the worn filter. The DEMO stamp is a solid block with the letters cut out (A of three). The barcode reads "4020" again, since COMP4020 was unreadable once pixelated. Order: the logo and line come in over the still-rising shaft first, then the scene darkens behind them (the developer's call).
+
+## ADR-071: Sound, first batches
+*2026-11-05 · Status: Accepted, in progress*
+
+**Context.** Sound was the most needed piece, and the developer had time to listen along.
+
+**Decision.** Ambience first, then combat. Source: "decide as we hear it" --- synthesised first, swapped for CC0 recordings where synthesis read wrong. Underground is a low hum, not wind; one-off events only outside the lift car. Synthesised clanks read as "an instrument" and were pulled. A recorded hull groan (public domain), far version, plays below every 10--25 s. The combat batch is synthesised ("electronic but acceptable, adopt now, replace step by step"); the rifle is a CC0 SKS recording pushed heavy. The reactor start is a looping generator recording sped up along a continuous curve, settling to a hum at the reactor (option A of three) and winding down when power's lost. New sounds go to a clickable sound sheet before a playtest.
+
+## ADR-072: Sites (rooms), a title screen, and leaving
+*2026-11-05 · Status: Accepted, built, awaiting the developer's look*
+
+**Context.** The developer judged rooms unavoidable: ten-odd people at the showcase can't share one world. Rooms bring a title screen and a room list with them.
+
+**Decision.** Each choice made by the developer from the agent's options:
+- Players make their own sites; each gets an automatic name (SITE-XXXX) and every one is listed publicly. A `?room=` link joins directly.
+- At most four per site.
+- A site that empties is thrown away after 60 seconds; nothing in it is saved. The leaderboard stays global.
+- A site whose reactor is on can't be joined; it's greyed in the list.
+- The tutorial is unchanged: a newcomer starts in their site's training shed.
+- The title screen asks for a name: 1--12 letters or digits, blank keeps the codename, duplicates allowed.
+- Esc opens a menu (continue / sound / leave site). Leaving below during an attempt counts as being out, and the menu warns first.
+- If time runs short: rooms, then credits, then grenades, then rotors.
+
+Built (agent): `server/room.ts` holds a whole world per site; `server/index.ts` is the lobby (`/api/rooms`; full, started and gone sites close the socket with a code the title screen explains). A server restart drops every site, which matches "empty means reset".
+
+## ADR-073: End credits, grenades on the belt, rotors at rest
+*2026-11-05 · Status: Built, awaiting the developer's look*
+
+**Credits** (ADR-068's sections): 30 s in all, no skip, everyone returns together --- the agent's defaults, since length and skipping were left open. The first card holds 5 s, the roll scrolls 20 s to "thanks for playing", which holds and fades.
+
+**Grenades.** The developer found grenades unusable: buying one filled the hands, so throwing meant dropping the rifle. Now G throws one from the belt, at most two carried, price 8 (proposed by the agent, agreed by the developer; was 15). The tutorial's grenade room puts one on the belt.
+
+**Rotors.** As the developer asked: still on the pad, spinning up only while someone is flying, and still again after landing.
+
