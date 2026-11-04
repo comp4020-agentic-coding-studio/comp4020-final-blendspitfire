@@ -23,6 +23,7 @@ import { buildSurface, createSunlight, scoreboardScreen } from "./world/surface.
 import { LiftDoors, liftPanelAt } from "./world/lift.ts";
 import { Settlement } from "./ui/settlement.ts";
 import { EvacView, SHAFT_AREA } from "./world/evac.ts";
+import { Audio, type Zone } from "./audio.ts";
 import { Gore, Impacts } from "./world/gore.ts";
 import { buildTutorial, type TutorialView } from "./world/tutorial.ts";
 import { helicopter } from "./models/heli.ts";
@@ -91,6 +92,7 @@ import {
   FREIGHT_PANEL_RANGE,
   type FreightVerdict,
   inFreight,
+  ROOMS,
   SURFACE,
   SURFACE_FIXTURES,
   SURFACE_VIEW_MARGIN,
@@ -1333,6 +1335,7 @@ function renderControls(): void {
     const parts = [held.state.kind === "gun" ? "click / Space, hold: fire" : `click / Space: ${info.primaryLabel}`, "Q: drop"];
     text = `WASD move · ${parts.join(" · ")}`;
   }
+  text += audio.isMuted ? " · M: sound off" : " · M: mute";
   if (text !== lastControlsText) {
     controlsEl.textContent = text;
     lastControlsText = text;
@@ -1710,6 +1713,7 @@ window.addEventListener("keydown", (e) => {
   else if (key === "q") drop();
   else if (key === "e") useTarget(eTarget());
   else if (key === "x") toggleReady();
+  else if (key === "m") audio.toggleMute();
   else if (key === "n" && boardOpen) {
     toggleBoard();
     askName();
@@ -2102,6 +2106,7 @@ function animate(): void {
   markers.render(currentMarkers(), camera, hudEl.style.display === "block" ? hudEl.getBoundingClientRect().bottom + 40 : undefined);
   renderCountdown();
   stepBeacon(time);
+  stepAudio();
   renderControls();
   // ?debug counts the whole frame's draws (every pass), not just the last pass's
   if (debugEl) renderer.info.reset();
@@ -2134,6 +2139,26 @@ function carShutAround(x: number, z: number): ShutCar[] {
 }
 function carLightPasses(shut: ShutCar[], x: number, z: number): boolean {
   return shut.every((c) => inCar(c.level, x, z) === c.inside);
+}
+
+// --- Sound (client/audio.ts) ---------------------------------------------------
+// The listener is wherever the camera's looking from; its room picks the bed and the reverb.
+const audio = new Audio();
+function zoneAt(x: number, z: number): Zone {
+  if (viewLevel === "tutorial") return "tutorial";
+  if (inCar("top", x, z) || inCar("bottom", x, z)) return "car";
+  if (viewLevel === "top") return "surface";
+  if (inFreight(x, z)) return "shaft";
+  const inside = (r: { minX: number; maxX: number; minZ: number; maxZ: number }) => x >= r.minX && x <= r.maxX && z >= r.minZ && z <= r.maxZ;
+  if (inside(ROOMS.lab)) return "lab";
+  if (inside(ROOMS.hall)) return "hall";
+  if (inside(ROOMS.corridor)) return "corridor";
+  if (inside(ROOMS.westPassage) || inside(ROOMS.eastPassage) || inside(ROOMS.airlock)) return "passage";
+  return "core";
+}
+function stepAudio(): void {
+  audio.setZone(zoneAt(viewPoint.x, viewPoint.z));
+  audio.step();
 }
 
 let paintLevel = 1;
