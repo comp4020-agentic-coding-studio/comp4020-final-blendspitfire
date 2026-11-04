@@ -2,7 +2,7 @@
 import { build } from "esbuild";
 
 await build({
-  entryPoints: { bundle: "client/main.ts", gallery: "client/gallery.ts" },
+  entryPoints: { bundle: "client/main.ts", gallery: "client/gallery.ts", sounds: "client/sounds.ts" },
   bundle: true,
   outdir: "public",
   format: "esm",

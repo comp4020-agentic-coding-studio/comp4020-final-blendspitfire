@@ -7,6 +7,8 @@ public/bundle.js
 public/bundle.js.map
 public/gallery.js
 public/gallery.js.map
+public/sounds.js
+public/sounds.js.map
 
 # editor and OS junk
 .DS_Store

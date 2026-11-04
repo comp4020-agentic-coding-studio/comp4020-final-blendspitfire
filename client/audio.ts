@@ -3,11 +3,14 @@
 // industrial hum, oppressive quiet, the odd groan of the structure), each
 // zone with its own room through one convolution reverb. The structure's
 // groans are out for now: synthesised they read as a mosquito (user
-// 2026-11-05); a CC0 recording may replace them. Effects (guns,
-// crawlers, the lift) come in later batches and go through the same rooms.
+// 2026-11-05); a CC0 recording may replace them. Effects (client/sfx.ts) go into the same room: play() centred, playAt()
+// placed by where they are against the listener (louder near, panned to
+// the side they're on, duller far off).
 //
 // Browsers won't play sound before a gesture, so nothing starts until the
 // first click or key; M mutes (remembered per browser).
+
+import { SFX, type SfxName } from "./sfx.ts";
 
 /** which room the listener is in: sets the bed and how much the reverb takes */
 export type Zone = "surface" | "tutorial" | "core" | "corridor" | "lab" | "hall" | "passage" | "car" | "shaft";
@@ -38,6 +41,9 @@ const ROOMS: Record<Zone, Room> = {
 /** how fast a zone change crossfades, seconds (time constant) */
 const GLIDE = 0.6;
 const MUTE_KEY = "blendspitfire.muted";
+/** effects fade out with distance: full within NEAR, gone by FAR (world units) */
+const NEAR = 3;
+const FAR = 26;
 
 function noiseBuffer(ctx: AudioContext, seconds: number, brown = false): AudioBuffer {
   const b = ctx.createBuffer(1, Math.round(ctx.sampleRate * seconds), ctx.sampleRate);
@@ -90,7 +96,13 @@ export class Audio {
   private nextGroan = 0;
   private nextBird = 0;
 
-  constructor() {
+  /** the listener's spot and facing-free screen axes: +x is right, +z is down the screen */
+  private ear = { x: 0, z: 0 };
+  /** the beds playing (the sound sheet starts with them off) */
+  private beds = true;
+
+  constructor(opts: { previewOnly?: boolean } = {}) {
+    if (opts.previewOnly) this.beds = false;
     try {
       this.muted = localStorage.getItem(MUTE_KEY) === "1";
     } catch {
@@ -224,6 +236,48 @@ export class Audio {
     leaves.start();
   }
 
+  /** the beds on or off (the sound sheet); returns whether they're on */
+  toggleBeds(): boolean {
+    this.beds = !this.beds;
+    this.apply(false);
+    return this.beds;
+  }
+
+  /** where the listener is, for placing effects */
+  setEar(x: number, z: number): void {
+    this.ear.x = x;
+    this.ear.z = z;
+  }
+
+  /** an effect at the listener (your own gun, your wound, the UI) */
+  play(name: SfxName, level = 1): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.room) return;
+    SFX[name](ctx, this.room, level);
+  }
+
+  /** an effect at a spot in the world: quieter and duller with distance, panned to its side of the screen */
+  playAt(name: SfxName, x: number, z: number, level = 1): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.room) return;
+    const dx = x - this.ear.x;
+    const d = Math.hypot(dx, z - this.ear.z);
+    if (d >= FAR) return;
+    const k = d <= NEAR ? 1 : 1 - (d - NEAR) / (FAR - NEAR);
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = Math.max(-0.85, Math.min(0.85, dx / 12));
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 2500 + 15000 * k * k;
+    lp.connect(pan).connect(this.room);
+    SFX[name](ctx, lp, level * k * k);
+    // let the nodes go once it's over
+    window.setTimeout(() => {
+      lp.disconnect();
+      pan.disconnect();
+    }, 3000);
+  }
+
   /** set the listener's room; beds and reverb glide over */
   setZone(zone: Zone): void {
     if (zone === this.zone) return;
@@ -242,8 +296,8 @@ export class Audio {
     };
     set(this.dry.gain, r.dry);
     set(this.wet.gain, r.wet);
-    set(this.below.gain, r.below);
-    set(this.above.gain, r.above);
+    set(this.below.gain, this.beds ? r.below : 0);
+    set(this.above.gain, this.beds ? r.above : 0);
     set(this.bedTone.frequency, r.tone);
   }
 
