@@ -42,6 +42,7 @@ import {
   TUT_WALLS,
   inTutorial,
   padAt,
+  type PadName,
   roomAt,
   shutTutDoors,
   tutDoor,
@@ -1424,6 +1425,12 @@ const net = connect({
     if (state.lift) lift = state.lift;
     for (const line of state.announcements ?? []) showBanner(line);
     for (const r of state.reports ?? []) queueReport(r);
+    // a helicopter's rotor turns while someone aboard it is mid-ride (user 2026-11-05: at rest on the pad)
+    flyingFrom.garden = flyingFrom.tutorial = false;
+    for (const p of players) {
+      const pad = p.flyingUntil ? padAt(p.x, p.z) : undefined;
+      if (pad) flyingFrom[pad] = true;
+    }
     for (const p of players) {
       if (p.id === myId) {
         myRespawnAt = p.respawnAt ?? 0;
@@ -2211,7 +2218,6 @@ function stepLevel(x: number, z: number, dt: number): void {
     tutorialView.update(myTut ?? LESSONS.length, myTutHits, myTutBlasted, clock.elapsedTime);
     updateTutorialSight();
   }
-  gardenRotor.rotation.y = clock.elapsedTime * 0.6 + rotorSpin;
   // the camera's overhead: in a cabin, its roof and rotor are lifted off so you can see yourself
   const aboard = padAt(x, z);
   gardenRoof.visible = gardenRotor.visible = aboard !== "garden";
@@ -2255,7 +2261,11 @@ function updateTutorialSight(): void {
 // fades to black, and you come up in the other one. Each rider flies alone
 // (unlike the lift, there's nothing to wait for), so it's per player.
 
-let rotorSpin = 0;
+/** which helicopters have someone mid-ride aboard (from the last state) */
+const flyingFrom: Record<PadName, boolean> = { garden: false, tutorial: false };
+/** each rotor's speed, rad/frame: runs up while flying, coasts to a stop on the pad */
+const rotorSpeed: Record<PadName, number> = { garden: 0, tutorial: 0 };
+const ROTOR_TOP = 0.9;
 const heliFadeEl = document.createElement("div");
 heliFadeEl.className = "ui-wipe";
 document.body.appendChild(heliFadeEl);
@@ -2298,8 +2308,13 @@ function stepEvac(time: number): void {
 function stepHeliRide(): void {
   const left = myFlyingUntil ? Math.max(0, myFlyingUntil - serverClock.now()) : 0;
   const k = myFlyingUntil ? 1 - left / HELI_RIDE_MS : 0;
-  rotorSpin += myFlyingUntil ? 0.6 + k * 1.5 : 0;
-  if (tutorialView) tutorialView.group.getObjectByName("rotor")!.rotation.y += myFlyingUntil ? 0.6 + k * 1.5 : 0;
+  for (const pad of ["garden", "tutorial"] as const) {
+    // spooling up takes the ride's first second or so; winding down after landing a few
+    const v = rotorSpeed[pad];
+    rotorSpeed[pad] = flyingFrom[pad] ? Math.min(ROTOR_TOP, v + 0.012) : Math.max(0, v * 0.985 - 0.001);
+    const rotor = pad === "garden" ? gardenRotor : tutorialView?.group.getObjectByName("rotor");
+    if (rotor) rotor.rotation.y += rotorSpeed[pad];
+  }
   // black over the last 40% of the ride, back in over the first moments after landing
   const fade = myFlyingUntil ? Math.max(0, (k - 0.6) / 0.4) : 0;
   heliFadeEl.style.opacity = `${Math.min(1, fade)}`;

@@ -239,7 +239,6 @@ export function buildTutorial(): TutorialView {
         const flat = blasted || stage > 4;
         d.rotation.z += ((flat ? 1.5 : 0) - d.rotation.z) * 0.2;
       });
-      rotor.rotation.y = time * 0.6;
     },
     dispose() {
       group.traverse((o) => {
