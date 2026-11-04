@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { BRASS, CANVAS, COMPUTER_WHITE, HAZARD, OLIVE_DRAB, PAPER, RUBBER, STEEL } from "../../shared/palette.ts";
+import { BRASS, CANVAS, COMPUTER_WHITE, HAZARD, OLIVE_DRAB, PAPER, RUBBER, STEEL, WOOD } from "../../shared/palette.ts";
 import { merge, multiMesh, part, rng } from "./kit.ts";
 
 // The freight lift's load: what the whole job is for (user 2026-11-04 --- in
@@ -30,10 +30,16 @@ const PI = Math.PI;
 
 type Parts = THREE.BufferGeometry[];
 
-/** a pallet under each stack: slats on a base, so the stacks read as freight */
+/**
+ * A wooden pallet under each stack (user 2026-11-04): three runners along
+ * it, deck boards across them with gaps between, so the stacks read as
+ * freight. PALLET_H tall; whatever stands on it starts there.
+ */
+const PALLET_H = 0.1;
 function pallet(parts: Parts, x: number, z: number, w: number, d: number): void {
-  parts.push(part(box(w, 0.06, d), STEEL.shade, x, 0.03, z));
-  for (let i = 0; i < 4; i++) parts.push(part(box(w, 0.04, 0.12), STEEL.base, x, 0.08, z - d / 2 + 0.1 + (i * (d - 0.2)) / 3));
+  for (const k of [-1, 0, 1]) parts.push(part(box(w, 0.06, 0.1), WOOD.shade, x, 0.03, z + k * (d / 2 - 0.05)));
+  const n = Math.max(3, Math.round(w / 0.16));
+  for (let i = 0; i < n; i++) parts.push(part(box((w / n) * 0.78, 0.04, d), i % 3 === 1 ? WOOD.light : WOOD.base, x - w / 2 + (w / n) * (i + 0.5), 0.08, z));
 }
 
 /** a ratchet strap over a stack, top and both sides, with its buckle; `span` across the stack, `h` its height */
@@ -108,38 +114,56 @@ function shellPyramidParts(parts: Parts, x: number, z: number, base: number, row
 
 /** an opened case: the lid leant against it, three shells showing inside */
 function openCaseParts(parts: Parts, x: number, z: number): void {
-  parts.push(part(box(0.9, 0.3, 0.55), OLIVE_DRAB.shade, x, 0.15, z));
-  parts.push(part(box(0.8, 0.02, 0.45), RUBBER.base, x, 0.3, z));
-  for (let i = 0; i < 3; i++) shell(parts, x - 0.25 + i * 0.25, 0.28, z, PI / 2, STEEL.light);
-  parts.push(part(box(0.9, 0.04, 0.5), OLIVE_DRAB.base, x, 0.25, z + 0.42, -1.1, 0, 0));
+  const y = PALLET_H;
+  pallet(parts, x, z, 1.0, 0.65);
+  parts.push(part(box(0.9, 0.3, 0.55), OLIVE_DRAB.shade, x, y + 0.15, z));
+  parts.push(part(box(0.8, 0.02, 0.45), RUBBER.base, x, y + 0.3, z));
+  for (let i = 0; i < 3; i++) shell(parts, x - 0.25 + i * 0.25, y + 0.28, z, PI / 2, STEEL.light);
+  parts.push(part(box(0.9, 0.04, 0.5), OLIVE_DRAB.base, x, y + 0.25, z + 0.42, -1.1, 0, 0));
 }
 
-/** munitions: a wall of cases at the back, shell pyramids in the middle, a low course and loose things at the front */
+/**
+ * munitions, packed pallet to pallet: case walls at the back stepping from
+ * six courses (by the aisle) to five, shell pyramids in two rows, then case
+ * stacks stepping down to the front, a few things knocked loose at its foot
+ */
 export function munitionsCargo(w: number, d: number): THREE.Group {
   const parts: Parts = [];
   const random = rng(11);
   const back = -d / 2;
-  // the back: two big stacks, five and four courses, the tag on the taller
-  const bz = back + 0.15 + 2 * CASE.d;
-  const top = ammoStackParts(parts, -w / 2 + 0.1 + 2 * CASE.w, bz, 4, 4, 5, random);
-  assetTag(parts, -w / 2 + 0.1 + 2 * CASE.w, top + 0.04, bz);
-  ammoStackParts(parts, w / 2 - 0.1 - 2 * CASE.w, bz, 4, 4, 4, random);
-  // the middle: three rows of three shell pyramids, packed nose to tail, olive then steel then olive
+  const g = 0.04; // gap between pallets
+  // the back: three stacks wall to wall, the tallest against the aisle (east), the tag on it
+  const bz = back + 0.05 + 2 * CASE.d;
+  const sw = 3 * CASE.w;
+  const xs = [w / 2 - sw / 2, w / 2 - 1.5 * sw - g, w / 2 - 2.5 * sw - 2 * g];
+  const top = ammoStackParts(parts, xs[0], bz, 3, 4, 6, random);
+  assetTag(parts, xs[0], top + 0.04, bz);
+  ammoStackParts(parts, xs[1], bz, 3, 4, 6, random);
+  ammoStackParts(parts, xs[2], bz, 3, 4, 5, random);
+  // the middle: two rows of shell pyramids, packed end to end
   const pw = 7 * SHELL_R * 2 + 0.2;
-  const rows: [number, typeof OLIVE_DRAB.light][] = [[back + 2.3, OLIVE_DRAB.light], [back + 3.12, STEEL.light], [back + 3.94, OLIVE_DRAB.light]];
-  for (const [row, nose] of rows) {
-    for (let i = 0; i < 3; i++) shellPyramidParts(parts, -w / 2 + pw / 2 + 0.05 + i * (pw + 0.03), row, 7, 4, nose);
+  const rowsZ = [back + 2.15, back + 2.97];
+  for (const [k, row] of rowsZ.entries()) {
+    for (let i = 0; i < 3; i++) shellPyramidParts(parts, w / 2 - pw / 2 - i * (pw + g), row, 7, k === 0 ? 5 : 4, k === 0 ? STEEL.light : OLIVE_DRAB.light);
   }
-  // the front: stacks of cases stepping down, an opened case among them, things knocked loose
-  ammoStackParts(parts, -w / 2 + 0.1 + 1.5 * CASE.w, back + 5.15, 3, 3, 3, random);
-  ammoStackParts(parts, -w / 2 + 0.2 + 4 * CASE.w, back + 5.15, 2, 3, 2, random);
-  ammoStackParts(parts, w / 2 - 0.1 - 1.5 * CASE.w, back + 5.15, 3, 3, 2, random);
-  shellPyramidParts(parts, -w / 2 + 0.1 + 1.5 * CASE.w, d / 2 - 0.4, 6, 3);
-  openCaseParts(parts, 0.6, d / 2 - 0.45);
-  ammoStackParts(parts, w / 2 - 0.1 - CASE.w, d / 2 - 0.15 - CASE.d, 2, 2, 1, random);
-  parts.push(part(box(CASE.w, CASE.h, CASE.d), OLIVE_DRAB.base, -0.2, 0.17, d / 2 + 0.05, 0, 0.5, 0));
-  for (const [sx, sz, t] of [[-0.85, d / 2 + 0.3, 1.2], [1.55, d / 2 + 0.25, -0.4], [w / 2 + 0.05, 0.4, 0.2]]) shell(parts, sx, SHELL_R, sz, t);
-  return multiMesh({ matte: [merge(parts, "ground", 0.4)] });
+  // the next band: stacks of cases, four and three courses
+  const mz = back + 3.4 + 1.5 * CASE.d + 0.05;
+  ammoStackParts(parts, w / 2 - sw / 2, mz, 3, 3, 4, random);
+  ammoStackParts(parts, w / 2 - 1.5 * sw - g, mz, 3, 3, 4, random);
+  ammoStackParts(parts, w / 2 - 2.5 * sw - 2 * g, mz, 3, 3, 3, random);
+  // the front band: lower stacks, a pyramid, the opened case
+  // the front bands (their own mesh, to keep each under the budget): another row of
+  // shell pyramids, then low stacks, a pyramid and the opened case, things knocked loose
+  const front: Parts = [];
+  const pz = mz + 1.5 * CASE.d + g + 0.45;
+  for (let i = 0; i < 3; i++) shellPyramidParts(front, w / 2 - pw / 2 - i * (pw + g), pz, 7, 3, i === 1 ? STEEL.light : OLIVE_DRAB.light);
+  const fz = pz + 0.45 + g + CASE.d;
+  ammoStackParts(front, w / 2 - 1.5 * CASE.w, fz, 3, 2, 2, random);
+  ammoStackParts(front, w / 2 - 3 * CASE.w - g - CASE.w, fz, 2, 2, 3, random);
+  openCaseParts(front, -w / 2 + 0.9, fz);
+  front.push(part(box(CASE.w, CASE.h, CASE.d), OLIVE_DRAB.base, -w / 2 + 0.6, 0.17, fz + 0.6, 0, 0.5, 0));
+  for (const [sx, sz, t] of [[0.4, fz + 0.62, 1.2], [w / 2 - 0.6, fz + 0.6, -0.3]]) shell(front, sx, SHELL_R, sz, t);
+  return multiMesh({ matte: [merge(parts, "floor", 0.5), merge(front, "floor", 0.5)] });
 }
 
 // --- equipment -------------------------------------------------------------------
@@ -205,13 +229,14 @@ function reelStackParts(parts: Parts, x: number, z: number, cols: [number, numbe
 /** reels standing on edge in a steel rack, a row of them, like records in a crate */
 function reelRackParts(parts: Parts, x: number, z: number, n: number): void {
   const w = n * (REEL_T + 0.05) + 0.2;
-  parts.push(part(box(w, 0.08, 0.6), STEEL.shade, x, 0.04, z));
-  for (const s of [-1, 1]) parts.push(part(box(0.06, 0.95, 0.6), STEEL.base, x + s * (w / 2 - 0.03), 0.48, z));
-  parts.push(part(box(w, 0.04, 0.06), STEEL.base, x, 0.6, z + 0.27));
+  const y = PALLET_H;
+  pallet(parts, x, z, w, 0.65);
+  for (const s of [-1, 1]) parts.push(part(box(0.06, 0.95, 0.6), STEEL.base, x + s * (w / 2 - 0.03), y + 0.48, z));
+  parts.push(part(box(w, 0.04, 0.06), STEEL.base, x, y + 0.6, z + 0.27));
   for (let i = 0; i < n; i++) {
     const rx = x - w / 2 + 0.15 + i * (REEL_T + 0.05);
-    parts.push(part(cyl(REEL_R, REEL_R, REEL_T - 0.02, 9), i % 3 === 1 ? STEEL.base : STEEL.light, rx, 0.08 + REEL_R, z, 0, 0, PI / 2));
-    parts.push(part(cyl(REEL_R * 0.86, REEL_R * 0.86, REEL_T - 0.01, 9), RUBBER.base, rx, 0.08 + REEL_R, z, 0, 0, PI / 2));
+    parts.push(part(cyl(REEL_R, REEL_R, REEL_T - 0.02, 9), i % 3 === 1 ? STEEL.base : STEEL.light, rx, y + REEL_R, z, 0, 0, PI / 2));
+    parts.push(part(cyl(REEL_R * 0.86, REEL_R * 0.86, REEL_T - 0.01, 9), RUBBER.base, rx, y + REEL_R, z, 0, 0, PI / 2));
   }
 }
 
@@ -232,12 +257,13 @@ function chassisStackParts(parts: Parts, x: number, z: number, random: () => num
 }
 
 /** a mast antenna lying in a cradle: a lattice tube with a small dish on its end, and a whip aerial */
-function antennaParts(parts: Parts, x: number, z: number, len: number): void {
-  for (const s of [-1, 1]) parts.push(part(box(0.3, 0.2, 0.08), STEEL.shade, x + s * (len / 2 - 0.3), 0.1, z));
-  parts.push(part(cyl(0.06, 0.06, len, 5), STEEL.light, x, 0.24, z, 0, 0, PI / 2));
-  for (let i = 0; i < 5; i++) parts.push(part(box(0.03, 0.18, 0.18), STEEL.base, x - len / 2 + 0.3 + (i * (len - 0.6)) / 4, 0.24, z));
-  parts.push(part(cyl(0.32, 0.08, 0.14, 8), COMPUTER_WHITE.base, x + len / 2 + 0.05, 0.3, z, 0, 0, -PI / 2));
-  parts.push(part(cyl(0.012, 0.012, 1.1, 4), STEEL.light, x - len / 4, 0.3, z + 0.18, 0, 0.3, PI / 2));
+function antennaParts(parts: Parts, x: number, z: number, len: number, y = PALLET_H): void {
+  if (y === PALLET_H) pallet(parts, x, z, len, 0.7);
+  for (const s of [-1, 1]) parts.push(part(box(0.3, 0.2, 0.08), STEEL.shade, x + s * (len / 2 - 0.3), y + 0.1, z));
+  parts.push(part(cyl(0.06, 0.06, len, 5), STEEL.light, x, y + 0.24, z, 0, 0, PI / 2));
+  for (let i = 0; i < 5; i++) parts.push(part(box(0.03, 0.18, 0.18), STEEL.base, x - len / 2 + 0.3 + (i * (len - 0.6)) / 4, y + 0.24, z));
+  parts.push(part(cyl(0.32, 0.08, 0.14, 8), COMPUTER_WHITE.base, x + len / 2 - 0.1, y + 0.3, z, 0, 0, -PI / 2));
+  parts.push(part(cyl(0.012, 0.012, 1.1, 4), STEEL.light, x - len / 4, y + 0.3, z + 0.18, 0, 0.3, PI / 2));
 }
 
 /** a coil of heavy cable lying flat */
@@ -259,7 +285,7 @@ function modulesParts(parts: Parts, x: number, z: number, random: () => number):
   }
 }
 
-/** a monitor: a deep beige box with a dark screen facing +z */
+/** a monitor: a deep beige box with a dark screen facing +z, its base at height y */
 function monitor(parts: Parts, x: number, y: number, z: number, turn = 0): void {
   parts.push(part(box(0.5, 0.42, 0.48), COMPUTER_WHITE.base, x, y + 0.21, z, 0, turn, 0));
   parts.push(part(box(0.38, 0.3, 0.02), RUBBER.base, x + Math.sin(turn) * 0.25, y + 0.23, z + Math.cos(turn) * 0.25, 0, turn, 0));
@@ -280,7 +306,7 @@ function tarpParts(parts: Parts, x0: number, x1: number, back: number, front: nu
   // only the back row's top is under it)
   const n = 7;
   const w = span / n;
-  const deep = 2 * CABINET.d + 0.45;
+  const deep = 2 * CABINET.d + 0.2;
   for (let i = 0; i < n; i++) {
     const reach = THREE.MathUtils.lerp(deep, 0.35, (i / (n - 1)) ** 1.4);
     const cx = x0 + w / 2 + i * w;
@@ -288,63 +314,78 @@ function tarpParts(parts: Parts, x0: number, x1: number, back: number, front: nu
   }
   // folds running down it, where it was pulled: ridges toward the front-west corner
   for (let i = 0; i < 4; i++) parts.push(part(box(0.12, 0.07, deep * 0.8), CANVAS.light, x0 + 0.5 + i * 0.55, top + 0.05, back + deep * 0.45, 0, 0.35 + i * 0.05, 0));
-  // where it comes off the front of the rows: a big sheet hanging down, skewed
+  // where it comes off the front of the rows: a sheet sloping down onto the reel heap, skewed
   const edge = back + deep;
-  parts.push(part(box(2.3, 1.35, 0.05), CANVAS.shade, x0 + 1.15, top - 0.68, edge + 0.15, -0.22, 0.12, 0.08));
-  // dragged across the reels in front, in broad slabs sloping down to the deck
-  parts.push(part(box(2.4, 0.05, 1.4), CANVAS.base, x0 + 1.25, 0.95, edge + 1.0, 0.45, 0.12, 0.06));
-  parts.push(part(box(2.2, 0.05, 1.1), CANVAS.light, x0 + 1.1, 0.55, front + 0.2, 0.3, 0.22, -0.05));
+  parts.push(part(box(2.4, 0.05, 1.0), CANVAS.shade, x0 + 1.3, top - 0.45, edge + 0.3, 0.75, 0.1, 0.06));
+  // lying over the heap's top, its folds sagging between the piles
+  parts.push(part(box(2.6, 0.05, 1.4), CANVAS.base, x0 + 1.4, 1.1, front, 0.12, 0.12, 0.05));
+  for (const fx of [0.6, 1.4, 2.2]) parts.push(part(box(0.14, 0.08, 1.3), CANVAS.light, x0 + fx, 1.15, front, 0.12, 0.25, 0));
+  // sliding off the heap's front to the deck
+  parts.push(part(box(2.2, 0.05, 1.0), CANVAS.base, x0 + 1.2, 0.55, front + 1.0, 0.9, 0.2, -0.05));
   // and the rest heaped on the deck where it was pulled: crumpled lumps, and its trailing corner
   for (let i = 0; i < 7; i++) {
     const lx = x0 + 0.3 + random() * 2.0;
-    const lz = front + 0.75 + random() * 0.6;
+    const lz = front + 1.5 + random() * 0.5;
     parts.push(part(new THREE.IcosahedronGeometry(0.3 + random() * 0.16, 0), i % 2 ? CANVAS.base : CANVAS.shade, lx, 0.12, lz, random(), random(), random(), 1.5, 1.2));
   }
-  parts.push(part(box(1.0, 0.03, 0.7), CANVAS.base, x0 + 2.4, 0.02, front + 1.35, 0, 0.5, 0));
+  parts.push(part(box(1.0, 0.03, 0.7), CANVAS.base, x0 + 2.4, 0.02, front + 1.9, 0, 0.5, 0));
 }
 
-/** equipment: cabinets at the back under the dragged tarp, reels stacked and racked, chassis, antennas, modules, monitors, cable */
+/**
+ * equipment, packed pallet to pallet: cabinets at the back with chassis
+ * stacked against the aisle, reels heaped and racked in the middle, then
+ * modules, chassis, reels and monitors stepping down to the front; the
+ * tarp over the back, dragged half off over the reels
+ */
 export function equipmentCargo(w: number, d: number): THREE.Group {
   const parts: Parts = [];
   const random = rng(23);
   const back = -d / 2;
-  // the back: two rows of cabinets, back to back
-  const rowX = -w / 2 + 0.1 + (5 * CABINET.w) / 2;
-  const row1 = back + 0.15 + CABINET.d / 2;
-  const row2 = back + 0.4 + 1.5 * CABINET.d;
+  const g = 0.04;
+  // the back: two rows of cabinets back to back, from the outer side in; chassis stacked high against the aisle (west)
+  const rowW = 5 * CABINET.w;
+  const rowX = w / 2 - rowW / 2;
+  const row1 = back + 0.05 + CABINET.d / 2;
+  const row2 = row1 + CABINET.d + 0.15;
   cabinetRowParts(parts, rowX, row1, 5);
   cabinetRowParts(parts, rowX, row2, 5);
-  assetTag(parts, -w / 2 + 0.1 + 4.5 * CABINET.w, 0.1 + CABINET.h + 0.06, row2 - 0.1);
-  // beside them, chassis stacked high
-  chassisStackParts(parts, w / 2 - 0.6, back + 0.6, random);
-  chassisStackParts(parts, w / 2 - 0.6, back + 1.5, random);
-  // the middle: film reels heaped in flat piles, the tallest in the middle, packed up to the cabinets
-  const reelZ = back + 2.85;
+  assetTag(parts, w / 2 - 0.5 * CABINET.w, 0.1 + CABINET.h + 0.06, row2 - 0.1);
+  chassisStackParts(parts, -w / 2 + 0.5, row1, random);
+  chassisStackParts(parts, -w / 2 + 0.5, row2, random);
+  // the middle: film reels heaped flat, the tallest pile in the middle, racks of reels on edge against the aisle
   const s = REEL_R * 2 + 0.06;
-  reelStackParts(parts, -w / 2 + 0.1 + 1.5 * s, reelZ, [
-    [-s, -s / 2, 6], [0, -s / 2, 9], [s, -s / 2, 7],
-    [-s, s / 2, 5], [0, s / 2, 8], [s, s / 2, 6],
+  const reelZ = row2 + CABINET.d / 2 + 0.1 + s;
+  reelStackParts(parts, w / 2 - 1.5 * s, reelZ, [
+    [-s, -s / 2, 7], [0, -s / 2, 11], [s, -s / 2, 9],
+    [-s, s / 2, 6], [0, s / 2, 9], [s, s / 2, 7],
   ]);
-  reelRackParts(parts, w / 2 - 1.0, back + 2.45, 12);
-  reelRackParts(parts, w / 2 - 1.0, back + 3.15, 10);
-  modulesParts(parts, w / 2 - 0.85, back + 4.05, random);
-  // further forward: an antenna in its cradle, more reels, chassis, modules, all close
-  antennaParts(parts, -w / 2 + 1.5, back + 4.3, 2.4);
-  reelStackParts(parts, -w / 2 + 0.1 + s, back + 5.0, [[-s / 2, 0, 4], [s / 2, 0, 6]]);
-  chassisStackParts(parts, 0.15, back + 4.75, random);
-  reelStackParts(parts, w / 2 - 0.1 - s, back + 5.05, [[-s / 2, 0, 5], [s / 2, 0, 3]]);
-  modulesParts(parts, -w / 2 + 2.6, back + 5.75, random);
-  // the front: monitors stacked two on three, a cable coil, things knocked loose
-  pallet(parts, w / 2 - 1.0, d / 2 - 0.45, 1.6, 0.8);
-  for (const [mx, my] of [[w / 2 - 1.5, 0.1], [w / 2 - 1.0, 0.1], [w / 2 - 0.5, 0.1], [w / 2 - 1.25, 0.52], [w / 2 - 0.75, 0.52]]) monitor(parts, mx, my, d / 2 - 0.5);
-  cableCoil(parts, -0.15, d / 2 - 0.15);
-  monitor(parts, 0.8, 0, d / 2 + 0.05, 0.9);
-  filmReel(parts, -w / 2 + 0.3, 0, d / 2 + 0.05, 0.3);
-  filmReel(parts, w / 2 + 0.15, 0, 1.4, 1.1);
-  parts.push(part(cyl(REEL_R, REEL_R, REEL_T, 9), STEEL.light, -0.75, REEL_R * 0.7, d / 2 + 0.1, 0.4, 0.5, PI / 2 - 0.2));
-  // the tarp: still on the back, half dragged off over the reels and onto the deck
-  tarpParts(parts, -w / 2 + 0.05, -w / 2 + 0.15 + 5 * CABINET.w, back + 0.1, reelZ - s / 2, random);
-  return multiMesh({ matte: [merge(parts, "ground", 0.4)] });
+  reelRackParts(parts, -w / 2 + 0.95, reelZ - 0.36, 12);
+  reelRackParts(parts, -w / 2 + 0.95, reelZ + 0.33, 12);
+  // the next band: modules, a chassis stack, more reels, the antenna on top of the modules
+  const mz = reelZ + s + 0.5;
+  modulesParts(parts, -w / 2 + 0.7, mz, random);
+  chassisStackParts(parts, -w / 2 + 1.95, mz, random);
+  reelStackParts(parts, w / 2 - s, mz, [[-s / 2, 0, 6], [s / 2, 0, 4]]);
+  // the front band: monitors stacked three on four, modules, the antenna in its cradle, a cable coil
+  // the front bands (their own mesh, to keep each under the budget): monitors stacked
+  // three on four, chassis and modules; then the antenna in its cradle, reels, loose things
+  const front: Parts = [];
+  const fz = mz + 0.95;
+  pallet(front, w / 2 - 1.05, fz, 2.0, 0.6);
+  for (let i = 0; i < 4; i++) monitor(front, w / 2 - 1.8 + i * 0.5, PALLET_H, fz - 0.05);
+  for (let i = 0; i < 3; i++) monitor(front, w / 2 - 1.55 + i * 0.5, PALLET_H + 0.43, fz - 0.05);
+  chassisStackParts(front, -w / 2 + 0.55, fz, random);
+  modulesParts(front, -w / 2 + 1.85, fz, random);
+  const az = fz + 0.75;
+  antennaParts(front, -w / 2 + 1.3, az, 2.4);
+  reelStackParts(front, w / 2 - s, az + 0.1, [[-s / 2, 0, 3], [s / 2, 0, 5]]);
+  // knocked loose at its foot
+  cableCoil(front, 0.05, az + 0.75);
+  monitor(front, -w / 2 + 0.4, 0, az + 0.8, 0.9);
+  parts.push(part(cyl(REEL_R, REEL_R, REEL_T, 9), STEEL.light, -0.9, REEL_R * 0.7, az + 0.75, 0.4, 0.5, PI / 2 - 0.2));
+  // the tarp: over the back rows (cabinets, east), dragged half off over the reels and onto the deck
+  tarpParts(parts, w / 2 - rowW - 0.05, w / 2 + 0.02, back + 0.05, reelZ - s * 0.2, random);
+  return multiMesh({ matte: [merge(parts, "floor", 0.5), merge(front, "floor", 0.5)] });
 }
 
 // --- the props, one by one (registered, each under the fixture budget) -------

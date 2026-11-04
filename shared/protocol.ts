@@ -774,9 +774,13 @@ export const FREIGHT_PANEL = { x: (FREIGHT.minX + FREIGHT.maxX) / 2, z: FREIGHT.
  * to walk into, and under sight height so it's seen over (models:
  * client/world/evac.ts cargo()).
  */
+/** half the aisle to the panel between the two blocks: room for one at a time (user 2026-11-04: narrower, the blocks closer) */
+const CARGO_AISLE = 0.75;
+/** each block's width: from the aisle out, leaving a strip along the railing */
+const CARGO_W = 5.4;
 export const FREIGHT_CARGO: Obstacle[] = [
-  { x: (FREIGHT.minX + 0.6 + FREIGHT_PANEL.x - 1.6) / 2, z: FREIGHT.minZ + 4.2, halfX: (FREIGHT_PANEL.x - 1.6 - FREIGHT.minX - 0.6) / 2, halfZ: 3.7, halfHeight: 0.9 },
-  { x: (FREIGHT_PANEL.x + 1.6 + FREIGHT.maxX - 0.6) / 2, z: FREIGHT.minZ + 4.2, halfX: (FREIGHT.maxX - 0.6 - FREIGHT_PANEL.x - 1.6) / 2, halfZ: 3.7, halfHeight: 0.9 },
+  { x: FREIGHT_PANEL.x - CARGO_AISLE - CARGO_W / 2, z: FREIGHT.minZ + 4.0, halfX: CARGO_W / 2, halfZ: 3.75, halfHeight: 0.9 },
+  { x: FREIGHT_PANEL.x + CARGO_AISLE + CARGO_W / 2, z: FREIGHT.minZ + 4.0, halfX: CARGO_W / 2, halfZ: 3.75, halfHeight: 0.9 },
 ];
 export const inFreight = (x: number, z: number, margin = 0): boolean => inRect(FREIGHT, x, z, margin);
 

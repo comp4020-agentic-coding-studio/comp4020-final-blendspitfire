@@ -86,14 +86,15 @@ export function part(
  * also against the ground plane at y = 0 (for models that stand on it, so
  * their bases darken where they meet the floor).
  */
-export type AO = "self" | "ground" | "none";
+export type AO = "self" | "ground" | "floor" | "none";
 
 /** `reach` is how far (world units) occluders count: roughly the size of the model's creases. */
 export function merge(parts: THREE.BufferGeometry[], ao: AO = "ground", reach = 0.6): THREE.BufferGeometry {
   const merged = mergeGeometries(parts);
   if (!merged) throw new Error("model parts failed to merge");
   merged.computeVertexNormals();
-  if (ao !== "none") bakeAO(merged, ao === "ground", reach);
+  if (ao === "floor") bakeFloorAO(merged, reach);
+  else if (ao !== "none") bakeAO(merged, ao === "ground", reach);
   merged.computeBoundingSphere();
   return merged;
 }
@@ -141,6 +142,27 @@ function bakeAO(geometry: THREE.BufferGeometry, ground: boolean, reach: number):
       if (bvh.raycastFirst(ray, THREE.DoubleSide, 0, reach)) hits++;
     }
     const k = THREE.MathUtils.lerp(1, AO_DARKEST, hits / AO_RAYS);
+    color.setXYZ(i, color.getX(i) * k, color.getY(i) * k, color.getZ(i) * k);
+  }
+  color.needsUpdate = true;
+}
+
+/**
+ * The cheap bake, for big merged set pieces (the freight cargo, tens of
+ * thousands of triangles) where ray casting would cost seconds at load:
+ * only the ground plane occludes, so each vertex darkens with how close it
+ * is to the floor and how much it faces it. Feet and undersides darken;
+ * creases between parts don't.
+ */
+function bakeFloorAO(geometry: THREE.BufferGeometry, reach: number): void {
+  const pos = geometry.attributes.position;
+  const normal = geometry.attributes.normal;
+  const color = geometry.attributes.color;
+  for (let i = 0; i < pos.count; i++) {
+    const near = 1 - Math.min(1, pos.getY(i) / reach);
+    const down = Math.max(0, -normal.getY(i));
+    const side = 1 - Math.abs(normal.getY(i));
+    const k = THREE.MathUtils.lerp(1, AO_DARKEST, Math.min(1, near * (0.6 * side + down)));
     color.setXYZ(i, color.getX(i) * k, color.getY(i) * k, color.getZ(i) * k);
   }
   color.needsUpdate = true;
