@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-11-05, the overnight build (rooms, credits, grenades, rotors)
+Synced from the draft up to: 2026-11-05, the tenth round and the docs-first pause
 
 ---
 
@@ -965,4 +965,19 @@ Built (agent): `server/room.ts` holds a whole world per site; `server/index.ts` 
 **Grenades.** The developer found grenades unusable: buying one filled the hands, so throwing meant dropping the rifle. Now G throws one from the belt, at most two carried, price 8 (proposed by the agent, agreed by the developer; was 15). The tutorial's grenade room puts one on the belt.
 
 **Rotors.** As the developer asked: still on the pad, spinning up only while someone is flying, and still again after landing.
+
+## ADR-074: Tenth round — sound swaps, grenade aim, rifle stands, score parts, docs first
+*2026-11-05 · Status: Built, awaiting the developer's look (score scale and sound mixes are the agent's)*
+
+**Context.** Before playing the overnight build the developer asked for four changes and to settle the open items; after playing it, for three more.
+
+**Decision.**
+- *Asked before playing:* the turret fires with the AR-15 recording; the reactor's start rises and then only gets quieter, never dropping in speed, with several machine recordings mixed into the rise; obvious rifle stands by the lift and at the range (the old pickup spot was lost in the grass); the tutorial's floor text made readable through the pixelation.
+- *Open items, each picked from the agent's options:* the quota stays shared; turrets stay at 40 and a cap of 8; the title screen gets a quick-join button; enemy rendering cost is left until it actually stutters. Turret sealing was already settled by ADR-066.
+- *Score:* the developer added three parts: a faster win scores more (up to +300, only when the reactor holds), the reactor's remaining health ×300 (only when it holds), and −20 per wound. The time scale (full marks within 6 minutes of activation, nothing at 15) is the agent's. The settlement shows only the total for now; the parts are kept for the payslip.
+- *Asked after playing:* kills and grenade blasts weren't audible enough (now mixed from CC0 recordings, alternatives on the sound sheet for the developer to pick); a grenade has to kill at least one crawler (damage 3 → 5); throwing becomes G to show a glowing aim ring, then the fire key to throw.
+- *Credits:* the developer's card names the developer, Opus 5.5, the course convenor, the tutor and every classmate who played and gave advice; the wording is the agent's, approved by the developer. Sound credits get their own card.
+- *Docs first:* the developer paused the game to write `README.md` and `PROCESS.md`. Queued after: a longer ride down (about 10 s) with an altitude readout in place of the progress bar, a ruler scrolling up and a number that eases to a random depth near −500 m. Possibly, at the developer's later choice: a short mission briefing in the logo's black-and-white style during the ride.
+
+**Why.** The developer's playtest observations and choices, as given with each item.
 

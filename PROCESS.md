@@ -1,281 +1,57 @@
 # Process
 
-## What this app is, and the stack behind it
+<!-- 中文稿，英文定稿待做（目标 900–1100 词）。 -->
 
-It's a top-down 3D multiplayer co-op PvE defence game. Players spawn in a
-sunlit garden on the surface, where they learn the controls and try the gun
-on a range. Then they take a lift together down to a dark underground
-facility, and make their way through a corridor, a lab and a server hall to
-the core, where they switch on the reactor and hold it.
+## 我最终想提供什么体验
 
-What works today: several players online at once, all seeing the same world;
-picking up items (a gun that fires, a box that builds cover); a lift between
-the surface and the facility; enemies coming through the breaches in waves
-once the reactor is on, more of them as it charges; wounds, and spectating
-after death; a full charge wins the run, while a failed attempt sends the
-charge back to zero but keeps the boxes; players told apart by codename and
-logged on the server; and a persistent scoreboard. The world is stored in
-SQLite and survives a server restart.
+Asset Nexus Unlimited 现在是一个俯视角多人合作游戏。玩家作为资产回收小组进入地下设施，启动并守住反应堆，恢复货运电梯供电，再带着物资撤离。反应堆是完成回收任务的手段，货物才是公司派玩家下来的目的。这一设定也影响了撤离场景：货物要成为视觉重点，电梯的布局要像真正用于运输的空间（撤离在 [`7cbb188`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/7cbb188) 实现，货物在 [`67fabdf`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/67fabdf) 按这个思路重做，另见 [ADR-069](docs/adr.md#adr-069-freight-lift--panel-by-the-door-the-cargo-one-heap-the-shaft-built-around-the-platform)）。
 
-The stack was left entirely to the AI to choose: Node 24 (TypeScript run
-directly, no build step) + bare `ws` for WebSocket + Node's built-in
-`node:sqlite` for persistence + Three.js on the client, bundled with esbuild.
-This wasn't a substantive decision on my part. The only boundary I set was
-one consistent toolchain throughout: no second build system or runtime
-brought in partway for the sake of one feature.
+我的出发点受到《游戏设计艺术》的影响：游戏应当传达某种体验，让玩家解决问题，并让目标在游戏内部具有价值。开发过程中，这个体验逐渐明确为合作与沉浸感。越到后期，我越意识到课程项目需要的是一段短而完整、即时有趣的体验。我逐渐放下通过长期养成或反复游玩建立反馈的方向，转向一种游乐园式的体验：玩家来玩一次，就应该能感受到它想表达的东西。这也体现在具体取舍上：目标从十波缩短为六波，失败后保留建造的跨局积累不再是重点，而多人并行时则用分房间（每个站点最多四人）保证每一局都是一支小队的完整体验（[ADR-060](docs/adr.md#adr-060-seventh-round--what-watching-the-group-play-showed-about-the-ui)、[`e120767`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/e120767)）。
 
-How I split the work with the AI: I'm fully in charge of the game's
-mechanics, because I don't think the AI does well when left to decide those
-on its own. Art is where the AI and I have iterated the most. I often ask
-the AI to go and find references, rather than trying to describe what I want
-in words.
+## 技术选择：我不感兴趣的部分，交给 agent
 
-## Decisions and trade-offs
+说得直接一点：我对技术实现本身并不感兴趣。我在意的是玩家在浏览器里实际看到、听到、操作到的东西，也就是前端的"体验"和效果。所以技术栈我完全交给了 Claude，只提了一个要求：沿用项目已有的工具链，保持一致，不要为了某个功能中途引入第二套构建系统或运行时。它选择了 Node、TypeScript、WebSocket、SQLite，以及 Three.js 和 esbuild；实时规则由服务端判定，客户端负责呈现与部分预测。具体取舍记录在 [ADR-005](docs/adr.md#adr-005-tech-stack-native-typescript-on-node-ws-nodesqlite-threejs) 和[服务端权威架构说明](docs/adr/0001-server-authoritative-shared-world.md)中，初始实现见 [`8d98917`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/8d98917)。
 
-### Decision 1: game or tool
-The brief leaves "what to build" completely open, fixing only three hard
-requirements: multi-user, real-time, persistent. So the choice came down to
-either a game (or something game-like) or a tool-style site. I went with a
-game. Honestly, this was mostly personal interest — I find it more fun, and
-wanted to build some experience in this kind of development.
+我对技术的要求只看结果：多人看到的是不是同一个世界，操作是否跟手，画面是否流畅。第一次真正的多人测试出现明显延迟时，我关心的是"开枪感觉不对"，而怎么解决（客户端预测、插值、断线重连）由 agent 提出和实现（[`881e4fd`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/881e4fd)）。这种分工的代价是我对底层代码了解有限，判断它是否正确主要依靠自动检查和试玩，而不是读代码。
 
-I keep the course's goals and the game's goals apart. The course asks for
-multi-user, persistence, and a record of how I used AI to plan, build and
-test; it isn't marking whether the game is as fun as a commercial one. So I
-don't need to prove this is a "good game". What I need to show is why I made
-each design choice, what I expect it to do, and how I'll check and weigh it
-from here.
+我把精力放在玩法方向和审美判断上。玩法通常容易描述，也容易让 agent 修改；美术则需要反复看实际效果，才能知道它是否接近我的想法。
 
-### Decision 2: turn-based or real-time
-Within "game", I had to decide early whether it would be turn-based (card
-games, board games, quizzes) or real-time. I picked real-time, again mostly
-out of personal preference: I rarely play turn-based games myself.
+## 让 agent 维护项目的记忆
 
-### Decision 3: 2D or 3D
-2D looked like the lower technical bar at first, but its real problem is art
-assets: neither I nor the AI are good at drawing, and from past experience,
-AI-generated 2D art is painful to iterate on. 3D sidesteps this — with a
-decent engine and lighting, even the simplest geometry (boxes, capsules)
-reads as reasonably designed once lit. So I went with 3D.
+这次对我最方便、也最重要的选择，是让 agent 持续维护一套文档系统：ADR 记录决策及理由，handoff 保存当前状态与下一步工作，harness 和美术交互规则保存需要延续的约束。设定之后，它会在工作过程中自行更新这些文件，我不用每次重新解释项目背景。规则在 [`4e64818`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/4e64818) 写入 `CLAUDE.md`，[`cd7a57f`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/cd7a57f) 要求 handoff 必须能让新会话独立接手，[`2e194f4`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/2e194f4) 把它们移进 `docs/` 并纳入 git。
 
-### Decision 4: normal real-time multiplayer is the foundation
-The game is designed as a real-time online game, so ordinary online play is
-its foundation: the server is the authority and everyone sees the same world
-live. The options and their costs are in
-[ADR 0001](docs/adr/0001-server-authoritative-shared-world.md).
+我想特别强调 ADR 的作用。这可能只是我的错觉，但我觉得有了 ADR，agent 不仅知道我做了什么，还知道我为什么这样做。这样它以后就不容易因为某些原因曲解我的意思，也不容易为了遵守某条规则，反而选择一个更差的解决方法。
 
-### Decision 5: no architectural cap on players per match
-The server (256MB, one shared vCPU) already sets a natural ceiling on load.
-I didn't add a tighter, artificial cap on top, such as "4 players max": the
-resource limit will be hit on its own, and tightening it by design is a
-separate question I chose not to.
+尤其最后两三个星期，我已经很少感到明显的沟通不畅。我的工作方式逐渐变成：先花十几分钟讨论计划，再让它独立实现一两个小时，最后回来检查和试玩。这是我自己的主观感受，并没有做过有无这套系统的对照实验。它也会带来问题：有些随口说的话会被固化成硬规则，之后需要纠正。这些感受也记录在 [crit 10 reflection](reflections/crit-10.md) 中。
 
-### Decision 6: low poly as the art base
-Once I'd settled on 3D, I chose low poly as the art style, for the same
-reason I chose 3D: every model is assembled in code from simple shapes, which
-is well within what the AI can do reliably. The bar I set for models was
-"you can at least tell what it is": the gun should be recognisable as an
-M4A1 from a few signature features. The first version was minimal, only to
-prove the tech; later I kept low poly and raised the detail.
+## 检查守护的是什么
 
-### Decision 7: a realistic palette
-I looked at several art styles, trying in turn sci-fi-leaning palettes like
-Arc Raiders and Starfield, but I was never satisfied with how the AI
-understood colour, so in the end I went with a more realistic palette. In
-other words, it's not that I think realism is the better style; experimenting
-showed that, of the styles I like, realism is the one the AI is best at
-producing.
+`spec/` 里的测试针对的是"体验一旦坏掉就很难被立刻看出来"的那部分：两个浏览器能否互相区分、同一个人回来还是同一个人、一个玩家拿着的东西别人抢不走（`multiuser.test.ts`）；不同站点的玩家互不可见、第五个人进不去（`rooms.test.ts`）；畸形消息和刷屏打不垮服务器（`robustness.test.ts`）；电梯、波次、商店和教程的规则（`lift`、`defence`、`economy`、`tutorial`）。这些都是程序能执行的规则。合作是否有趣、画面是否让人投入，测试回答不了，只能靠试玩判断。
 
-### Decision 8: shooting stays as a core element
-Last week I'd treated shooting as a placeholder. After weighing it up
-properly, I changed my mind: I don't have professional development
-experience, and my understanding of social games is fairly shallow, whereas
-shooters overlap heavily with the games I actually play. That means even
-without much formal game-design knowledge, I can push the design forward
-fairly naturally on experience and intuition.
+## 美术探索怎样变成规则
 
-### Decision 9: from a Rust-like game to persistent PVE with building
-At one point I'd decided on a scaled-down, Rust-like multiplayer sandbox
-with bases. I later overturned that in favour of a persistent PVE with some
-building, playing roughly like holding off a zombie horde. The core loop: players gather resources, activate an
-objective, and hold off the enemies. They'll very likely fail in the end,
-but what they built and the resources they gathered are kept, and they use
-what the last round left behind to hold out in the next, until the objective
-is fully activated.
+俯视角的直接灵感来自《逃离鸭科夫》：这种形式适合轻量、同时带有叙事的游戏，而且固定观看距离可以降低模型细节的要求。《恶魔轮盘赌》和《致命公司》启发了像素化处理，它既能掩盖模型精细度不足，让玩家想象缺失的部分，也能帮助营造紧张气氛。《致命公司》还启发了黑心公司的设定；玩法上，我主要参考《泰坦陨落》的边境防御。
 
-None of this was derived from theory. It came from the course's constraints
-plus the games I play. Co-op comes from the course's multi-user requirement,
-which I turned into defending together. Waves of enemies that get harder come
-from the classic PvE defence modes I know and like, such as Call of Duty's
-Zombies; it's a proven format, and I wasn't after mechanical novelty. Keeping
-what you built after a failure was first prompted by the persistence
-requirement: if persistence only showed up as a scoreboard, that felt thin,
-so I wanted storage to be part of the game loop itself, and it's also a
-direction I believe in. In some ways the project is close to a fuller game I
-had in mind before. It's a smaller version of that idea, cut down by the time
-and the course's goals, but it isn't that game.
+实际美术并没有因为给出参考就直接达到预期。我尝试过包括《Arc Raiders》在内的不同方向，后来逐渐明确：需要控制的是材质、灯光、颜色之间的关系。地下设施最终形成了统一的低饱和色域，鲜艳颜色主要留给发光物体，整体调色与模型分开；gallery 和自动检查让模型能被统一审阅，并检查面数与颜色范围。美术系统建立于 [`d9a96d5`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/d9a96d5)，设施与色域在 [`fdc8482`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/fdc8482)，后期红灰调整在 [`f69f2f4`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/f69f2f4)。
 
-Settled: a failed attempt starts over from the beginning (today the charge
-goes back to zero; once waves replace it, that means back to wave 1), but
-what was built stays. So there are two loops. Within an attempt: fight a
-wave → earn by how well you did → build in the break → next wave. Across
-attempts: fail → keep what was built → start over → get closer to the
-objective. I want that build-up to be direct and mechanical, not dependent on
-deep strategy: put down a turret and it reliably adds firepower, so over a
-few rounds the defence grows until the players have a real chance of winning.
-At the moment boxes are the only thing carried over; turrets and traps don't
-exist yet.
+## 纠正怎样落进规则和检查
 
-### Decision 10: restricted vision and a horror atmosphere
-I set the map's style to restricted vision and a horror-leaning atmosphere.
-This is a personal aesthetic judgement: when art assets can only be so
-detailed, limiting the information players get is a simple way to raise
-immersion. The pixelation filter is there for a similar reason, and it also
-hides some low-poly flaws. Many recent indie games pair simple models with a
-pixel filter to good effect: the player fills in the detail instead of it
-all being built. It's a technique I personally admire.
+纠正 agent 的结果也会进入规则。例如，它曾为了让俯视轮廓更清楚，把手里的枪也横着拿。我要求地上的枪可以侧放，拿在手里的枪仍要正常握持。这条反馈被写进美术规则。类似地，头灯产生不合理的自身阴影时，我拒绝通过取消阴影来解决，而是要求调整光源的位置。这些例子说明，规则需要保存视觉目标和判断理由，避免修复一个问题时丢掉原本想要的效果。见 [ADR-014](docs/adr.md#adr-014-corrections-after-first-model-review)、[ADR-033](docs/adr.md#adr-033-flashlight-shadows-headlamp-on-the-cap-brim) 及头灯规则提交 [`ebd6978`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/ebd6978)。
 
-### Decision 11: weak co-op
-I went for a fairly "weak" form of co-op. The goal isn't elaborate roles,
-combos, or puzzles that need several people acting at once. Another player
-means more firepower, someone covering another direction, or someone free to
-build while the rest fight. I'm not chasing "1+1>2"; for this project, the
-plain help of "1+1=2" is enough.
+玩法上的纠正则落进测试。agent 曾让敌人在后面的波次里悄悄变得更耐打、更快。我的规则是：如果数值变了，外观就必须跟着变，玩家看到什么就应该知道自己面对什么。这条规则写进了 [ADR-053](docs/adr.md#adr-053-an-enemy-kinds-stats-never-scale-with-the-wave)，并在 [`572769f`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/572769f) 成为一条测试（"an enemy kind has the same stats on every wave"）。同样，试玩时发现炮塔可以把通道完全封死，这不是我想要的防守方式；改成炮塔不阻挡敌人后，[`60785ea`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/60785ea) 加了一条"敌人能绕过一圈炮塔"的测试，防止之后的改动把它改回去（[ADR-066](docs/adr.md#adr-066-ninth-round--scope-for-the-last-week-and-the-backlog-settled)）。
 
-### Decision 12: a sunlit surface above, the facility below, joined by a lift
-I built in a deliberate contrast between the surface and the facility. The
-surface is relaxed and calm, with plenty of soft sunlight and greenery; it's
-where players get ready, learn the controls and use the range. Below is the
-industrial facility where the fighting happens: badly lit, grey, oppressive.
-Going down in the lift should make the change of mood obvious. That's not
-just for looks: I'm using space, light and colour to pull the player into the
-world. I decided the surface doesn't follow the underground's art rules at
-all; what I want there is the bright, soft feel of an impressionist painting.
-The lift is also the ready-up. Going down means joining the attempt; before
-the reactor is switched on you can ride back up and leave, and once it's on
-there's no going back up. That gives one clear moment of joining, and nobody
-is punished for going down too early.
+## 试玩揭示了实现之外的问题
 
-### Decision 13: every attempt should be worth going all out
-While thinking about expensive gear, I noticed a problem: I don't want
-players holding back for some later round and getting through the current
-one as cheaply as possible. If the shop sold a very expensive special ammo,
-for example, players might never use it and save it all for the end. That's
-not something I want to encourage. So for now I'm not leaning towards
-expensive one-off consumables, and prefer permanent structures or upgrades
-that keep working. That doesn't rule consumables out entirely; it means that
-when I design a new resource, I check whether it would push players to
-hoard, stall or play passively.
+小组试玩改变了我对引导的判断。有人把地表当成 PVP 场地，没有发现电梯；没人提醒就不知道要启动反应堆，也有人一直没找到商店。后来我据此反馈加入分房间的教程、目标标记和屏幕边缘箭头。再往后，信息虽然都有了，却埋得太深，或在波次结束时同时出现，于是 ready 提示有了独立位置，各种信息也改为分批呈现。见 [ADR-050](docs/adr.md#adr-050-what-the-group-playtest-showed--tutorial-and-visual-guidance-come-next)，引导标记在 [`0e52073`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/0e52073)，教程在 [`12a8297`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/12a8297)，信息层级调整在 [`544c774`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/544c774)（[ADR-060](docs/adr.md#adr-060-seventh-round--what-watching-the-group-play-showed-about-the-ui)）。
 
-### Decision 14: waves with a break between, and rewards tied to how well you defend
-Next, the six-minute charge bar will be replaced by a wave count. After each
-wave is cleared, players get a relatively safe stretch to buy gear, build
-turrets or traps and adjust the defence before the next wave, much like PvE
-modes such as Titanfall 2's Frontier Defense. I'm currently leaning towards
-30 seconds, with an option to start the next wave early; the alternative is
-up to 60 seconds, starting early once everyone is ready. Playtesting will
-decide. Each wave is scored when it ends, and a faster clear scores more;
-other possible bonuses (no damage taken, no teammate down, and so on) will
-draw on established designs, but none are picked yet. To stop players
-deliberately failing fast and restarting to farm rewards, rewards will be
-tied to how well they defend, above all how long they hold out and how far
-they get, so restarting quickly won't pay. The exact formula needs economy
-testing. The score doubles as the shop's currency, but to keep it immersive,
-in the game it's a supply quota that a large, shady corporation hands out to
-the mercenaries or employees it's sending in to risk their lives. This
-direction is settled but not built.
+这些问题并不只是 AI 没有发现。即使是我，也要看其他人实际游玩才意识到。Agent 可以验证程序是否执行了规则，检查页面和画面，但它不能真正获得玩家的体验。我认为这在一定程度上是一个硬伤，无法单靠增加 harness 或调整工作流解决。美术是否成立、合作是否有趣、玩家是否理解下一步，仍需要人的判断，尤其是其他玩家的反馈。
 
-## An open decision: a short run or a long one
+## 目前的取舍
 
-This isn't settled. Option A is a short run, which I currently lean
-towards: a few failures and some build-up give the players a real chance at
-the objective. It suits the map's current size, and makes it more likely
-that a ten-minute playtest shows the whole loop; ideally a run could be won
-in ten minutes, but that needs testing. Option B is a long run: a dozen or
-even dozens of attempts, maybe carried on by different groups of players
-over time. That would bring out the sense of inheritance I'm interested in,
-where later players build on what earlier ones left and slowly change the
-whole world. But it would need a bigger map, more enemies and mechanics, and
-enough content to last. AI might lower the cost of producing that content,
-but integrating, debugging and actually testing the gameplay would still be
-real work. Next I'll decide based on how long a run actually takes, the
-map's size, the pacing, and how much development time is left.
+我在美术上投入了很多调整，音效则因为时间限制没有打磨到同样程度。它已经加入，制作时采用先在试听页面听、再决定保留合成音还是换成录音的方式，但沉浸感和压力曲线仍有继续调整的空间。见 [ADR-071](docs/adr.md#adr-071-sound-first-batches) 及战斗音效接入 [`80ba129`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/80ba129)。
 
-## Looking back through Schell's lenses
+这次协作让我能把更多精力放在选择和审阅上。文档与检查减少了重复沟通，也帮助 agent 自主推进；与此同时，游戏最终传达了什么体验，仍然需要我和实际玩家来判断。
 
-I want to use Jesse Schell's *The Art of Game Design: A Book of Lenses* as
-a reference frame for evaluating the design from here. To be clear, the
-original gameplay came from my interests, the course's requirements and the
-games I've played; the book's concepts are tools I'm using afterwards to
-reflect and analyse, not where these mechanics were derived from.
+## 参考文献
 
-- **Game as a problem-solving activity.** Schell defines a game as a
-  problem-solving activity approached with a playful attitude. The direct
-  problem my players face is how to hold out longer under ever-growing
-  enemy pressure, and how to use what's already built to reach a higher
-  wave. This helps me say more clearly what the player is actually doing.
-- **Essential Experience.** Rather than listing features, the question is
-  what I want the player to experience, and how the mechanics and visuals
-  support it. What I care about most is light co-op, immersion from the
-  setting, and growth that builds up across failures.
-- **Elemental Tetrad.** Mechanics, story, aesthetics and technology give
-  me four angles to check the project from. My focus now is the combat and
-  building mechanics, the visual atmosphere, and the technology for
-  multiplayer sync and persistence; a complex story isn't a priority at this
-  stage.
-
-These are tools for analysis; they don't prove the design is fun.
-
-## What's first-draft and likely to change
-
-The most obviously first-draft part is the economy and progression: boxes
-are the only thing carried between attempts, there are no resources, shop,
-turrets or traps yet, and waves and scoring (Decision 14) are only a
-direction so far. Whether the objective stays a reactor (it could become a
-transmitter or something else), and whether runs are short or long, are both
-undecided. The garden's dressing will also change: the colours stay, but its
-contents should follow a setting of an ancient ruined facility being explored
-by a military-type organisation, so ruins and rust alongside supply crates
-that have clearly just been deployed. Colour is still being tuned; if I stay
-unhappy, I may build a slider panel to adjust hue, saturation and contrast
-like editing a photo.
-
-Everything here about how players will feel (the help of co-op, the change
-of mood, snowballing growth) is a design expectation, not yet tested with
-players. In a ten-minute playtest I'd like players to meet at least three
-things: defending together in one shared space; the contrast between the
-surface and the facility; and at least one round of fight → fail → inherit →
-try again. What I need to check next: can several players reliably get in
-together and see the same fighting and building; do players understand
-waves, resources, building and the break; after a failure, does progress
-reset properly while what should be kept is still there; can players clearly
-feel the advantage of what was inherited; do the rewards really encourage
-holding out longer rather than failing fast to farm; can one full loop fit in
-ten minutes, and is a win possible; is the surface/facility contrast clear
-enough. If the results don't match what I expect, the adjustments will be
-recorded as decisions too.
-
-One thing is deliberately left out. The first real multiplayer test showed
-noticeable latency. I added client-side shot prediction and jitter-tolerant
-interpolation, but not server-side lag compensation or a UDP transport:
-too large a rearchitecture for what was then a placeholder. Shooting has
-stayed, but the main opponents are server-controlled enemies, so lag
-compensation matters much less.
-
-## Commit evidence
-
-- [`8d98917`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/8d98917) — the shared 3D space MVP.
-- [`881e4fd`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/881e4fd) — prediction, interpolation and reconnect after the first real multiplayer test.
-- [`11b3500`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/11b3500) — pick-up items replace click-to-shoot.
-- [`d9a96d5`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/d9a96d5) — low poly base (Decision 6) and interaction rules.
-- [`4e64818`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/4e64818) — budget and handoff rules added to `CLAUDE.md` after an expensive resumed session.
-- [`fdc8482`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/fdc8482) — the facility, realistic palette, restricted vision, gate and reactor (Decisions 7, 9, 10).
-- [`56985d0`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/56985d0) — world persistence: items and the reactor survive a restart.
-- [`7fffa1e`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/7fffa1e) — the defence: enemy waves come through the breaches to attack the reactor.
-- [`11ed891`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/11ed891) — death during an attempt is final, spectate teammates; everyone down fails the attempt.
-- [`ee12b19`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/ee12b19) — codenames, server logs, the charge bar win and the scoreboard.
-- [`d4c3fa3`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/d4c3fa3) — the surface garden, the lift and the floating UI (Decision 12).
-
-## References
-
-Schell, J. (2015). *The Art of Game Design: A Book of Lenses* (2nd ed.). CRC Press.
+- 《游戏设计艺术》（Jesse Schell, *The Art of Game Design: A Book of Lenses*）

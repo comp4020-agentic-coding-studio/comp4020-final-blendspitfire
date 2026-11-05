@@ -1,46 +1,57 @@
 # Asset Nexus Unlimited
 
-A top-down 3D multiplayer game set in an underground facility. You spawn in a
-safe intake room, go through a one-way gate, and make your way through dark
-corridors to the reactor at the facility's core. You switch it on, then you
-and whoever else is online hold it.
+<!-- 中文稿，英文定稿待做（目标 400–600 词）。 -->
 
-## How to play
+## 这是什么游戏
 
-- **WASD** to move; the mouse aims.
-- **Click** an item next to you to pick it up. A gun fires; a box can be put
-  down as cover or a wall.
-- **Right-click, two-finger click or Space**: a held box's grid snap.
-- **Q** drops what you're holding.
-- Walk up to the reactor empty-handed and click it to activate it.
+Asset Nexus Unlimited 是一个俯视角 3D 多人合作游戏。玩家是一支替公司回收资产的小组，要进入地下设施，启动并保护反应堆，抵挡怪物，恢复货运电梯的供电，最后将其中的物资运走。
 
-Everyone on the page is in the same facility at the same time. Open a second
-window (an incognito one counts) to see another player.
+我想做的是一段不长、但足够有趣的合作体验。它像一次游乐园项目：玩家不必长期投入，也能在一次游玩中经历准备、战斗和撤离，感受到与其他人共同完成任务的乐趣。
 
-## What "good" means for this app
+## 怎么玩
 
-As a game, the most important thing is of course that it's fun. But "fun" is
-a fairly abstract idea in itself. I think a good game gives players some kind
-of mental enjoyment. That enjoyment can come from different places: a really
-good cooperative experience, an immersive experience that draws you in, or
-satisfying positive feedback, and so on.
+- 打开页面，输入名字（可留空，会分配代号），加入一个站点或新建一个。每个站点最多四人；把地址栏的链接发给朋友，就能进同一个站点。
+- 想看多人效果：再开一个窗口（隐身窗口也可以）加入同一个站点。
+- 第一次来的玩家会先进入教程，学会后乘直升机回到地面。
+- **WASD** 移动，**鼠标**瞄准；**左键或空格**开火（按住连发）；**E** 使用（电梯、商店、反应堆）；**Q** 丢下手里的东西；**G** 准备手雷，再点击投出；**X** 在波次间歇投票准备好；**M** 静音；**Esc** 打开菜单。
+- 地面上拿枪，乘电梯下到设施，在反应堆处按 E 启动，守住六波，然后乘货运电梯撤离。
 
-On the technical side, I think "good" requires that the controls follow
-principles of human-computer interaction; that the visuals are good and run
-smoothly, with no unintentionally glaring frames and nothing falling short of
-the intended effect because of performance problems; and, most important of
-all, that it's as bug-free as possible, with no unexpected, abnormal,
-game-breaking bugs.
+## 对我来说，什么算做好了
 
-This section isn't finished yet. Still to come: who the game is for, what
-would make it bad, and how these standards turn into concrete rules and
-checks in this repo.
+我的设计理念受到《游戏设计艺术》的影响。我对其中一些观点的理解是，游戏要让玩家解决问题，也要让目标在游戏内部具有价值。这里需要解决的问题是怪物的威胁，而保护反应堆的意义来自资产回收任务：它为运走物资提供电力。
 
-## Sources
+我最看重合作带来的乐趣本身和沉浸感。玩家应该知道共同的目标，并能一起应对压力；仔细调整的美术、灯光和声音则让这个任务有代入感。音效已经加入，但受时间限制，打磨还不如美术充分。如果玩家不知道该去哪、把队友当成敌人，或者战斗缺乏压力，那么即使功能都正常，体验也没有达到我的目标。
 
-- James Gurney, *Color and Light: A Guide for the Realist Painter*
-  (Andrews McMeel, 2010), and his posts on gamut masking:
-  [Color wheel masking](http://gurneyjourney.blogspot.com/2008/01/color-wheel-masking-part-1.html),
-  [Gamut masking method](http://gurneyjourney.blogspot.com/2011/09/part-1-gamut-masking-method.html).
-  The facility's palette (many hues, all greyed into one family, with only
-  lights allowed to be vivid) is built on this.
+操作应该明确、反馈及时，并照顾使用触控板的玩家。画面要流畅，不能因为性能问题破坏效果，更不能出现阻断游玩的严重 bug。
+
+## 哪些由检查保证，哪些只能判断
+
+由 `spec/` 自动检查保证的：
+
+- 两个浏览器里的玩家被区分开，同一个人回来还是同一个人，别人手里的东西抢不走。
+- 不同站点互不可见，一个站点最多四人。
+- 敌人的数值不随波次偷偷变化，变强的敌人一定长得不一样。
+- 炮塔不会把通道完全封死。
+- 教程中一个玩家的射击不会影响另一个玩家的靶子。
+- 服务器能扛住畸形消息和刷屏，客户端不能瞬移作弊。
+
+由规则约束、但最终要靠人看的：模型、颜色和操作要符合 [`docs/art-and-interaction.md`](docs/art-and-interaction.md)（例如手里的枪必须正常握持，触控板是一等公民，鲜艳颜色只留给发光物体）。
+
+只能靠试玩判断的：合作是否有趣，场景是否让人投入，玩家是否知道下一步该做什么。
+
+## 我选择不做什么
+
+- 不做长期养成和反复游玩：原因前面说过了，这个哪怕做了大概也没人会真的完整体验，所以不如做成这是一次来玩就完整的体验，而不是需要长期投入的游戏。
+- 不做复杂的职业分工或需要多人同时操作的配合：多一个人就是多一份火力、多一个方向，"1+1=2" 就够了。复杂的合作机制对于玩家来说，需要的上手成本也会高一些。
+- 不做账号和登录：名字只用于排行榜。比较方便
+- 不做友军伤害：队友之间没有对抗。因为画面本身模糊，敌我识别很困难，怪又很多且玩家的子弹很密集，虽然我本人很喜欢有友伤的游戏但还是更加符合“游乐园项目”的宗旨了。
+- 敌人不悄悄加强：难度来自看得见的东西（数量、种类），而不是隐藏的数值。这个也是我个人的偏好，我不太喜欢那种看不见的数值变化。
+
+## 参考与灵感
+
+- 《游戏设计艺术》：关于体验、解决问题和内生价值的设计思路；这里是我的理解，具体书目信息待补。
+- 《恶魔轮盘赌》和《致命公司》：像素化画面既能让玩家想象模型缺失的细节，也能营造紧张氛围。游戏本身并不定位为恐怖游戏。《致命公司》也启发了替黑心公司回收资产的设定。
+- 《泰坦陨落》的边境防御：激活目标、保护目标并生存的主要玩法参考。
+- 《逃离鸭科夫》：让我看到俯视角双摇杆可以承载轻量而带有叙事的游戏；固定观看距离也降低了对模型细节的要求。
+- 《Arc Raiders》：美术探索和 prompting 中使用过的科幻末世参考，并非最终画面的直接复刻。
+- James Gurney 的《Color and Light: A Guide for the Realist Painter》（Andrews McMeel, 2010）及 gamut masking 文章（[Color wheel masking](http://gurneyjourney.blogspot.com/2008/01/color-wheel-masking-part-1.html)、[Gamut masking method](http://gurneyjourney.blogspot.com/2011/09/part-1-gamut-masking-method.html)）：地下设施色彩系统的依据——色相很多，但都压灰到同一家族，只有发光物体允许鲜艳。
