@@ -33,35 +33,88 @@ const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 const H = TUT_WALL_HALF_HEIGHT * 2;
 const PX = 96;
 
-/** a stencil on the floor: lesson number, title, how to do it */
+/**
+ * A stencil on the floor: lesson number, title, how to do it. User
+ * 2026-11-05: the old dark letters on grey concrete melted away once
+ * pixelated, so it's hazard-yellow paint on a near-black painted plate,
+ * big and heavy enough that every stroke survives the 1/4-size render
+ * (the how-to split onto its own lines, caps ~1 unit tall).
+ */
 function floorText(i: number): THREE.Mesh {
   const lesson = LESSONS[i];
   const t = LESSON_TEXT[lesson];
-  const w = 7.6;
-  const h = 2.0;
+  // the shooting room's targets stand by its west wall: its plate is narrower and shifted east, clear of them
+  const narrow = lesson === "shoot";
+  const w = narrow ? 6.2 : 7.6;
+  const how = t.how.toUpperCase();
+  // one line if it fits near full size (VT323 is ~0.4 em a character, so 16 at 1.0 fill the plate);
+  // else two, split at the " · " nearest the middle
+  let rows = [how];
+  if (how.length > 16) {
+    const parts = how.split(" · ");
+    let best = 1;
+    for (let k = 1; k < parts.length; k++) {
+      const gap = (k: number) => Math.abs(parts.slice(0, k).join(" · ").length - parts.slice(k).join(" · ").length);
+      if (gap(k) < gap(best)) best = k;
+    }
+    if (parts.length > 1) rows = [parts.slice(0, best).join(" · "), parts.slice(best).join(" · ")];
+  }
+  const h = 1.5 + rows.length * 1.0;
   const canvas = document.createElement("canvas");
   canvas.width = w * PX;
   canvas.height = h * PX;
   const ctx = canvas.getContext("2d")!;
   ctx.scale(PX, PX);
+  // the plate: painted on, edges a touch worn (stepped corners, like the UI's frames)
   ctx.fillStyle = hex(RUBBER.shade);
+  const c = 0.12;
+  ctx.beginPath();
+  ctx.moveTo(c, 0);
+  ctx.lineTo(w - c, 0);
+  ctx.lineTo(w - c, c);
+  ctx.lineTo(w, c);
+  ctx.lineTo(w, h - c);
+  ctx.lineTo(w - c, h - c);
+  ctx.lineTo(w - c, h);
+  ctx.lineTo(c, h);
+  ctx.lineTo(c, h - c);
+  ctx.lineTo(0, h - c);
+  ctx.lineTo(0, c);
+  ctx.lineTo(c, c);
+  ctx.closePath();
+  ctx.fill();
+  const paint = hex(HAZARD.light);
+  ctx.fillStyle = paint;
+  ctx.strokeStyle = paint;
+  ctx.lineJoin = "miter";
   ctx.textBaseline = "middle";
   ctx.textAlign = "center";
-  ctx.font = `400 0.8px "VT323", ui-monospace, monospace`;
-  ctx.fillText(`${i + 1}/${LESSONS.length} ${t.title.toUpperCase()}`, w / 2, 0.5);
-  ctx.font = `400 0.56px "VT323", ui-monospace, monospace`;
-  ctx.fillText(t.how.toUpperCase(), w / 2, 1.45);
+  const line = (s: string, size: number, y: number, weight: number): void => {
+    ctx.font = `400 ${size}px "VT323", ui-monospace, monospace`;
+    // fit the width, then thicken every stroke so it outlives the pixelation
+    const fit = Math.min(1, (w - 0.5) / ctx.measureText(s).width);
+    ctx.save();
+    ctx.translate(w / 2, y);
+    ctx.scale(fit, 1);
+    ctx.lineWidth = weight;
+    ctx.strokeText(s, 0, 0);
+    ctx.fillText(s, 0, 0);
+    ctx.restore();
+  };
+  line(`${i + 1}/${LESSONS.length} ${t.title.toUpperCase()}`, 1.15, 0.75, 0.05);
+  rows.forEach((r, k) => line(r, 1.0, 1.95 + k * 1.0, 0.035));
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.95, depthWrite: false }));
+  tex.anisotropy = 4;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
   m.rotation.x = -Math.PI / 2;
   const r = TUT_ROOMS[i];
   // along the north wall, just inside the way in, clear of what the room's about
   // the last room's helicopter takes its north end: there the words go down the west side, by the way in
   if (i === LESSONS.length - 1) {
     m.rotation.z = Math.PI / 2;
-    m.position.set(r.minX + 1.15, 0.025, (r.minZ + r.maxZ) / 2 + 0.5);
-  } else m.position.set(TUT_DX, 0.025, r.minZ + 1.15);
+    m.position.set(r.minX + h / 2 + 0.15, 0.025, (r.minZ + r.maxZ) / 2 + 0.5);
+  } else m.position.set(TUT_DX + (narrow ? 0.75 : 0), 0.025, r.minZ + h / 2 + 0.15);
   return m;
 }
 
