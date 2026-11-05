@@ -6,7 +6,7 @@ Updated: 2026-11-05 night (overnight build: rooms + title screen, p8 credits, 4a
 
 ## Where we are
 - Crit 10 shipped (tag `crit-10` on origin at de1932b). Final project due 2026-11-09 12:00.
-- Local main is 48 commits ahead of origin/main (everything since 2026-11-03: p1-p8, sound, rooms, grenades, rotors). NOT pushed. A push deploys: only when the user says.
+- Local main is 50 commits ahead of origin/main (everything since 2026-11-03: p1-p8, sound, rooms, grenades, rotors). NOT pushed. A push deploys: only when the user says.
 - OVERNIGHT 2026-11-05 (user asleep; built, bot/browser-checked, awaiting their look): e120767 rooms, 70611b1 credits, 17ab8d8 grenades, 351248a rotors. See Next work 0.
 - Seventh round (ADR-060 asks, ADR-062 answers, ADR-063 what the agent chose): all items DONE except k (sound, deferred) and h (turret sealing, the user's open call). Everything built overnight awaits the user's look; see Next work 0.
 - Sixth round (ADR-058 plan, ADR-059 built, all agent's details awaiting user look): see Game: Guidance / Tutorial below.
@@ -110,7 +110,7 @@ Updated: 2026-11-05 night (overnight build: rooms + title screen, p8 credits, 4a
 
 ## Verify recipes / gotchas
 - Dev: `DB_PATH=/tmp/blendspitfire-dev.db pnpm dev` (8080, the user's). Client edits: rerun `node scripts/build-client.ts`. Server edits: restart.
-- `pnpm check` against a throwaway server so 8080 is untouched: start `PORT=8090 DB_PATH=/tmp/check.db node server/index.ts` (no DEV_SPAWN), then `APP_URL=http://localhost:8090 pnpm check`.
+- `pnpm check` against a throwaway server so 8080 is untouched: start `PORT=8090 DB_PATH=/tmp/check.db node server/index.ts` (no DEV_SPAWN), then `APP_URL=http://localhost:8090 pnpm check`. Plain `pnpm check` hits 8080; if that server predates the rooms code, rooms.test fails with "not found" JSON (stale server, not a bug).
 - Dev env (local only, never in fly.toml): DEV_TUTORIAL=1 (every join is a newcomer in the shed), DEV_SPAWN/DEV_JOIN="x,z", DEV_WAVES=N, DEV_ARMED=1 (join with a rifle), DEV_REACTOR=0.02 (reactor HP at activation, reaches blackout fast). Reactor activation range 4.4 from (0,-11.5): DEV_JOIN=1.5,-7.6 is in range. Comms desk: DEV_JOIN=0,-15.2.
 - Lift pop-in probe: expose `{scene,camera,THREE}` on window temporarily, raycast screen px via CDP Runtime.evaluate, list scene.children bounds; anything from another level overlapping a car is the culprit.
 - Lift-car parity check: build the facility in Node and diff triangle centroids inside LIFT_CARS.bottom vs .top shifted by LIFT_DZ (was a scratch script; both cars must match per material).
