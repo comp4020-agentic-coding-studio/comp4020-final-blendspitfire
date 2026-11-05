@@ -8,10 +8,36 @@ import { demoStamp, pixelLogo } from "./logo.ts";
 // MVP), your payslip --- a big number eaten line by line down to $20 ---
 // and where your name stands on the board. Then black, and the end credits
 // (user 2026-11-03): the seal and its line, this run's crew, the top ten,
-// the credits, and "thanks for playing". All the wording and every number on
-// the payslip are the agent's, except the credits' sections and first line.
+// the credits, the sounds' makers, and "thanks for playing". All the wording
+// and every number on the payslip are the agent's, except the credits'
+// sections and first line and who the credits thank (the user's).
 
 type Attempt = Extract<Report, { type: "attempt" }>;
+
+/**
+ * The credits proper (user 2026-11-05: their name and uid, the model, the
+ * course's lecturer and their tutor, and everyone who played it and said
+ * what to fix; layout and wording the agent's, approved by the user).
+ */
+const credit = (role: string, who: string, me = false): string =>
+  `<div class="cast credit${me ? " me" : ""}"><span class="role">${role}</span><span class="who">${who}</span></div>`;
+const CREDITS =
+  '<div class="card"><div class="head">credits</div>' +
+  credit("made by", "Eric Xu · u7643101", true) +
+  credit("built with", "Claude Opus 5.5 (Anthropic)") +
+  credit("lecturer", "Ben Swift") +
+  credit("tutor", "Tom Griffiths") +
+  '<div class="cast solo dim">COMP4020 Agentic Coding Studio · ANU</div>' +
+  '<div class="line">and everyone who played this<br>and told me what to fix — thank you.</div></div>';
+/** the recorded sounds' makers (all CC0 / public domain; public/sfx/CREDITS.md has the details) */
+const SOUND_CREDITS =
+  '<div class="card"><div class="head">sounds</div>' +
+  credit("guns", "The Free Firearm Sound Library") +
+  credit("blasts", "rubberduck · Kenney") +
+  credit("creatures", "rubberduck · EZduzziteh · Spring Spring") +
+  credit("machines", "qubodup · OpenGameArt") +
+  credit("groans", "stephan (SoundBible)") +
+  '<div class="cast solo dim">CC0 / public domain, via OpenGameArt</div></div>';
 
 const money = (n: number): string => `${n < 0 ? "−" : ""}$${Math.abs(Math.round(n)).toLocaleString("en-US")}`;
 const pct = (a: number, b: number): string => (b ? `${Math.round((a / b) * 100)}%` : "—");
@@ -216,8 +242,8 @@ export class Settlement {
     return (
       `<div class="card"><div class="head">the crew</div>${crew || '<div class="cast solo"><span class="who">nobody aboard</span></div>'}</div>` +
       `<div class="card"><div class="head">high scores</div>${top || '<div class="cast solo"><span class="who">nobody yet</span></div>'}</div>` +
-      // the credits proper are the user's to write (user 2026-11-03): a placeholder until then
-      '<div class="card"><div class="head">credits</div><div class="cast solo"><span class="who dim">to come</span></div></div>'
+      CREDITS +
+      SOUND_CREDITS
     );
   }
 }
