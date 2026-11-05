@@ -28,7 +28,7 @@ const CREDITS =
   credit("lecturer", "Ben Swift") +
   credit("tutor", "Tom Griffiths") +
   '<div class="cast solo dim">COMP4020 Agentic Coding Studio · ANU</div>' +
-  '<div class="line">and everyone who played this<br>and told me what to fix — thank you.</div></div>';
+  '<div class="line thanks-all">and everyone who played this<br>and told me what to fix — thank you.</div></div>';
 /** the recorded sounds' makers (all CC0 / public domain; public/sfx/CREDITS.md has the details) */
 const SOUND_CREDITS =
   '<div class="card"><div class="head">sounds</div>' +
