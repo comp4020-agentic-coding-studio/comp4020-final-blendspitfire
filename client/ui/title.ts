@@ -37,7 +37,7 @@ export class Title {
       '<div class="head"><span>sites</span><span class="dim">crew</span></div>' +
       '<div class="list"></div>' +
       '<div class="why"></div>' +
-      '<button class="new">+ new site</button>';
+      '<div class="buttons"><button class="quick">▶ quick join</button><button class="new">+ new site</button></div>';
     this.el.querySelector(".logo")!.appendChild(pixelLogo(300, cell, "#f2ead6"));
     this.nameInput = this.el.querySelector("input")!;
     this.listEl = this.el.querySelector(".list")!;
@@ -53,6 +53,7 @@ export class Title {
     // typing here mustn't walk anyone, or open anything
     this.nameInput.addEventListener("keydown", (e) => e.stopPropagation());
     this.el.querySelector(".new")!.addEventListener("click", () => void this.make());
+    this.el.querySelector(".quick")!.addEventListener("click", () => void this.quick());
     this.listEl.addEventListener("click", (e) => {
       const row = (e.target as HTMLElement).closest<HTMLElement>(".row");
       if (row && !row.classList.contains("dim") && row.dataset.room) this.pick(row.dataset.room);
@@ -144,6 +145,25 @@ export class Title {
     this.busy = true;
     this.whyEl.textContent = `joining ${room}…`;
     this.onPick({ room, name });
+  }
+
+  /**
+   * Quick join (user 2026-11-05): the fullest site that still has room and
+   * hasn't started (the server's own rule for a bare /ws), else a new one.
+   * Picked here rather than by the server so the address bar still gets
+   * the site's ?room= link.
+   */
+  private async quick(): Promise<void> {
+    if (this.busy) return;
+    if (this.name() === undefined) return;
+    try {
+      const rooms = (await (await fetch("/api/rooms", { cache: "no-store" })).json()) as RoomInfo[];
+      const open = rooms.filter((r) => !r.started && r.players < r.max).sort((a, b) => b.players - a.players);
+      if (open[0]) this.pick(open[0].id);
+      else await this.make();
+    } catch {
+      this.whyEl.textContent = "can’t reach the server";
+    }
   }
 
   private async make(): Promise<void> {
