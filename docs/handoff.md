@@ -6,7 +6,7 @@ Updated: 2026-11-05 evening (tenth round: grenade aim+damage, turret/reactor/kil
 
 ## Where we are
 - Crit 10 shipped (tag `crit-10` on origin at de1932b). Final project due 2026-11-09 12:00.
-- Local main is 59 commits ahead of origin/main (everything since 2026-11-03: p1-p8, sound, rooms, grenades, rotors). NOT pushed. A push deploys: only when the user says.
+- Local main is 61 commits ahead of origin/main (everything since 2026-11-03: p1-p8, sound, rooms, grenades, rotors). NOT pushed. A push deploys: only when the user says.
 - OVERNIGHT 2026-11-05 (user asleep; built, bot/browser-checked, awaiting their look): e120767 rooms, 70611b1 credits, 17ab8d8 grenades, 351248a rotors. See Next work 0.
 - Seventh round (ADR-060 asks, ADR-062 answers, ADR-063 what the agent chose): all items DONE except k (sound, ongoing); h (turret sealing) was settled in ADR-066. Everything built overnight awaits the user's look; see Next work 0.
 - Sixth round (ADR-058 plan, ADR-059 built, all agent's details awaiting user look): see Game: Guidance / Tutorial below.
@@ -60,7 +60,7 @@ Updated: 2026-11-05 evening (tenth round: grenade aim+damage, turret/reactor/kil
 ## Next work (ordered; due 2026-11-09 12:00)
 0. SHOW THE USER the overnight build (2026-11-05, all awaiting their look; ADR-072/073):
    a. Rooms: title screen (seal, name, site list, + new site), ?room= links, Esc menu (continue / sound / leave site). Try with 2+ browsers. Their open calls: is the list/look right; quick join (no ?room) exists server-side but no button.
-   b. Credits (p8): 30 s, no skip, everyone back together = agent's defaults; ask length/skip. Credits section is a "to come" placeholder: user writes it (settlement.ts credits()). Preview: /?credits=ms&freeze (ms 0..30000), no site joined.
+   b. Credits (p8): 30 s, no skip, everyone back together = agent's defaults; ask length/skip. Credits card DONE (user 2026-11-05: Eric Xu · u7643101, Claude Opus 5.5, lecturer Ben Swift, tutor Tom Griffiths, playtesters; settlement.ts CREDITS) + SOUND_CREDITS card. Preview: /?credits=ms&freeze (ms 0..30000), no site joined.
    c. Grenades (4a): G throws from the belt, max 2, 8 quota. Tutorial grenade room gives one on the belt.
    d. Rotors (4b): still on the pads, spin up only during a ride, coast to a stop.
    Earlier rounds p1-p8 / items 1: DONE (p1 cargo heap + panel by the door, p2 pixel seal + thanks order, p3 DEMO stamp, p4/p4b shaft, p5-p7 UI; turrets/friendly fire/Space). Details in ADR-066..070 and Game above; the user has seen p1-p7 except where ADR says "awaiting".
