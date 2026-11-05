@@ -1,57 +1,190 @@
 # Process
 
-<!-- 中文稿，英文定稿待做（目标 900–1100 词）。 -->
+## The experience I wanted to give
 
-## 我最终想提供什么体验
+Asset Nexus Unlimited is now a top-down multiplayer co-op game. Players go
+into an underground facility as an asset recovery crew, start the reactor and
+hold it, restore power to the freight lift, then leave with the goods. The
+reactor is the means of finishing the job; the cargo is why the company sent
+them down. That setting shaped the evacuation too: the cargo has to be the
+visual focus, and the lift has to look like a space really built for hauling
+(the evacuation went in at [`7cbb188`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/7cbb188),
+and the cargo was redone along these lines in [`67fabdf`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/67fabdf);
+see also [ADR-069](docs/adr.md#adr-069-freight-lift--panel-by-the-door-the-cargo-one-heap-the-shaft-built-around-the-platform)).
 
-Asset Nexus Unlimited 现在是一个俯视角多人合作游戏。玩家作为资产回收小组进入地下设施，启动并守住反应堆，恢复货运电梯供电，再带着物资撤离。反应堆是完成回收任务的手段，货物才是公司派玩家下来的目的。这一设定也影响了撤离场景：货物要成为视觉重点，电梯的布局要像真正用于运输的空间（撤离在 [`7cbb188`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/7cbb188) 实现，货物在 [`67fabdf`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/67fabdf) 按这个思路重做，另见 [ADR-069](docs/adr.md#adr-069-freight-lift--panel-by-the-door-the-cargo-one-heap-the-shaft-built-around-the-platform)）。
+My starting point was influenced by *The Art of Game Design*: a game should
+convey some experience, give players a problem to solve, and make its goals
+valuable inside the game. Over development that experience became clearer:
+co-operation and immersion. The later it got, the more I realised a course
+project needs a short, complete experience that's fun straight away. I let go
+of building feedback through long-term progression or repeat play, and moved
+towards a theme-park ride: someone who comes and plays once should feel what
+it's trying to say. That shows in concrete trade-offs: the objective shrank
+from ten waves to six, the cross-attempt build-up of keeping what you built
+after a failure stopped being the focus, and when many people play at once,
+rooms (at most four to a site) keep every run a complete experience for one
+squad ([ADR-060](docs/adr.md#adr-060-seventh-round--what-watching-the-group-play-showed-about-the-ui),
+[`e120767`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/e120767)).
 
-我的出发点受到《游戏设计艺术》的影响：游戏应当传达某种体验，让玩家解决问题，并让目标在游戏内部具有价值。开发过程中，这个体验逐渐明确为合作与沉浸感。越到后期，我越意识到课程项目需要的是一段短而完整、即时有趣的体验。我逐渐放下通过长期养成或反复游玩建立反馈的方向，转向一种游乐园式的体验：玩家来玩一次，就应该能感受到它想表达的东西。这也体现在具体取舍上：目标从十波缩短为六波，失败后保留建造的跨局积累不再是重点，而多人并行时则用分房间（每个站点最多四人）保证每一局都是一支小队的完整体验（[ADR-060](docs/adr.md#adr-060-seventh-round--what-watching-the-group-play-showed-about-the-ui)、[`e120767`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/e120767)）。
+## The stack: the part I'm not interested in, handed to the agent
 
-## 技术选择：我不感兴趣的部分，交给 agent
+To put it plainly: I'm not interested in the technical implementation itself.
+What I care about is what players actually see, hear and handle in the
+browser, the front-end "experience" and its effect. So I left the stack
+entirely to Claude, with one requirement: keep to the project's existing
+toolchain, stay consistent, and don't bring in a second build system or
+runtime partway for the sake of one feature. It chose Node, TypeScript,
+WebSocket, SQLite, Three.js and esbuild; the server decides the real-time
+rules, and the client presents them and predicts some of them. The trade-offs
+are recorded in
+[ADR-005](docs/adr.md#adr-005-tech-stack-native-typescript-on-node-ws-nodesqlite-threejs)
+and the [note on the server-authoritative design](docs/adr/0001-server-authoritative-shared-world.md);
+the first implementation is [`8d98917`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/8d98917).
 
-说得直接一点：我对技术实现本身并不感兴趣。我在意的是玩家在浏览器里实际看到、听到、操作到的东西，也就是前端的"体验"和效果。所以技术栈我完全交给了 Claude，只提了一个要求：沿用项目已有的工具链，保持一致，不要为了某个功能中途引入第二套构建系统或运行时。它选择了 Node、TypeScript、WebSocket、SQLite，以及 Three.js 和 esbuild；实时规则由服务端判定，客户端负责呈现与部分预测。具体取舍记录在 [ADR-005](docs/adr.md#adr-005-tech-stack-native-typescript-on-node-ws-nodesqlite-threejs) 和[服务端权威架构说明](docs/adr/0001-server-authoritative-shared-world.md)中，初始实现见 [`8d98917`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/8d98917)。
+I judge the technology only by results: do several players see the same
+world, do the controls respond, does the picture run smoothly. When the first
+real multiplayer test showed obvious lag, what I cared about was that
+"shooting feels wrong"; how to fix it (client-side prediction, interpolation,
+reconnecting) the agent proposed and built
+([`881e4fd`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/881e4fd)).
+The cost of this split is that I know little about the code underneath, so I
+judge whether it's right mainly through automatic checks and playtesting, not
+by reading it.
 
-我对技术的要求只看结果：多人看到的是不是同一个世界，操作是否跟手，画面是否流畅。第一次真正的多人测试出现明显延迟时，我关心的是"开枪感觉不对"，而怎么解决（客户端预测、插值、断线重连）由 agent 提出和实现（[`881e4fd`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/881e4fd)）。这种分工的代价是我对底层代码了解有限，判断它是否正确主要依靠自动检查和试玩，而不是读代码。
+I put my effort into the direction of the gameplay and aesthetic judgement.
+Gameplay is usually easy to describe and easy for the agent to change; art
+only shows whether it's close to what I had in mind after seeing the real
+result again and again.
 
-我把精力放在玩法方向和审美判断上。玩法通常容易描述，也容易让 agent 修改；美术则需要反复看实际效果，才能知道它是否接近我的想法。
+## Letting the agent keep the project's memory
 
-## 让 agent 维护项目的记忆
+The most convenient and most important choice for me this time was having
+the agent maintain a set of documents: ADRs record decisions and their
+reasons, the handoff keeps the current state and the next work, and the
+harness and the art and interaction rules hold the constraints that have to
+carry forward. Once set up, it updates these files itself as it works, and I
+don't have to explain the project's background each time. The rules went into
+`CLAUDE.md` in [`4e64818`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/4e64818);
+[`cd7a57f`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/cd7a57f)
+required the handoff to let a new session take over unaided; and
+[`2e194f4`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/2e194f4)
+moved them into `docs/` and into git.
 
-这次对我最方便、也最重要的选择，是让 agent 持续维护一套文档系统：ADR 记录决策及理由，handoff 保存当前状态与下一步工作，harness 和美术交互规则保存需要延续的约束。设定之后，它会在工作过程中自行更新这些文件，我不用每次重新解释项目背景。规则在 [`4e64818`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/4e64818) 写入 `CLAUDE.md`，[`cd7a57f`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/cd7a57f) 要求 handoff 必须能让新会话独立接手，[`2e194f4`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/2e194f4) 把它们移进 `docs/` 并纳入 git。
+I want to stress what the ADRs do. This may just be my impression, but I feel
+that with ADRs the agent knows not only what I did but why I did it. That
+makes it less likely to misread what I meant later on for some reason, or to
+pick a worse solution just to follow a rule.
 
-我想特别强调 ADR 的作用。这可能只是我的错觉，但我觉得有了 ADR，agent 不仅知道我做了什么，还知道我为什么这样做。这样它以后就不容易因为某些原因曲解我的意思，也不容易为了遵守某条规则，反而选择一个更差的解决方法。
+Especially in the last two or three weeks, I rarely felt any obvious
+miscommunication. My way of working gradually became: spend ten-odd minutes
+discussing a plan, let it build on its own for an hour or two, then come back
+to check and play. This is my subjective impression; I never ran a comparison
+with and without the system. It brings problems too: some offhand remarks get
+fixed into hard rules and need correcting later. These feelings are also in my
+[crit 10 reflection](reflections/crit-10.md).
 
-尤其最后两三个星期，我已经很少感到明显的沟通不畅。我的工作方式逐渐变成：先花十几分钟讨论计划，再让它独立实现一两个小时，最后回来检查和试玩。这是我自己的主观感受，并没有做过有无这套系统的对照实验。它也会带来问题：有些随口说的话会被固化成硬规则，之后需要纠正。这些感受也记录在 [crit 10 reflection](reflections/crit-10.md) 中。
+## What the checks protect
 
-## 检查守护的是什么
+The tests in `spec/` target the part of the experience that's hard to notice
+at once when it breaks: whether two browsers are told apart, whether the same
+person coming back is the same person, whether what one player holds can't be
+taken by another (`multiuser.test.ts`); whether players in different sites
+can't see each other and a fifth person is turned away (`rooms.test.ts`);
+whether malformed messages and floods can't bring the server down
+(`robustness.test.ts`); and the rules of the lift, waves, shop and tutorial
+(`lift`, `defence`, `economy`, `tutorial`). These are all rules a program can
+enforce. Whether co-operation is fun or the picture draws people in, tests
+can't answer; only playtesting can.
 
-`spec/` 里的测试针对的是"体验一旦坏掉就很难被立刻看出来"的那部分：两个浏览器能否互相区分、同一个人回来还是同一个人、一个玩家拿着的东西别人抢不走（`multiuser.test.ts`）；不同站点的玩家互不可见、第五个人进不去（`rooms.test.ts`）；畸形消息和刷屏打不垮服务器（`robustness.test.ts`）；电梯、波次、商店和教程的规则（`lift`、`defence`、`economy`、`tutorial`）。这些都是程序能执行的规则。合作是否有趣、画面是否让人投入，测试回答不了，只能靠试玩判断。
+## How art exploration became rules
 
-## 美术探索怎样变成规则
+The top-down view came straight from *Escape from Duckov*: the form suits a
+light game that also carries a story, and a fixed viewing distance lowers how
+much detail the models need. *Buckshot Roulette* and *Lethal Company* inspired
+the pixelation, which both hides the models' lack of detail, letting players
+imagine what's missing, and helps build tension. *Lethal Company* also
+inspired the shady-company setting; for gameplay I mainly drew on
+*Titanfall 2*'s Frontier Defense.
 
-俯视角的直接灵感来自《逃离鸭科夫》：这种形式适合轻量、同时带有叙事的游戏，而且固定观看距离可以降低模型细节的要求。《恶魔轮盘赌》和《致命公司》启发了像素化处理，它既能掩盖模型精细度不足，让玩家想象缺失的部分，也能帮助营造紧张气氛。《致命公司》还启发了黑心公司的设定；玩法上，我主要参考《泰坦陨落》的边境防御。
+Giving references didn't make the art reach what I expected straight away. I
+tried different directions, *Arc Raiders* among them, and gradually it became
+clear that what needed controlling was the relationship between materials,
+lighting and colour. The facility ended up with one consistent low-saturation
+gamut, vivid colour mostly kept for things that glow, and the overall grade
+kept separate from the models; a gallery page and automatic checks let every
+model be reviewed together and check triangle counts and colour range. The
+art system was set up in [`d9a96d5`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/d9a96d5),
+the facility and gamut came in [`fdc8482`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/fdc8482),
+and the later red-grey regrade in [`f69f2f4`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/f69f2f4).
 
-实际美术并没有因为给出参考就直接达到预期。我尝试过包括《Arc Raiders》在内的不同方向，后来逐渐明确：需要控制的是材质、灯光、颜色之间的关系。地下设施最终形成了统一的低饱和色域，鲜艳颜色主要留给发光物体，整体调色与模型分开；gallery 和自动检查让模型能被统一审阅，并检查面数与颜色范围。美术系统建立于 [`d9a96d5`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/d9a96d5)，设施与色域在 [`fdc8482`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/fdc8482)，后期红灰调整在 [`f69f2f4`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/f69f2f4)。
+## How corrections landed in rules and checks
 
-## 纠正怎样落进规则和检查
+Correcting the agent also ends up in the rules. For example, to make the
+outline clearer from above, it once turned the gun in a player's hands
+sideways as well. I said a gun on the ground can lie on its side, but a gun in
+the hands still has to be held normally. That feedback was written into the
+art rules. Likewise, when the headlamp threw shadows that made no sense on the
+character itself, I refused to fix it by turning shadows off and asked for
+the light to be moved instead. These examples show the rules need to keep the
+visual goal and the reasoning behind a judgement, so that fixing one problem
+doesn't lose the effect I wanted. See
+[ADR-014](docs/adr.md#adr-014-corrections-after-first-model-review),
+[ADR-033](docs/adr.md#adr-033-flashlight-shadows-headlamp-on-the-cap-brim)
+and the headlamp rule commit [`ebd6978`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/ebd6978).
 
-纠正 agent 的结果也会进入规则。例如，它曾为了让俯视轮廓更清楚，把手里的枪也横着拿。我要求地上的枪可以侧放，拿在手里的枪仍要正常握持。这条反馈被写进美术规则。类似地，头灯产生不合理的自身阴影时，我拒绝通过取消阴影来解决，而是要求调整光源的位置。这些例子说明，规则需要保存视觉目标和判断理由，避免修复一个问题时丢掉原本想要的效果。见 [ADR-014](docs/adr.md#adr-014-corrections-after-first-model-review)、[ADR-033](docs/adr.md#adr-033-flashlight-shadows-headlamp-on-the-cap-brim) 及头灯规则提交 [`ebd6978`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/ebd6978)。
+Gameplay corrections land in tests. The agent once had enemies quietly get
+tougher and faster in later waves. My rule: if the numbers change, the look
+has to change with them; what players see should tell them what they face.
+The rule went into
+[ADR-053](docs/adr.md#adr-053-an-enemy-kinds-stats-never-scale-with-the-wave)
+and became a test in [`572769f`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/572769f)
+("an enemy kind has the same stats on every wave"). Similarly, playtesting
+showed turrets could seal a passage completely, which isn't the kind of
+defence I want; once turrets stopped blocking enemies,
+[`60785ea`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/60785ea)
+added a test that "an enemy walks past a ring of turrets", so later changes
+can't undo it
+([ADR-066](docs/adr.md#adr-066-ninth-round--scope-for-the-last-week-and-the-backlog-settled)).
 
-玩法上的纠正则落进测试。agent 曾让敌人在后面的波次里悄悄变得更耐打、更快。我的规则是：如果数值变了，外观就必须跟着变，玩家看到什么就应该知道自己面对什么。这条规则写进了 [ADR-053](docs/adr.md#adr-053-an-enemy-kinds-stats-never-scale-with-the-wave)，并在 [`572769f`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/572769f) 成为一条测试（"an enemy kind has the same stats on every wave"）。同样，试玩时发现炮塔可以把通道完全封死，这不是我想要的防守方式；改成炮塔不阻挡敌人后，[`60785ea`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/60785ea) 加了一条"敌人能绕过一圈炮塔"的测试，防止之后的改动把它改回去（[ADR-066](docs/adr.md#adr-066-ninth-round--scope-for-the-last-week-and-the-backlog-settled)）。
+## What playtesting showed beyond the implementation
 
-## 试玩揭示了实现之外的问题
+A group playtest changed my judgement about guidance. Some people took the
+surface for a PvP arena and never found the lift; without a reminder nobody
+knew to start the reactor, and someone never found the shop. Based on that
+feedback I added a tutorial in separate rooms, objective markers and arrows
+at the screen's edge. Later, the information was all there but buried too
+deep, or arrived all at once at the end of a wave, so the ready hint got a
+place of its own and the information now comes in batches. See
+[ADR-050](docs/adr.md#adr-050-what-the-group-playtest-showed--tutorial-and-visual-guidance-come-next);
+the guidance markers are in [`0e52073`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/0e52073),
+the tutorial in [`12a8297`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/12a8297),
+and the information hierarchy in [`544c774`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/544c774)
+([ADR-060](docs/adr.md#adr-060-seventh-round--what-watching-the-group-play-showed-about-the-ui)).
 
-小组试玩改变了我对引导的判断。有人把地表当成 PVP 场地，没有发现电梯；没人提醒就不知道要启动反应堆，也有人一直没找到商店。后来我据此反馈加入分房间的教程、目标标记和屏幕边缘箭头。再往后，信息虽然都有了，却埋得太深，或在波次结束时同时出现，于是 ready 提示有了独立位置，各种信息也改为分批呈现。见 [ADR-050](docs/adr.md#adr-050-what-the-group-playtest-showed--tutorial-and-visual-guidance-come-next)，引导标记在 [`0e52073`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/0e52073)，教程在 [`12a8297`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/12a8297)，信息层级调整在 [`544c774`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/544c774)（[ADR-060](docs/adr.md#adr-060-seventh-round--what-watching-the-group-play-showed-about-the-ui)）。
+These problems weren't just something the AI missed. Even I only realised
+them by watching other people play. The agent can verify that the program
+follows the rules and check pages and pictures, but it can't actually have
+the player's experience. I think this is to some extent a hard limit, which
+more harness or a different workflow alone can't solve. Whether the art
+works, whether co-op is fun, whether players understand the next step still
+need human judgement, above all other players' feedback.
 
-这些问题并不只是 AI 没有发现。即使是我，也要看其他人实际游玩才意识到。Agent 可以验证程序是否执行了规则，检查页面和画面，但它不能真正获得玩家的体验。我认为这在一定程度上是一个硬伤，无法单靠增加 harness 或调整工作流解决。美术是否成立、合作是否有趣、玩家是否理解下一步，仍需要人的判断，尤其是其他玩家的反馈。
+## Where the trade-offs stand
 
-## 目前的取舍
+I spent a lot of adjustment on the art; sound, because of time, isn't
+polished to the same degree. It's in, made by first listening on a preview
+page and then deciding whether to keep the synthesised sound or swap in a
+recording, but immersion and the pressure curve still have room to improve.
+See [ADR-071](docs/adr.md#adr-071-sound-first-batches) and the combat sounds
+wired in at [`80ba129`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/80ba129).
 
-我在美术上投入了很多调整，音效则因为时间限制没有打磨到同样程度。它已经加入，制作时采用先在试听页面听、再决定保留合成音还是换成录音的方式，但沉浸感和压力曲线仍有继续调整的空间。见 [ADR-071](docs/adr.md#adr-071-sound-first-batches) 及战斗音效接入 [`80ba129`](https://github.com/comp4020-agentic-coding-studio/comp4020-final-blendspitfire/commit/80ba129)。
+This collaboration let me put more energy into choosing and reviewing.
+Documents and checks cut down repeated explanation and helped the agent move
+forward on its own; at the same time, what experience the game finally
+conveys still has to be judged by me and by real players.
 
-这次协作让我能把更多精力放在选择和审阅上。文档与检查减少了重复沟通，也帮助 agent 自主推进；与此同时，游戏最终传达了什么体验，仍然需要我和实际玩家来判断。
+## References
 
-## 参考文献
-
-- 《游戏设计艺术》（Jesse Schell, *The Art of Game Design: A Book of Lenses*）
+Schell, J. (2019). *The Art of Game Design: A Book of Lenses* (3rd ed.). CRC
+Press. Read in the Chinese translation: 谢尔, J. (2021). 《游戏设计艺术（第3版）》
+(刘嘉俊 等译). 电子工业出版社.
