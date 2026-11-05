@@ -65,7 +65,7 @@ import {
 import { REACTOR_LIVE, REACTOR_STANDBY, buildFacility, reactorCore } from "./models/facility.ts";
 import { mesh } from "./models/kit.ts";
 import { LAMPS, LAMP_SPECS, lampSource } from "./world/dressing.ts";
-import { STENCIL, DANGER, OK, EMIT_AMBER, EMIT_GREEN, EMIT_TRACER, EMIT_ACID, EMIT_SPARK, AMBIENT_SKY, codename } from "../shared/palette.ts";
+import { STENCIL, DANGER, OK, ACCENT, EMIT_AMBER, EMIT_GREEN, EMIT_TRACER, EMIT_ACID, EMIT_SPARK, AMBIENT_SKY, codename } from "../shared/palette.ts";
 import { INTERP_DELAY_MS, ServerClock, SnapshotBuffer, Tracer } from "./netsync.ts";
 import {
   BRUTE_SCALE,
@@ -100,6 +100,7 @@ import {
   SURFACE_FIXTURES,
   SURFACE_VIEW_MARGIN,
   SCOREBOARD,
+  STATIONS,
   SCOREBOARD_RANGE,
   LIFT_CARS,
   LIFT_DOORS,
@@ -795,6 +796,21 @@ hoverRing.rotation.x = -Math.PI / 2;
 hoverRing.visible = false;
 scene.add(hoverRing);
 
+// the rifle stands' rings (user 2026-11-05: where to get a gun must be
+// obvious): "can act" cyan, glowing, pulsing while a rifle's waiting there,
+// faint while the stand's restocking
+const standRings = STATIONS.map((st) => {
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.85, 1.05, 32).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: ACCENT, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
+  );
+  ring.position.set(st.x, 0.12, st.z);
+  scene.add(ring);
+  return ring;
+});
+const stocked = (st: { x: number; z: number }): boolean =>
+  [...items.values()].some((i) => i.state.kind === "gun" && i.state.heldBy === undefined && Math.hypot(i.state.x - st.x, i.state.z - st.z) < 0.8);
+
 function holderMesh(playerId: string): THREE.Object3D | undefined {
   if (playerId === myId) return localMesh;
   return remotes.get(playerId)?.mesh;
@@ -847,6 +863,10 @@ function stepItemVisuals(time: number): void {
     if (!holder) held.removeFromParent();
   }
 
+  STATIONS.forEach((st, i) => {
+    const m = standRings[i]!.material as THREE.MeshBasicMaterial;
+    m.opacity = stocked(st) ? 0.55 + 0.4 * pulse : 0.15;
+  });
   hoverRing.visible = !!hovered?.inReach;
   if (hovered?.inReach) {
     hoverRing.position.set(hovered.item.state.x, 0.03, hovered.item.state.z);
@@ -1223,6 +1243,12 @@ function currentMarkers(): Marker[] {
     add({ id: "m-lift", at: v3(door.x, 2.4, door.z), near: door, label: locked ? "lift · locked" : "lift · to the facility", detail: leaving ? `leaves in ${leavesIn}s` : undefined, loud: !locked && (leaving || fresh) });
     add({ id: "m-board", at: v3(SCOREBOARD.x, 2.8, SCOREBOARD.z), label: "scores" });
     add({ id: "m-heli", at: v3(HELIPADS.garden.x, 2.6, HELIPADS.garden.z), label: "helicopter · training" });
+    // empty-handed: the nearest stocked rifle stand, once it's in view (pinned
+    // to the screen edge, the lift stand's would sit on the lift's own marker)
+    if (!myHeldItem()) {
+      const st = STATIONS.filter(stocked).sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z))[0];
+      if (st && Math.hypot(st.x - p.x, st.z - p.z) < 9) add({ id: `m-gun${STATIONS.indexOf(st)}`, at: v3(st.x, 2.6, st.z - 0.6), near: st, label: "rifle · E", loud: fresh });
+    }
     return out;
   }
   const phase = defenceState.phase;

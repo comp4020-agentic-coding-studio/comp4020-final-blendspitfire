@@ -390,6 +390,24 @@ function fieldTent(f: SurfaceFixture, parts: THREE.BufferGeometry[]): void {
   parts.push(tint(at(box(0.6, 0.4, 0.4), f.x + w / 2 + 0.5, 0.2, f.z + 0.4), C.drab));
 }
 
+/**
+ * A rifle stand (user 2026-11-05: where to get a gun has to be obvious):
+ * a pale poured slab clear of the lawn, a hazard band round its edge, a low
+ * rack behind where the rifle lies and a lit strip along the rack's top.
+ * The pulsing ring and the marker over it are the client's (main.ts).
+ */
+function gunStand(x: number, z: number, parts: THREE.BufferGeometry[], glow: THREE.BufferGeometry[]): void {
+  parts.push(tint(at(box(2.6, 0.08, 2.6), x, 0.04, z), C.stoneShade));
+  parts.push(tint(at(box(2.3, 0.1, 2.3), x, 0.05, z), C.stone));
+  for (const [dx, dz, w, d] of [[0, -1.2, 2.6, 0.2], [0, 1.2, 2.6, 0.2], [-1.2, 0, 0.2, 2.2], [1.2, 0, 0.2, 2.2]] as const) {
+    parts.push(tint(at(box(w, 0.11, d), x + dx, 0.055, z + dz), C.hazard));
+  }
+  // the rack: two posts and a rail along the north edge, kept low (under sight height)
+  for (const dx of [-0.85, 0.85]) parts.push(tint(at(box(0.12, 0.7, 0.12), x + dx, 0.45, z - 0.95), C.steelDark));
+  parts.push(tint(at(box(1.9, 0.1, 0.16), x, 0.8, z - 0.95), C.steel));
+  glow.push(tint(at(box(1.7, 0.04, 0.08), x, 0.87, z - 0.95), 0xffe39a));
+}
+
 // --- Two hundred years on ------------------------------------------------------
 // What a city looks like after two centuries with nobody in it, from above:
 // mostly forest. Roofs went first, then floors; what stands is wall stumps
@@ -1021,6 +1039,7 @@ export function buildSurface(): THREE.Group {
   rubbleHeap(parts, random, -4, SURFACE.minZ + 9, 1);
   liftHouse(parts, glow);
   sundial(parts);
+  for (const st of STATIONS) gunStand(st.x, st.z, parts, glow);
   const group = new THREE.Group();
   const merged = new THREE.Mesh(mergeGeometries(parts)!, paintMaterial);
   merged.geometry.computeVertexNormals();

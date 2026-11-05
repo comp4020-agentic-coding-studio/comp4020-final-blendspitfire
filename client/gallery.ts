@@ -178,7 +178,7 @@ function surfaceView(): void {
   const post = createPostProcess(renderer, params.get("pixel") === "0" ? 1 : Number(params.get("pixel")) || 0.25, GRADE);
   post.effects.paint = 1;
   const scene = new THREE.Scene();
-  scene.add(buildSurface());
+  scene.add(buildSurface(), buildYardGuides());
   const cx = Number(params.get("x") ?? 0);
   const cz = Number(params.get("z") ?? (SURFACE.minZ + SURFACE.maxZ) / 2);
   const sun = createSunlight(scene);

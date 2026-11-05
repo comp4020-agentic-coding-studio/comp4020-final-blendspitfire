@@ -1080,7 +1080,11 @@ export const SPAWN_POINTS: { x: number; z: number }[] = [
  * so carrying them off can't flood the map).
  */
 export const STATIONS: { kind: ItemKind; x: number; z: number }[] = [
-  { kind: "gun", x: -7, z: SPAWN_Z - 1 },
+  // user 2026-11-05: the old one sat in the grass at (-7, SPAWN_Z - 1) and
+  // barely read; now two stands that can't be missed, one beside the lift
+  // door (west of the path) and one in front of the range's targets
+  { kind: "gun", x: -3, z: SPAWN_Z + 3.2 },
+  { kind: "gun", x: -8.5, z: SURFACE.minZ + 7.2 },
 ];
 export const STATION_RESTOCK_MS = 3000;
 export const ITEM_CAPS: Record<ItemKind, number> = { gun: 12, turret: 8 };

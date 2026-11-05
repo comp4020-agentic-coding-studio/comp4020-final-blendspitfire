@@ -114,18 +114,6 @@ function arrowUp(ctx: CanvasRenderingContext2D, x: number, y: number, h: number)
   ctx.restore();
 }
 
-/** a dashed ring marking where a station's item lies */
-function stationMark(x: number, z: number): THREE.Mesh {
-  return decal(2.2, 2.2, x, z, (ctx) => {
-    ctx.save();
-    ctx.setLineDash([0.18, 0.14]);
-    ctx.beginPath();
-    ctx.arc(1.1, 1.1, 1.0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
-  });
-}
-
 export function buildYardGuides(): THREE.Group {
   const group = new THREE.Group();
   const spawn = SPAWN_POINTS[1];
@@ -143,19 +131,22 @@ export function buildYardGuides(): THREE.Group {
     }),
   );
 
+  // the rifle stands (user 2026-11-05): the stand itself (slab, rack, glowing
+  // ring, marker) says "here"; the floor says how --- E beside each, and at
+  // the range stand, where you'd shoot, fire and drop too
   for (const station of STATIONS) {
-    group.add(stationMark(station.x, station.z));
     const x = station.x;
-    // how to pick it up, right below the item
+    const atRange = station.z < SPAWN_POINTS[1].z - 6;
+    // the lift stand's guide goes west of it (east is the path and the lift arrow)
     group.add(
-      decal(3.4, 0.9, x, station.z + 1.65, (ctx) => {
-        key(ctx, "E", 0.32, 0.2);
-        text(ctx, "pick up", 1.0, 0.45);
+      decal(2.6, 0.9, atRange ? x : x - 2.9, atRange ? station.z + 1.95 : station.z, (ctx) => {
+        key(ctx, "E", 0.22, 0.2);
+        text(ctx, "pick up", 0.9, 0.45);
       }),
     );
-    if (station.kind === "gun") {
+    if (station.kind === "gun" && atRange) {
       group.add(
-        decal(3.8, 1.6, x + 0.2, station.z + 3.05, (ctx) => {
+        decal(3.8, 1.6, x + 0.2, station.z + 3.35, (ctx) => {
           mouse(ctx, 0.35, 0.05, "left");
           text(ctx, "/", 0.95, 0.3);
           key(ctx, "Space", 1.25, 0.05, 1.0);
