@@ -440,6 +440,8 @@ export function createRoom(id: string, hooks: RoomHooks): Room {
     turrets: number;
   }
   const attemptStats = new Map<string, AttemptStats>();
+  /** when the reactor went live this attempt, for the fast-win part of the score */
+  let attemptStartedAt = 0;
   /** add to a crew member's tally for this attempt (only while one's on) */
   function tally(id: string, add: Partial<AttemptStats>): void {
     if (!objective.active) return;
@@ -457,7 +459,7 @@ export function createRoom(id: string, hooks: RoomHooks): Room {
       const c = connections.get(id);
       const s = attemptStats.get(id) ?? { kills: 0, shots: 0, hits: 0, wounds: 0, spent: 0, turrets: 0 };
       const out = c ? c.deadUntil === Infinity : true;
-      const score = attemptScore(s.kills, waves, !out, won);
+      const score = attemptScore({ kills: s.kills, waves, standing: !out, won, ms: Date.now() - attemptStartedAt, reactor: defence.state.reactorHealth, wounds: s.wounds });
       const line: CrewLine = { name: c ? codename(c.player) : shortId(id), out, ...s, score };
       const handle = c?.player.handle;
       if (handle) {
@@ -1083,7 +1085,8 @@ export function createRoom(id: string, hooks: RoomHooks): Room {
         if (verdict === "ok") {
           objective.active = true;
           attemptStats.clear();
-          defence.start(Date.now());
+          attemptStartedAt = Date.now();
+          defence.start(attemptStartedAt);
           attempt.number += 1;
           // everyone down here is in it: from now on the lift won't take them back up
           attempt.players = new Set([playerId, ...[...connections.values()].filter((c) => !isDead(c) && levelOf(c.player.z) === "bottom").map((c) => c.player.id)]);

@@ -133,12 +133,43 @@ export interface CrewLine {
 /**
  * One crew member's score for an attempt (agent's numbers, ADR-060): ten
  * a kill, fifty a wave the crew cleared, a hundred for still standing at
- * the end, five hundred more if the reactor held.
+ * the end, five hundred more if the reactor held. User 2026-11-05 added
+ * three parts: a fast win pays up to +300 (full at or under FAST_WIN_MS,
+ * nothing by SLOW_WIN_MS, straight line between; agent's scale: a run is
+ * ~375 s of fighting at par plus the breaks), the reactor's health left at
+ * a win pays up to +300 in proportion, and every wound taken costs 20.
+ * The total never goes below zero.
  */
-export const SCORE = { kill: 10, wave: 50, standing: 100, won: 500 } as const;
-export function attemptScore(kills: number, waves: number, standing: boolean, won: boolean): number {
-  return kills * SCORE.kill + waves * SCORE.wave + (standing ? SCORE.standing : 0) + (won ? SCORE.won : 0);
+export const SCORE = { kill: 10, wave: 50, standing: 100, won: 500, fast: 300, reactor: 300, wound: -20 } as const;
+export const FAST_WIN_MS = 6 * 60_000;
+export const SLOW_WIN_MS = 15 * 60_000;
+export interface AttemptFacts {
+  kills: number;
+  waves: number;
+  standing: boolean;
+  won: boolean;
+  /** from the reactor going live to the win (ignored unless won) */
+  ms?: number;
+  /** the reactor's health at the end, 0..1 (ignored unless won) */
+  reactor?: number;
+  wounds?: number;
 }
+/** each part of an attempt's score, by name, and the total */
+export function scoreParts(f: AttemptFacts): { parts: Record<keyof typeof SCORE, number>; total: number } {
+  const speed = f.won && f.ms !== undefined ? Math.max(0, Math.min(1, (SLOW_WIN_MS - f.ms) / (SLOW_WIN_MS - FAST_WIN_MS))) : 0;
+  const parts = {
+    kill: f.kills * SCORE.kill,
+    wave: f.waves * SCORE.wave,
+    standing: f.standing ? SCORE.standing : 0,
+    won: f.won ? SCORE.won : 0,
+    fast: Math.round(speed * SCORE.fast),
+    reactor: f.won ? Math.round(Math.max(0, Math.min(1, f.reactor ?? 0)) * SCORE.reactor) : 0,
+    wound: (f.wounds ?? 0) * SCORE.wound,
+  };
+  const total = Math.max(0, Object.values(parts).reduce((a, b) => a + b, 0));
+  return { parts, total };
+}
+export const attemptScore = (f: AttemptFacts): number => scoreParts(f).total;
 
 /** after everyone's down: how long the view stays where they fell before the cut back to the garden */
 export const WIPE_HOLD_MS = 4500;

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   attemptScore,
+  scoreParts,
+  FAST_WIN_MS,
+  SLOW_WIN_MS,
   cleanName,
   SCORE,
   BUY_RANGE,
@@ -121,8 +124,21 @@ describe("names and scores on the board", () => {
   });
 
   it("an attempt's score counts kills, waves, standing at the end and a win", () => {
-    expect(attemptScore(0, 0, false, false)).toBe(0);
-    expect(attemptScore(3, 2, true, false)).toBe(3 * SCORE.kill + 2 * SCORE.wave + SCORE.standing);
-    expect(attemptScore(10, 6, true, true)).toBeGreaterThan(attemptScore(30, 6, false, false));
+    expect(attemptScore({ kills: 0, waves: 0, standing: false, won: false })).toBe(0);
+    expect(attemptScore({ kills: 3, waves: 2, standing: true, won: false })).toBe(3 * SCORE.kill + 2 * SCORE.wave + SCORE.standing);
+    expect(attemptScore({ kills: 10, waves: 6, standing: true, won: true })).toBeGreaterThan(attemptScore({ kills: 30, waves: 6, standing: false, won: false }));
+  });
+
+  it("a win pays more the faster it was and the more reactor is left; every wound costs, never below zero", () => {
+    const won = { kills: 20, waves: 6, standing: true, won: true, reactor: 1, wounds: 0 };
+    const base = attemptScore({ ...won, ms: SLOW_WIN_MS, reactor: 0 });
+    expect(attemptScore({ ...won, ms: FAST_WIN_MS - 1, reactor: 0 }) - base).toBe(SCORE.fast);
+    expect(attemptScore({ ...won, ms: (FAST_WIN_MS + SLOW_WIN_MS) / 2, reactor: 0 }) - base).toBe(SCORE.fast / 2);
+    expect(attemptScore({ ...won, ms: SLOW_WIN_MS, reactor: 0.5 }) - base).toBe(SCORE.reactor / 2);
+    expect(attemptScore({ ...won, ms: SLOW_WIN_MS, reactor: 0, wounds: 3 }) - base).toBe(3 * SCORE.wound);
+    // a loss gets neither the speed nor the reactor part, however quick or whole
+    const lost = { kills: 5, waves: 2, standing: false, won: false, ms: 1000, reactor: 1 };
+    expect(scoreParts(lost).parts.fast + scoreParts(lost).parts.reactor).toBe(0);
+    expect(attemptScore({ ...lost, kills: 0, waves: 0, wounds: 10 })).toBe(0);
   });
 });
