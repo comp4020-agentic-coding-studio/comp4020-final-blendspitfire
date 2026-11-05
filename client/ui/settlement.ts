@@ -225,8 +225,10 @@ export class Settlement {
     const mid = (el: HTMLElement): number => el.offsetTop + el.offsetHeight / 2;
     const from = window.innerHeight / 2 - mid(first);
     const to = window.innerHeight / 2 - mid(last);
-    // ease in and out of the hold at each end
-    const e = k * k * (3 - 2 * k);
+    // ease in and out of the hold at each end, but only a little: a full
+    // smoothstep runs the middle at 1.5x the average speed, too fast to read
+    // (user 2026-11-05); this blend peaks at ~1.15x
+    const e = 0.7 * k + 0.3 * k * k * (3 - 2 * k);
     this.roll.style.transform = `translateY(${Math.round(from + (to - from) * e)}px)`;
   }
 
