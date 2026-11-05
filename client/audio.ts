@@ -42,15 +42,28 @@ const ROOMS: Record<Zone, Room> = {
 const GLIDE = 0.6;
 const MUTE_KEY = "blendspitfire.muted";
 /**
- * The reactor's generator: idle and running playback rates, and its
- * level at the peak of the spin-up and as the hum after (agent's numbers,
- * user 2026-11-05 asked for it to settle, not stop or stay loud); heard
- * fully within REACTOR_NEAR of it, gone by REACTOR_FAR.
+ * The reactor's machines: idle playback rate, and the level at the peak
+ * of the spin-up and as the hum after (agent's numbers). User 2026-11-05:
+ * it rises and then only gets quieter --- no pitch dropping back after
+ * the peak --- and the rise is several machines mixed, not one. It stays
+ * at full speed, quietly, until it stops; heard fully within REACTOR_NEAR
+ * of it, gone by REACTOR_FAR.
  */
 const REACTOR_IDLE = 0.15;
-const REACTOR_RUN = 1.6;
 const REACTOR_PEAK = 0.9;
 const REACTOR_HUM = 0.22;
+/**
+ * The machines in the mix, each with its own level, start and top speed
+ * and how much of it stays in the hum (0 = only in the rise): the
+ * generator's weight carries it, the fan's blades are the beat you hear
+ * quicken, the disk's whine rides on top, the boiler's metal under it all.
+ */
+const REACTOR_MIX: { take: TakeName; level: number; from: number; to: number; hum: number }[] = [
+  { take: "spinGenerator", level: 1, from: 0.2, to: 2.2, hum: 1 },
+  { take: "spinFan", level: 0.55, from: 0.15, to: 1.8, hum: 0.5 },
+  { take: "spinDisk", level: 0.35, from: 0.1, to: 1.6, hum: 0 },
+  { take: "spinBoiler", level: 0.45, from: 0.25, to: 2, hum: 0.4 },
+];
 const REACTOR_NEAR = 4;
 const REACTOR_FAR = 30;
 /** effects fade out with distance: full within NEAR, gone by FAR (world units) */
@@ -61,8 +74,10 @@ const FAR = 26;
  * the rifle is the SKS, pushed heavy). The synthesised one stands in
  * until the take has loaded.
  */
-const RECORDED: Partial<Record<SfxName, { take: TakeName; punch: Punch }>> = {
+const RECORDED: Partial<Record<SfxName, { take: TakeName; punch: Punch; level?: number }>> = {
   rifle: { take: "rifleSKS", punch: PUNCH.heavy },
+  /** user 2026-11-05: the turret is the AR-15, a lighter crack than the crew's rifle */
+  turretShot: { take: "rifleAR15", punch: PUNCH.punchy, level: 0.8 },
 };
 
 function noiseBuffer(ctx: AudioContext, seconds: number, brown = false): AudioBuffer {
@@ -283,7 +298,7 @@ export class Audio {
   /** an effect into `out`: its recording if it has one and it's loaded, else the synthesis */
   private sound(ctx: AudioContext, out: AudioNode, name: SfxName, level: number): void {
     const rec = RECORDED[name];
-    if (rec && playTake(ctx, out, rec.take, level, rec.punch)) return;
+    if (rec && playTake(ctx, out, rec.take, level * (rec.level ?? 1), rec.punch)) return;
     SFX[name](ctx, out, level);
   }
 
@@ -308,8 +323,8 @@ export class Audio {
 
   private reactorOn = false;
   private reactorAt = { x: 0, z: 0 };
-  private reactorSrc?: AudioBufferSourceNode;
-  private reactorGain?: GainNode;
+  /** one looping source per machine in REACTOR_MIX, each with its own level */
+  private reactorLoops: { src: AudioBufferSourceNode; gain: GainNode; mix: (typeof REACTOR_MIX)[number] }[] = [];
   private reactorPan?: StereoPannerNode;
   /** how much of it reaches the listener (distance), 0..1 */
   private get reactorDistance(): GainNode {
@@ -323,49 +338,55 @@ export class Audio {
   private driveReactor(): void {
     const ctx = this.ctx;
     if (!ctx || !this.room) return;
-    const buf = takeBuffer(ctx, "spinGenerator");
-    if (!buf) return;
     const t = ctx.currentTime;
-    if (!this.reactorSrc) {
+    if (!this.reactorLoops.length) {
       this.reactorPan = ctx.createStereoPanner();
-      this.reactorGain = ctx.createGain();
-      this.reactorGain.gain.value = 0;
-      this.reactorSrc = ctx.createBufferSource();
-      this.reactorSrc.buffer = buf;
-      this.reactorSrc.loop = true;
-      this.reactorSrc.playbackRate.value = REACTOR_IDLE;
-      this.reactorSrc.connect(this.reactorGain).connect(this.reactorPan).connect(this.reactorDistance).connect(this.room);
-      this.reactorSrc.start(t, Math.random() * buf.duration);
+      this.reactorPan.connect(this.reactorDistance).connect(this.room);
+      for (const mix of REACTOR_MIX) {
+        const buf = takeBuffer(ctx, mix.take);
+        if (!buf) continue;
+        const gain = ctx.createGain();
+        gain.gain.value = 0;
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.loop = true;
+        src.playbackRate.value = REACTOR_IDLE;
+        src.connect(gain).connect(this.reactorPan);
+        src.start(t, Math.random() * buf.duration);
+        this.reactorLoops.push({ src, gain, mix });
+      }
+      if (!this.reactorLoops.length) return;
     }
-    const rate = this.reactorSrc.playbackRate;
-    const level = this.reactorGain!.gain;
-    rate.cancelScheduledValues(t);
-    level.cancelScheduledValues(t);
-    rate.setValueAtTime(rate.value, t);
-    level.setValueAtTime(level.value, t);
-    if (this.reactorOn) {
-      const fresh = !this.reactorSeen && rate.value <= REACTOR_IDLE + 0.01;
-      this.reactorSeen = true;
-      if (fresh || rate.value < REACTOR_RUN * 0.6) {
-        // spin up: one curve from slow to past its running speed, then ease back down to it
-        const s = SPINUPS.generator;
+    const first = this.reactorLoops[0]!.src.playbackRate.value;
+    const fresh = this.reactorOn && !this.reactorSeen && first <= REACTOR_IDLE + 0.01;
+    if (this.reactorOn) this.reactorSeen = true;
+    const { rise } = SPINUPS.generator;
+    for (const { src, gain, mix } of this.reactorLoops) {
+      const rate = src.playbackRate;
+      const level = gain.gain;
+      rate.cancelScheduledValues(t);
+      level.cancelScheduledValues(t);
+      rate.setValueAtTime(rate.value, t);
+      level.setValueAtTime(level.value, t);
+      if (!this.reactorOn) {
+        // wind down: slower and slower, and quiet
+        rate.setTargetAtTime(REACTOR_IDLE, t, 1.8);
+        level.setTargetAtTime(0, t, 1.6);
+      } else if (fresh || rate.value < mix.to * 0.6) {
+        // spin up: one curve from slow to full speed, where it stays; only the level comes down after
         const n = 64;
         const curve = new Float32Array(n);
-        const from = Math.max(rate.value, s.from);
-        for (let i = 0; i < n; i++) curve[i] = from * Math.pow(s.to / from, Math.pow(i / (n - 1), 1.4));
-        rate.setValueCurveAtTime(curve, t, s.rise);
-        rate.setTargetAtTime(REACTOR_RUN, t + s.rise, 1.2);
-        level.linearRampToValueAtTime(REACTOR_PEAK, t + s.rise * 0.6);
-        level.setValueAtTime(REACTOR_PEAK, t + s.rise);
-        level.setTargetAtTime(REACTOR_HUM, t + s.rise, 1.5);
+        const from = Math.max(rate.value, mix.from);
+        for (let i = 0; i < n; i++) curve[i] = from * Math.pow(mix.to / from, Math.pow(i / (n - 1), 1.4));
+        rate.setValueCurveAtTime(curve, t, rise);
+        level.linearRampToValueAtTime(REACTOR_PEAK * mix.level, t + rise * 0.6);
+        level.setValueAtTime(REACTOR_PEAK * mix.level, t + rise);
+        level.setTargetAtTime(REACTOR_HUM * mix.level * mix.hum, t + rise, 1.5);
       } else {
-        rate.setTargetAtTime(REACTOR_RUN, t, 0.8);
-        level.setTargetAtTime(REACTOR_HUM, t, 0.8);
+        // joining while it runs (or it came back on before it had wound down): straight to the hum
+        rate.setTargetAtTime(mix.to, t, 0.8);
+        level.setTargetAtTime(REACTOR_HUM * mix.level * mix.hum, t, 0.8);
       }
-    } else {
-      // wind down: slower and slower, and quiet
-      rate.setTargetAtTime(REACTOR_IDLE, t, 1.8);
-      level.setTargetAtTime(0, t, 1.6);
     }
   }
 

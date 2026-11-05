@@ -120,7 +120,16 @@ for (const [label, what, play] of [
 const start = document.createElement("h2");
 start.textContent = "the reactor spinning up: machine recordings (CC0) running faster and faster, one continuous curve";
 sheet.append(start);
+// the in-game one: the reactor as the game drives it, heard from beside it (setEar puts the ear there)
+const IN_GAME_REACTOR: [string, string, () => void][] = [
+  ["in game: start", "all four machines rising together, then only the volume drops to a hum (as in the game; pick a room below ground, e.g. core)", () => {
+    audio.setEar(0, 0);
+    audio.setReactor(true, { x: 0, z: 0 });
+  }],
+  ["in game: stop", "the reactor going off: winds down", () => audio.setReactor(false, { x: 0, z: 0 })],
+];
 const SPIN_ROWS: [string, string, () => void][] = [
+  ...IN_GAME_REACTOR,
   ["generator", "a low motor (8 s up, holds 2 s)", () => audio.spinUp("generator")],
   ["boiler", "a metal, steamy machine loop", () => audio.spinUp("boiler")],
   ["fan", "a fan's blades: the beat you hear speed up", () => audio.spinUp("fan")],
