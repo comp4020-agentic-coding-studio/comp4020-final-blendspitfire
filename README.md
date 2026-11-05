@@ -27,6 +27,9 @@ feel the fun of finishing a job together with other people.
   in the break between waves; **M** to mute; **Esc** for the menu.
 - Pick up a rifle on the surface, take the lift down, press E at the reactor
   to start it, hold out for six waves, then leave on the freight lift.
+- What stays: your name, stats, the leaderboard and run records are saved
+  for good. A site itself is temporary: once everyone has left, it's cleared
+  after a minute, and the next crew starts fresh.
 
 ## What counts as good, to me
 

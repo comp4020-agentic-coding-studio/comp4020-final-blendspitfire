@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-11-05, the tenth round and the docs-first pause
+Synced from the draft up to: 2026-11-05, phone twin-stick decided
 
 ---
 
@@ -980,4 +980,13 @@ Built (agent): `server/room.ts` holds a whole world per site; `server/index.ts` 
 - *Docs first:* the developer paused the game to write `README.md` and `PROCESS.md`. Queued after: a longer ride down (about 10 s) with an altitude readout in place of the progress bar, a ruler scrolling up and a number that eases to a random depth near −500 m. Possibly, at the developer's later choice: a short mission briefing in the logo's black-and-white style during the ride.
 
 **Why.** The developer's playtest observations and choices, as given with each item.
+
+## ADR-075: Phones get twin-stick controls
+*2026-11-05 · Status: Accepted, not yet built*
+
+**Context.** Marking runs at two viewports, 1920×1080 and 390×844 (Chrome DevTools' iPhone preset), and the brief asks for both to work cleanly; a broken viewport is the P band. The game is keyboard and mouse only, with no touch input and no phone layout. The agent offered three ways: basic touch controls; a designed "this is a keyboard-and-mouse game" page on phones, argued in the README; or a look at the current state first.
+
+**Decision.** The developer chose a twin-stick adaptation for phones: the left stick moves, the right stick aims and fires. How the other actions (use, drop, grenade, ready, menu, mute) map to touch is to be settled before building. Separately, the README says briefly what persists (names, stats, the leaderboard and run records) and what doesn't (a site is thrown away once empty, ADR-072).
+
+**Why.** The developer's choice; the agent's reading of the marking environment is that a phone visitor who can't play would mark the deployed app down.
 
