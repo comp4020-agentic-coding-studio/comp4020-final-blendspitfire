@@ -179,6 +179,6 @@ export const LESSON_TEXT: Record<Lesson, { title: string; how: string }> = {
   pickup: { title: "pick up", how: "E by the rifle" },
   shoot: { title: "shoot", how: "aim · click or space · drop all three" },
   drop: { title: "put down", how: "on the ring · Q" },
-  grenade: { title: "grenade", how: "aim at the huddle · G" },
+  grenade: { title: "grenade", how: "G to ready · click the huddle" },
   fly: { title: "fly out", how: "step in · E" },
 };

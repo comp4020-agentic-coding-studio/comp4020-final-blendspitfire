@@ -416,7 +416,7 @@ let watchingId: string | undefined;
 let myWounds = 0;
 /** patched up with this many wounds: the next hit brings them all back */
 let myBandaged = 0;
-/** grenades on our belt (G throws one) */
+/** grenades on our belt (G readies one, the fire button throws it) */
 let myGrenades = 0;
 /** the warp count we've caught up with: moves are stamped with it (see PlayerState.warp) */
 let myWarp = 0;
@@ -748,10 +748,28 @@ function turretVerdict(target: { x: number; z: number }): BuildTurretVerdict {
 /** true while a turret's been ordered and is waiting for a spot: click to build it there, Q/Esc to cancel */
 let placingTurret = false;
 
-const throwRing = new THREE.Mesh(
-  new THREE.RingGeometry(GRENADE_RADIUS - 0.12, GRENADE_RADIUS, 32).rotateX(-Math.PI / 2),
-  new THREE.MeshBasicMaterial({ color: STENCIL, transparent: true, depthWrite: false }),
+/**
+ * true while a grenade's readied (user 2026-11-05: G shows the glowing
+ * aim ring, the fire button throws, G/Q/Esc puts it back)
+ */
+let aimingGrenade = false;
+
+// the aim ring: the blast's edge, a softer glow band just inside it and a
+// filled disc, additive so it glows on grass and in the dark alike
+const throwRing = new THREE.Group();
+const throwEdge = new THREE.Mesh(
+  new THREE.RingGeometry(GRENADE_RADIUS - 0.14, GRENADE_RADIUS, 40).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: STENCIL, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
 );
+const throwGlow = new THREE.Mesh(
+  new THREE.RingGeometry(GRENADE_RADIUS - 0.6, GRENADE_RADIUS - 0.14, 40).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: STENCIL, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
+);
+const throwFill = new THREE.Mesh(
+  new THREE.CircleGeometry(GRENADE_RADIUS - 0.6, 40).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: STENCIL, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
+);
+throwRing.add(throwEdge, throwGlow, throwFill);
 throwRing.visible = false;
 scene.add(throwRing);
 
@@ -836,13 +854,16 @@ function stepItemVisuals(time: number): void {
   }
 
   const held = myHeldItem();
-  // a grenade on the belt: a ring on the floor where G would land it, the blast's size
-  const showThrow = !dead && !!localMesh && myGrenades > 0 && !placingTurret && !noFireAt(localMesh.position.x, localMesh.position.z);
-  throwRing.visible = showThrow;
-  if (showThrow) {
+  // a readied grenade: a glowing ring on the floor where the throw would land it, the blast's size
+  if (aimingGrenade && (dead || !localMesh || myGrenades <= 0 || placingTurret)) aimingGrenade = false;
+  throwRing.visible = aimingGrenade;
+  if (aimingGrenade) {
     const land = grenadeLanding(localMesh!.position, aimPoint.x, aimPoint.z, obstacles);
     throwRing.position.set(land.x, 0.04, land.z);
-    (throwRing.material as THREE.MeshBasicMaterial).opacity = 0.35 + 0.15 * pulse;
+    const lift = noFireAt(localMesh!.position.x, localMesh!.position.z) ? 0.35 : 1;
+    (throwEdge.material as THREE.MeshBasicMaterial).opacity = (0.75 + 0.25 * pulse) * lift;
+    (throwGlow.material as THREE.MeshBasicMaterial).opacity = (0.18 + 0.12 * pulse) * lift;
+    (throwFill.material as THREE.MeshBasicMaterial).opacity = (0.05 + 0.04 * pulse) * lift;
   }
   const showTurretPreview = !dead && !!localMesh && placingTurret;
   turretPreview.visible = showTurretPreview;
@@ -1006,7 +1027,7 @@ function renderShop(): void {
     rows +
     '<div class="legend">turret: pick its spot, pay when it\'s built · scrap with E</div>' +
     '<div class="legend">field dressing: patches every wound now; the next hit tears it open</div>' +
-    `<div class="legend">grenade: on your belt (${GRENADE_CARRY} at most), G throws · blasts a crowd</div>` +
+    `<div class="legend">grenade: on your belt (${GRENADE_CARRY} at most), G then click · blasts a crowd</div>` +
     '<div class="legend">1 / 2 / 3 to order · E / Esc to close</div></div>';
   if (html === lastShopHtml) return;
   lastShopHtml = html;
@@ -1022,6 +1043,7 @@ function order(item: ShopItem): void {
     // ordering a turret doesn't hand it over: it opens its placement
     // preview, and only paying for a spot that actually passes builds it
     placingTurret = true;
+    aimingGrenade = false;
     toggleShop(false);
     return;
   }
@@ -1258,7 +1280,7 @@ function tutorialMarkers(p: THREE.Vector3, from: { x: number; z: number }): Mark
   } else if (lesson === "drop") mark("t-goal", DROP_PAD.x, DROP_PAD.z, held ? "put it down here · Q" : "rifle · E, then Q on the mat", 0.6);
   else if (lesson === "grenade") {
     const c = TUT_CLUSTER[0];
-    if (myGrenades > 0) mark("t-goal", c.x, c.z, "aim here · G to throw", 1.8);
+    if (myGrenades > 0) mark("t-goal", c.x, c.z, aimingGrenade ? "aim here · click to throw" : "G, then click here", 1.8);
   } else if (lesson === "fly") mark("t-goal", HELIPADS.tutorial.x, HELIPADS.tutorial.z, "helicopter · step in, E", 2.4);
   return out;
 }
@@ -1311,6 +1333,8 @@ function renderControls(): void {
     text = myLate ? "watching the crew until this attempt ends" : "you're out until this attempt ends";
   } else if (placingTurret) {
     text = `WASD move · click / Space: build turret (${TURRET_COST} quota) · Q / Esc: cancel`;
+  } else if (aimingGrenade) {
+    text = `WASD move · click / Space: throw grenade (×${myGrenades}) · G / Q / Esc: put it back`;
   } else if (!held) {
     text = "WASD move · E use";
   } else {
@@ -1318,7 +1342,7 @@ function renderControls(): void {
     const parts = [held.state.kind === "gun" ? "click / Space, hold: fire" : `click / Space: ${info.primaryLabel}`, "Q: drop"];
     text = `WASD move · ${parts.join(" · ")}`;
   }
-  if (!myOut && myGrenades > 0) text += ` · G: grenade ×${myGrenades}`;
+  if (!myOut && myGrenades > 0 && !aimingGrenade) text += ` · G: ready a grenade ×${myGrenades}`;
   text += audio.isMuted ? " · M: sound off" : " · M: mute";
   if (text !== lastControlsText) {
     controlsEl.textContent = text;
@@ -1612,6 +1636,10 @@ function primary(): void {
     }
     return;
   }
+  if (aimingGrenade) {
+    throwGrenade();
+    return;
+  }
   const held = myHeldItem();
   // a click with something in hand is that item's action (firing over the reactor is firing); E still works
   if (hoveringReactor() && !held) {
@@ -1634,18 +1662,31 @@ function primary(): void {
   }
 }
 
-/** G: a grenade off the belt at the cursor, whatever's in hand */
-function throwGrenade(): void {
-  if (!localMesh || isDead() || placingTurret) return;
+/** G: ready a grenade off the belt (the aim ring shows), or put it back */
+function readyGrenade(): void {
+  if (!localMesh || isDead() || myOut) return;
+  if (aimingGrenade) {
+    aimingGrenade = false;
+    return;
+  }
   if (myGrenades <= 0) {
     flash("no grenades: buy them at the comms desk");
     return;
   }
+  placingTurret = false;
+  aimingGrenade = true;
+}
+
+/** the fire button with a grenade readied: throw it at the cursor */
+function throwGrenade(): void {
+  if (!localMesh) return;
   if (noFireAt(localMesh.position.x, localMesh.position.z)) {
+    refusedAt = clock.elapsedTime;
     flash("no throwing in the lift");
     return;
   }
   net.throwGrenade(aimPoint.x, aimPoint.z);
+  aimingGrenade = false;
 }
 
 // The rifle is automatic: a click fires one shot, and holding the button
@@ -1693,8 +1734,9 @@ function stepTrigger(): void {
 
 function drop(): void {
   if (isDead()) return;
-  if (placingTurret) {
+  if (placingTurret || aimingGrenade) {
     placingTurret = false;
+    aimingGrenade = false;
     return;
   }
   const held = myHeldItem();
@@ -1730,11 +1772,12 @@ window.addEventListener("keydown", (e) => {
   else if (key === "q") drop();
   else if (key === "e") useTarget(eTarget());
   else if (key === "x") toggleReady();
-  else if (key === "g") throwGrenade();
+  else if (key === "g") readyGrenade();
   else if (key === "m") audio.toggleMute();
   else if (key === "escape" && boardOpen) toggleBoard();
   else if (key === "escape" && shopOpen) toggleShop(false);
   else if (key === "escape" && placingTurret) placingTurret = false;
+  else if (key === "escape" && aimingGrenade) aimingGrenade = false;
   else if (key === "escape" && mySite) pause.open(mySite, audio.isMuted, !!localMesh && !myOut && objective.active && levelOf(localMesh.position.z) === "bottom");
   else if (shopOpen) {
     const item = SHOP_ITEMS.find((i) => SHOP[i].key === key);

@@ -40,7 +40,7 @@ export interface PlayerState {
   tutBlasted?: true;
   /** wire-only: riding a helicopter: server time the ride ends (they're moved then) */
   flyingUntil?: number;
-  /** wire-only: frag grenades on their belt, 0..GRENADE_CARRY (absent = none); G throws one */
+  /** wire-only: frag grenades on their belt, 0..GRENADE_CARRY (absent = none); G readies one, fire throws it */
   grenades?: number;
 }
 
@@ -403,17 +403,18 @@ export const ITEM_KINDS: Record<ItemKind, ItemKindInfo> = {
 };
 
 // The grenade: one use, bought at the terminal and carried on the belt (up
-// to GRENADE_CARRY, not in the hands: user 2026-11-05), G throws one at the cursor
+// to GRENADE_CARRY, not in the hands: user 2026-11-05); G readies one (a glowing
+// ring where it would land) and the fire button throws it at the cursor
 // (clamped to GRENADE_RANGE), it flies GRENADE_FLIGHT_MS, sits on the
 // floor for GRENADE_FUSE_MS so everyone can see where it'll go, then
 // blasts everything within GRENADE_RADIUS for GRENADE_DAMAGE --- enough to
-// drop a spitter outright and leave a crawler on its last legs. Crew are
+// kill a crawler (user 2026-11-05: at least one small one), a brute takes three. Crew are
 // never hurt by it, same as by the rifle: there's no friendly fire.
 export const GRENADE_RANGE = 8;
 export const GRENADE_FLIGHT_MS = 500;
 export const GRENADE_FUSE_MS = 700;
 export const GRENADE_RADIUS = 2.6;
-export const GRENADE_DAMAGE = 3;
+export const GRENADE_DAMAGE = 5;
 /** agent's price (user agreed 2026-11-05; was 15 when it took the hands) */
 export const GRENADE_COST = 8;
 export const GRENADE_CARRY = 2;

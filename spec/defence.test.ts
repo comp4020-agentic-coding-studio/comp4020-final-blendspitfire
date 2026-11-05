@@ -178,15 +178,16 @@ describe("elites", () => {
 });
 
 describe("blasts", () => {
-  it("kill a spitter outright and wound a crawler, only inside the radius", () => {
+  it("kill a spitter and a crawler outright and wound a brute, only inside the radius", () => {
     const { w } = world([]);
     const d = new Defence(w, { reactorHealth: 1, wave: 3, phase: "spawning", nextWaveAt: 1e12 });
     const s = d.spawnAt(-6, -14, "spitter");
     const c = d.spawnAt(-5, -14);
+    const b = d.spawnAt(-6, -13, "brute");
     const far = d.spawnAt(-6 + GRENADE_RADIUS + 3, -14);
     const killed = d.blast(-6, -14, GRENADE_RADIUS, GRENADE_DAMAGE);
-    expect(killed.map((k) => k.id)).toEqual([s]);
-    expect(enemyAt(d, c).health).toBeLessThan(1);
+    expect(killed.map((k) => k.id)).toEqual([s, c]);
+    expect(enemyAt(d, b).health).toBeLessThan(1);
     expect(enemyAt(d, far).health).toBe(1);
   });
 });
