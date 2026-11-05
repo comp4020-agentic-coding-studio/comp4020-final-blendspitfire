@@ -117,6 +117,28 @@ for (const [label, what, play] of [
   row.append(b);
   sheet.append(row);
 }
+const louder = document.createElement("h2");
+louder.textContent = "louder kill and grenade: recorded (CC0), pick one each (the game plays 'boom full' and 'bug + splat' for now)";
+sheet.append(louder);
+for (const [label, what, play] of [
+  ["boom full", "cannon body + firework bang + low boom, layered", () => audio.playMix("boomFull", 1.2)],
+  ["boom bang", "a firework bang alone, pushed", () => audio.playMix("boomBang", 1.2)],
+  ["boom cannon", "a cannon shot alone, pushed", () => audio.playMix("boomCannon", 1.2)],
+  ["old explosion", "the synthesised one, for comparison", () => audio.playSynth("explosion")],
+  ["old kill", "the synthesised crawler death, for comparison", () => audio.playSynth("crawlerDeath")],
+  ["bug + splat", "an insect squeal over a wet splat (3 squeals, 3 splats, random)", () => audio.playMix("dieBugSplat", 1.2)],
+  ["alien + splat", "an alien cry over a wet splat", () => audio.playMix("dieAlienSplat", 1.2)],
+  ["splat only", "just the wet splat, heavier", () => audio.playMix("dieSplat", 1.2)],
+] as const) {
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML = `<b>${label}</b><span class="what">${what}</span>`;
+  const b = document.createElement("button");
+  b.textContent = "▶ play";
+  b.onclick = play;
+  row.append(b);
+  sheet.append(row);
+}
 const start = document.createElement("h2");
 start.textContent = "the reactor spinning up: machine recordings (CC0) running faster and faster, one continuous curve";
 sheet.append(start);

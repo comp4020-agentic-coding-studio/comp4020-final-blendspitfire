@@ -23,3 +23,8 @@ reverb supplies the space).
 | spin_fan.wav | OpenGameArt, "(defect) motor loop", a GFX card fan (opengameart.org/content/defect-motor-loop), trimmed | CC0 |
 | spin_disk.wav | OpenGameArt, "Electronic device loop" by qubodup, a hard disk (opengameart.org/content/electronic-device-loop), trimmed | CC0 |
 | spin_poweron.wav | OpenGameArt, "Machine shutting down" (opengameart.org/content/machine-shutting-down), reversed | CC0 |
+| boom_bang6.wav, boom_bang10.wav, boom_cannon2.wav | OpenGameArt, "25 CC0 bang / firework SFX" by rubberduck (opengameart.org/content/25-cc0-bang-firework-sfx): bang_06, bang_10, cannon_02, mono 48 kHz, tail faded | CC0 |
+| boom_low1.wav | OpenGameArt, "150 Combat Sound Effects" compiled by untamedpixels (opengameart.org/content/150-combat-sound-effects), from Kenney's "Sci-fi Sounds" (kenney.nl): low_frequency_explosion_001 | CC0 |
+| die_bug1.wav, die_bug2.wav, die_bug4.wav, die_alien5.wav | OpenGameArt, "80 CC0 creature SFX" by rubberduck (opengameart.org/content/80-cc0-creature-sfx): bug_01, bug_02, bug_04, alien_05 | CC0 |
+| splat_impact.wav, splat_squish5.wav | OpenGameArt, "Squish Sounds Effects" by EZduzziteh (opengameart.org/content/squish-sounds-effects): squishsplat_impact, squish_05 | CC0 |
+| splat_splat.wav | OpenGameArt, "Various Sound Effects" by Spring Spring (opengameart.org/content/various-sound-effects-0): snd_splat | CC0 |

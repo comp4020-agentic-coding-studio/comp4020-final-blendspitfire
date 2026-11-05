@@ -10,7 +10,7 @@
 // Browsers won't play sound before a gesture, so nothing starts until the
 // first click or key; M mutes (remembered per browser).
 
-import { PUNCH, SFX, SPINUPS, loadTakes, playTake, powerOn, spinUp, takeBuffer, type Punch, type SfxName, type SpinUpName, type TakeName } from "./sfx.ts";
+import { MIXES, PUNCH, SFX, SPINUPS, loadTakes, playMix, playTake, type Layer, powerOn, spinUp, takeBuffer, type Punch, type SfxName, type MixName, type SpinUpName, type TakeName } from "./sfx.ts";
 
 /** which room the listener is in: sets the bed and how much the reverb takes */
 export type Zone = "surface" | "tutorial" | "core" | "corridor" | "lab" | "hall" | "passage" | "car" | "shaft";
@@ -74,10 +74,13 @@ const FAR = 26;
  * the rifle is the SKS, pushed heavy). The synthesised one stands in
  * until the take has loaded.
  */
-const RECORDED: Partial<Record<SfxName, { take: TakeName; punch: Punch; level?: number }>> = {
+const RECORDED: Partial<Record<SfxName, { take: TakeName; punch: Punch; level?: number } | { mix: Layer[]; level?: number }>> = {
   rifle: { take: "rifleSKS", punch: PUNCH.heavy },
   /** user 2026-11-05: the turret is the AR-15, a lighter crack than the crew's rifle */
   turretShot: { take: "rifleAR15", punch: PUNCH.punchy, level: 0.8 },
+  /** user 2026-11-05: louder, recorded (agent's pick of the sheet's mixes, awaiting the user's ears) */
+  explosion: { mix: MIXES.boomFull, level: 1.2 },
+  crawlerDeath: { mix: MIXES.dieBugSplat, level: 1.2 },
 };
 
 function noiseBuffer(ctx: AudioContext, seconds: number, brown = false): AudioBuffer {
@@ -298,8 +301,19 @@ export class Audio {
   /** an effect into `out`: its recording if it has one and it's loaded, else the synthesis */
   private sound(ctx: AudioContext, out: AudioNode, name: SfxName, level: number): void {
     const rec = RECORDED[name];
-    if (rec && playTake(ctx, out, rec.take, level * (rec.level ?? 1), rec.punch)) return;
+    if (rec && "mix" in rec && playMix(ctx, out, rec.mix, level * (rec.level ?? 1))) return;
+    if (rec && "take" in rec && playTake(ctx, out, rec.take, level * (rec.level ?? 1), rec.punch)) return;
     SFX[name](ctx, out, level);
+  }
+
+  /** the synthesised version of an effect, even if it has a recording now (the sound sheet, for comparison) */
+  playSynth(name: SfxName, level = 1): void {
+    if (this.ctx && this.room) SFX[name](this.ctx, this.room, level);
+  }
+
+  /** a mix of recorded takes at the listener (the sound sheet) */
+  playMix(name: MixName, level = 1): void {
+    if (this.ctx && this.room) playMix(this.ctx, this.room, MIXES[name], level);
   }
 
   /** a recorded take at the listener (the sound sheet) */

@@ -23,7 +23,68 @@ export const TAKES = {
   spinFan: ["spin_fan"],
   spinDisk: ["spin_disk"],
   spinPowerOn: ["spin_poweron"],
+  /** bangs for the grenade (OpenGameArt, CC0): firework/cannon bangs and a low synthetic boom (Kenney) */
+  boomBang: ["boom_bang6", "boom_bang10"],
+  boomCannon: ["boom_cannon2"],
+  boomLow: ["boom_low1"],
+  /** a crawler's death cry (OpenGameArt "80 CC0 creature SFX"): insect squeals and one alien */
+  dieBug: ["die_bug1", "die_bug2", "die_bug4"],
+  dieAlien: ["die_alien5"],
+  /** wet layers under the cry (OpenGameArt, CC0) */
+  splat: ["splat_impact", "splat_squish5", "splat_splat"],
 } as const;
+
+/**
+ * Mixes of recorded takes for one effect (user 2026-11-05: the kill and
+ * the grenade weren't loud enough, still synthesised): each layer is a
+ * take, its level and punch, and how far after the first it starts.
+ * Variants go on the sound sheet first; RECORDED in audio.ts says which
+ * one the game plays.
+ */
+export interface Layer {
+  take: TakeName;
+  level: number;
+  punch?: Punch;
+  delay?: number;
+}
+export const MIXES = {
+  /** the cannon's body under a bang's crack, the low boom for the chest */
+  boomFull: [
+    { take: "boomCannon", level: 0.9, punch: { drive: 2.5, low: 6, sub: 0.9, crack: 0 } },
+    { take: "boomBang", level: 0.7 },
+    { take: "boomLow", level: 0.8 },
+  ],
+  /** just a bang, pushed */
+  boomBang: [{ take: "boomBang", level: 1, punch: { drive: 3, low: 6, sub: 0.8, crack: 0.3 } }],
+  /** just the cannon, pushed */
+  boomCannon: [{ take: "boomCannon", level: 1, punch: { drive: 3, low: 6, sub: 0.8, crack: 0.2 } }],
+  /** a squeal over a wet splat */
+  dieBugSplat: [
+    { take: "dieBug", level: 0.9, punch: { drive: 2, low: 0, sub: 0, crack: 0 } },
+    { take: "splat", level: 0.8, delay: 0.06 },
+  ],
+  /** the alien cry over a wet splat */
+  dieAlienSplat: [
+    { take: "dieAlien", level: 0.9, punch: { drive: 2, low: 0, sub: 0, crack: 0 } },
+    { take: "splat", level: 0.8, delay: 0.06 },
+  ],
+  /** only the splat, heavier */
+  dieSplat: [{ take: "splat", level: 1, punch: { drive: 2.5, low: 6, sub: 0.5, crack: 0 } }],
+} satisfies Record<string, Layer[]>;
+export type MixName = keyof typeof MIXES;
+
+/** play a mix: every layer that's loaded; false if none was */
+export function playMix(ctx: BaseAudioContext, out: Out, mix: Layer[], level = 1): boolean {
+  let any = false;
+  for (const l of mix) {
+    if (!l.delay) any = playTake(ctx, out, l.take, level * l.level, l.punch) || any;
+    else if (decoded.get(ctx)?.has(TAKES[l.take][0])) {
+      any = true;
+      setTimeout(() => playTake(ctx, out, l.take, level * l.level, l.punch), l.delay * 1000);
+    }
+  }
+  return any;
+}
 
 /**
  * How hard a take is pushed (user 2026-11-05: the plain recordings sounded
