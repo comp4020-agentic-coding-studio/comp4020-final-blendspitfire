@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-11-07, phone playtest feedback (UI size, pixel density, drop, site list)
+Synced from the draft up to: 2026-11-07, solo quota bonus; 10 s lift both ways
 
 ---
 
@@ -1012,3 +1012,14 @@ Built (agent): `server/room.ts` holds a whole world per site; `server/index.ts` 
 **Decision.** The world's density, worked out from the camera with no number fixed for phones. Following the developer's feedback, the phone UI is smaller, drop moves up beside the menu button in small grey text, and the site list gets a frame around it, with joinable sites in green.
 
 **Why.** The developer wants a phone to look as coarse as the desktop, not a separately tuned number; drop is almost never used; the list should read as the thing to pick from. The agent's own details, awaiting the developer's look: phone text about 20% smaller (base 16 to 14 px), sticks 112 to 96 px, minimap at 0.45, prompt tags flip to the right of their object near the left edge, green as the "will work" signal colour from the art rules, shown as "▶ OPEN".
+
+## ADR-078: Solo play gets a quota bonus; the lift takes 10 s both ways
+*2026-11-07 · Status: Accepted, built (awaiting the developer's playtest)*
+
+**Context.** After a full run the developer found the difficulty about right for two players but too hard alone. Wave sizes depend only on the wave number. The lift ride (2.6 s with a progress bar) was queued to become about 10 s under an altitude readout; whether that applied both ways was open.
+
+**Options.** For solo difficulty the agent offered: scale wave size by crew (two as the baseline); shrink waves only when alone; or give a lone player more kit. For the ride: down only, or both ways.
+
+**Decision.** The developer chose none of the three: subsidise each wave's quota by crew size, with the number left to the agent. The lift takes 10 s both ways.
+
+**Why.** The developer's call. The agent's numbers, awaiting playtest: when a wave is cleared with only one player alive below, it pays +25 on top (with the base 15, at least 40 a wave, one turret); two or more, unchanged; the wave report shows a "solo bonus" line. The ride: a ruler scrolling past a fixed cursor (a tick every 10 m, a figure every 50 m) with the depth underneath; it speeds up, cruises and slows (22% of the ride at each end); the floor is 470–530 m down, picked per ride from the ride's end time so everyone in the car reads the same number; the ride up runs from that depth back to 0.

@@ -98,7 +98,7 @@ export interface StateMessage {
 
 /** a cleared wave's pay, itemised; or how an attempt ended, and who did what */
 export type Report =
-  | { type: "wave"; wave: number; size: number; clearMs: number; parMs: number; base: number; bonus: number; total: number }
+  | { type: "wave"; wave: number; size: number; clearMs: number; parMs: number; base: number; bonus: number; solo: number; total: number }
   | {
       type: "attempt";
       outcome: "won" | "lost";
@@ -678,7 +678,8 @@ export interface LiftState {
   departAt?: number;
 }
 export const LIFT_DOOR_MS = 900;
-export const LIFT_RIDE_MS = 2600;
+/** a ride either way (user 2026-11-07: about 10 s, both ways, under an altitude readout) */
+export const LIFT_RIDE_MS = 10000;
 /** how long the car waits before leaving if there's anyone else on that level who might want to come */
 export const LIFT_WAIT_MS = 15000;
 /** ...and if everyone there is already aboard */
@@ -1140,6 +1141,14 @@ export const WAVE_BASE_REWARD = 15;
 export const PAR_MS_PER_ENEMY = 2500;
 export const waveReward = (size: number, clearMs: number): number =>
   WAVE_BASE_REWARD + Math.max(0, Math.round((size * PAR_MS_PER_ENEMY - clearMs) / 1000));
+/**
+ * Extra pay when only one is left standing below as a wave is cleared (user
+ * 2026-11-07: two is about right, one is too hard; subsidise the quota by
+ * crew size). 25 + the base 15 = a turret's 40 every wave, so a lone player
+ * can put kit where a second pair of hands would be. Two or more: nothing.
+ */
+export const SOLO_BONUS = 25;
+export const crewBonus = (standing: number): number => (standing <= 1 ? SOLO_BONUS : 0);
 
 export type BuyVerdict = "ok" | "too far" | "belt full" | "can't afford" | "sold out" | "unhurt";
 

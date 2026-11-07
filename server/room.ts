@@ -67,6 +67,7 @@ import {
   buildTurretVerdict,
   scrapVerdict,
   waveReward,
+  crewBonus,
   PAR_MS_PER_ENEMY,
   WAVE_BASE_REWARD,
   WIPE_HOLD_MS,
@@ -272,7 +273,7 @@ export function createRoom(id: string, hooks: RoomHooks): Room {
       objective,
       items,
       // enemies never leave the facility, so a player in the lift or the garden isn't a target
-      players: () => [...connections.values()].filter((c) => !isDead(c) && !isSafe(c.player.x, c.player.z)).map((c) => c.player),
+      players: () => standingBelow(),
       hurtPlayer: (id, now, by) => {
         const conn = connections.get(id);
         if (conn && !isDead(conn)) wound(conn, now, by);
@@ -294,10 +295,12 @@ export function createRoom(id: string, hooks: RoomHooks): Room {
       },
       won: winRun,
       cleared: (wave, size, clearMs) => {
-        const pay = waveReward(size, clearMs);
+        const earned = waveReward(size, clearMs);
+        const solo = crewBonus(standingBelow().length);
+        const pay = earned + solo;
         funds += pay;
-          report({ type: "wave", wave, size, clearMs, parMs: size * PAR_MS_PER_ENEMY, base: WAVE_BASE_REWARD, bonus: pay - WAVE_BASE_REWARD, total: funds });
-        log(`[attempt ${attempt.number}] wave ${wave} cleared in ${Math.round(clearMs / 1000)}s: quota +${pay} -> ${funds}`);
+        report({ type: "wave", wave, size, clearMs, parMs: size * PAR_MS_PER_ENEMY, base: WAVE_BASE_REWARD, bonus: earned - WAVE_BASE_REWARD, solo, total: funds });
+        log(`[attempt ${attempt.number}] wave ${wave} cleared in ${Math.round(clearMs / 1000)}s: quota +${pay}${solo ? ` (solo +${solo})` : ""} -> ${funds}`);
       },
       turretFire: (id, x, z, tx, tz, now) => spawnProjectile({ id, x, z }, tx - x, tz - z, now, TURRET_MUZZLE),
     },
@@ -808,6 +811,11 @@ export function createRoom(id: string, hooks: RoomHooks): Room {
 
   function isDead(conn: Connection): boolean {
     return conn.deadUntil !== 0;
+  }
+
+  /** everyone alive in the facility (not in the garden or a lift car at the top) */
+  function standingBelow(): PlayerState[] {
+    return [...connections.values()].filter((c) => !isDead(c) && !isSafe(c.player.x, c.player.z)).map((c) => c.player);
   }
 
   function netPlayer(conn: Connection, now: number): PlayerState {

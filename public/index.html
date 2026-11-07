@@ -143,11 +143,20 @@
       .ui-banner { top: 30%; left: 50%; transform: translateX(-50%); font-size: 30px; letter-spacing: 0.12em;
         padding: 8px 26px; opacity: 0; transition: opacity 0.6s steps(4); border-color: var(--ui); white-space: nowrap; }
       .ui-ride { position: fixed; right: 22px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column;
-        align-items: center; gap: 8px; pointer-events: none; opacity: 0; transition: opacity 0.4s; }
-      .ui-ride-track { width: 4px; height: 160px; background: repeating-linear-gradient(0deg, rgba(255,255,255,0.3) 0 6px, transparent 6px 8px); position: relative; }
-      .ui-ride-fill { position: absolute; left: -2px; width: 8px; top: 0; background: repeating-linear-gradient(0deg, var(--ui) 0 6px, transparent 6px 8px); }
-      .ui-ride-label { color: var(--ui); font: var(--ui-font); letter-spacing: 0.14em; text-transform: uppercase;
-        writing-mode: vertical-rl; text-shadow: 0 0 6px var(--ui-glow), 0 1px 0 #000; }
+        align-items: flex-end; gap: 8px; pointer-events: none; opacity: 0; transition: opacity 0.4s; }
+      /* the altitude ruler: ticks scroll behind a fixed cursor at the window's middle */
+      .ui-ride-window { position: relative; width: 64px; height: 200px; overflow: hidden;
+        -webkit-mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent); mask-image: linear-gradient(transparent, #000 22%, #000 78%, transparent); }
+      .ui-ride-scale { position: absolute; left: 0; right: 0; top: 100px; }
+      .ui-ride-scale .tick { position: absolute; right: 0; width: 10px; height: 2px; background: var(--ui-dim); }
+      .ui-ride-scale .tick.major { width: 20px; background: var(--ui); }
+      .ui-ride-scale .tick span { position: absolute; right: 26px; top: -9px; color: var(--ui-dim); font: var(--ui-font); font-size: 16px; letter-spacing: 0.04em; }
+      .ui-ride-cursor { position: absolute; right: 0; top: 99px; width: 40px; height: 4px; background: var(--ui); box-shadow: 0 0 6px var(--ui-glow); }
+      .ui-ride-cursor::before { content: ""; position: absolute; left: -8px; top: -4px; border: 6px solid transparent; border-right: 8px solid var(--ui); border-left: 0; }
+      .ui-ride-num { color: var(--ui); font: var(--ui-font); font-size: 26px; letter-spacing: 0.06em; font-variant-numeric: tabular-nums;
+        min-width: 4.2em; text-align: right; text-shadow: 0 0 6px var(--ui-glow), 0 1px 0 #000; background: var(--ui-wash); padding: 1px 6px; }
+      .ui-ride-label { color: var(--ui-dim); font: var(--ui-font); font-size: 16px; letter-spacing: 0.14em; text-transform: uppercase;
+        text-shadow: 0 0 6px var(--ui-glow), 0 1px 0 #000; }
       .ui-countdown { position: fixed; left: 50%; top: 18vh; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center;
         color: var(--ui); text-transform: uppercase; letter-spacing: 0.12em; pointer-events: none; opacity: 0; transition: opacity 0.3s steps(4);
         text-shadow: 0 0 10px var(--ui-glow), 0 2px 0 #000; -webkit-font-smoothing: none; z-index: 6; }

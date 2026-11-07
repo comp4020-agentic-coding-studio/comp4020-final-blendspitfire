@@ -2549,18 +2549,56 @@ function stepRide(): void {
   }
   rideEl.style.opacity = riding ? "1" : "0";
   if (riding) {
-    const left = msLeft / LIFT_RIDE_MS;
     const down = lift.going === "bottom";
-    rideFill.style.height = `${((down ? 1 - left : left) * 100).toFixed(1)}%`;
+    const until = lift.until ?? 0;
+    // the floor's depth: picked per ride from the ride's end time, so everyone in the car reads the same number
+    if (rideFor !== until) {
+      rideFor = until;
+      if (down || rideDepth === 0) rideDepth = RIDE_DEPTH_MIN + (until % (RIDE_DEPTH_MAX - RIDE_DEPTH_MIN + 1));
+    }
+    const s = rideTravel(1 - msLeft / LIFT_RIDE_MS);
+    const depth = rideDepth * (down ? s : 1 - s);
+    // we sink, so the scale climbs past the cursor (and falls past it on the way up)
+    rideScale.style.transform = `translateY(${(-depth * RIDE_PX_PER_M).toFixed(1)}px)`;
+    rideNum.textContent = depth < 0.5 ? "0 m" : `-${Math.round(depth)} m`;
     rideLabel.textContent = down ? "descending" : "ascending";
   }
 }
-// the ride indicator: a thin vertical gauge down the right edge
+/**
+ * The altitude readout (user 2026-11-07): a ruler down the right edge that
+ * scrolls the whole ride, the depth under a fixed cursor. The car speeds
+ * up, cruises and slows (RIDE_ACCEL of the ride at each end), and stops
+ * somewhere around -500 m.
+ */
+const RIDE_DEPTH_MIN = 470;
+const RIDE_DEPTH_MAX = 530;
+const RIDE_PX_PER_M = 1.6;
+const RIDE_ACCEL = 0.22;
+/** distance covered (0..1) at time t (0..1) of a ride: constant acceleration, cruise, constant braking */
+function rideTravel(t: number): number {
+  const a = RIDE_ACCEL;
+  const v = 1 / (1 - a);
+  const u = Math.min(1, Math.max(0, t));
+  if (u < a) return (0.5 * v * u * u) / a;
+  if (u > 1 - a) return 1 - (0.5 * v * (1 - u) * (1 - u)) / a;
+  return v * (u - a / 2);
+}
+let rideDepth = 0;
+let rideFor = -1;
 const rideEl = document.createElement("div");
 rideEl.className = "ui-ride";
-rideEl.innerHTML = '<div class="ui-ride-track"><div class="ui-ride-fill"></div></div><div class="ui-ride-label"></div>';
+{
+  // ticks every 10 m, a figure every 50 m, from just above ground to past the deepest floor
+  let ticks = "";
+  for (let m = -60; m <= RIDE_DEPTH_MAX + 80; m += 10) {
+    const major = m % 50 === 0;
+    ticks += `<div class="tick${major ? " major" : ""}" style="top:${(m * RIDE_PX_PER_M).toFixed(1)}px">${major ? `<span>${m === 0 ? "0" : -m}</span>` : ""}</div>`;
+  }
+  rideEl.innerHTML = `<div class="ui-ride-label"></div><div class="ui-ride-window"><div class="ui-ride-scale">${ticks}</div><div class="ui-ride-cursor"></div></div><div class="ui-ride-num"></div>`;
+}
 document.body.appendChild(rideEl);
-const rideFill = rideEl.querySelector<HTMLDivElement>(".ui-ride-fill")!;
+const rideScale = rideEl.querySelector<HTMLDivElement>(".ui-ride-scale")!;
+const rideNum = rideEl.querySelector<HTMLDivElement>(".ui-ride-num")!;
 const rideLabel = rideEl.querySelector<HTMLDivElement>(".ui-ride-label")!;
 
 // Wounds: a hit doesn't take a bar down, it leaves something you feel. A
@@ -2884,11 +2922,12 @@ function showReport(r: Report): void {
       ["time", `${secs(r.clearMs)} / par ${secs(r.parMs)}`],
       ["base pay", `+${r.base}`],
       ["speed bonus", r.bonus > 0 ? `+${r.bonus}` : "—"],
+      ...(r.solo > 0 ? [["solo bonus", `+${r.solo}`] as [string, string]] : []),
     ];
     html =
       `<div class="title">wave ${r.wave} cleared</div>` +
       rows.map(([k, v]) => `<div class="row"><span>${k}</span><span class="score">${v}</span></div>`).join("") +
-      `<div class="row total"><span>quota</span><span class="score">+${r.base + r.bonus} → ${r.total}</span></div>`;
+      `<div class="row total"><span>quota</span><span class="score">+${r.base + r.bonus + r.solo} → ${r.total}</span></div>`;
   } else {
     hold = 11000;
     const crew = [...r.crew].sort((a, b) => b.score - a.score);
