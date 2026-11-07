@@ -211,10 +211,51 @@
         font: var(--ui-font); font-size: 16px; letter-spacing: 0.04em; pointer-events: none; z-index: 7;
         text-shadow: 0 0 4px var(--ui-glow); -webkit-font-smoothing: none;
       }
+      /* phones (ADR-075): the sticks' layer sits at z 4, so anything tapped goes over it */
+      #shop, #board { z-index: 6; }
+      @media (max-width: 640px) {
+        :root { --ui-font: 400 16px/1.05 "VT323", ui-monospace, "SF Mono", Menlo, monospace; }
+        #hint { left: 10px; right: 10px; bottom: 6px; font-size: 15px; }
+        #hint a, #hint .sep { display: none; }
+        #version { display: none; }
+        #leaderboard { left: 8px; top: 56px; min-width: 0; max-width: 46vw; padding: 4px 8px; font-size: 15px; }
+        .ui-hud { top: 8px; max-width: calc(100vw - 72px); padding: 3px 8px; font-size: 15px; left: 8px; transform: none; }
+        .ui-hud .line { gap: 8px; }
+        .ui-hud .bar { width: 64px; }
+        .ui-wounds { left: 8px; bottom: 28px; padding: 4px 8px; }
+        .ui-banner { font-size: 22px; white-space: normal; text-align: center; width: max-content; max-width: calc(100vw - 32px); }
+        .ui-report { left: 16px; right: 16px; top: 64px; min-width: 0; max-width: none; font-size: 19px; padding: 10px 14px; }
+        .ui-report .title { font-size: 24px; }
+        .ui-report .row.total { font-size: 22px; }
+        .ui-ready { bottom: 300px; white-space: normal; max-width: calc(100vw - 32px); }
+        .ui-ready .key { display: none; }
+        .ui-ready .what { font-size: 18px; }
+        .ui-spectate { bottom: 40px; max-width: calc(100vw - 32px); }
+        .ui-settle { padding: 12px 14px; }
+        .ui-settle .title { font-size: 26px; }
+        .ui-settle .head, .ui-settle .row, .ui-settle .total { gap: 8px; }
+        .ui-settle .head > span, .ui-settle .row > span { min-width: 2.4em; }
+        .ui-settle .num { min-width: 4.5em !important; }
+        .ui-settle .total { font-size: 24px; }
+        .ui-thanks .cast { grid-template-columns: 5.5em 7em 3em; gap: 10px; font-size: 18px; }
+        .ui-thanks .cast.credit { grid-template-columns: 5.5em 13em; }
+        .ui-thanks .line.big { font-size: 26px; }
+        .ui-thanks .sub { font-size: 20px; }
+        .ui-thanks .card .line { padding: 0 16px; }
+        .ui-countdown .cd-num { font-size: 64px; }
+        #shop { place-items: center; padding: 0 12px; }
+        #shop .board-panel, #board .board-panel { min-width: 0; max-width: calc(100vw - 24px); padding: 12px 14px; }
+        #shop .row { padding: 8px 0; }
+        .ui-title .logo canvas { max-width: calc(100vw - 48px); height: auto; }
+        .ui-title button { min-width: 0; width: min(18em, calc(100vw - 48px)); }
+        .ui-title input { font-size: 28px; }
+        body.touch .ui-pause .key { display: none; }
+        .ui-pause button { min-width: 0; width: min(18em, calc(100vw - 48px)); }
+      }
     </style>
   </head>
   <body>
-    <div id="hint"><span id="controls">WASD move</span> &middot; <a href="/readme/">about</a></div>
+    <div id="hint"><span id="controls">WASD move</span><span class="sep"> &middot; </span><a href="/readme/">about</a></div>
     <div id="tip"></div>
     <div id="respawn"></div>
     <div id="leaderboard"></div>

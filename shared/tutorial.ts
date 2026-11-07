@@ -182,3 +182,12 @@ export const LESSON_TEXT: Record<Lesson, { title: string; how: string }> = {
   grenade: { title: "grenade", how: "G to ready · click the huddle" },
   fly: { title: "fly out", how: "step in · E" },
 };
+/** the same, for twin sticks and buttons (a phone, ADR-075) */
+export const LESSON_TEXT_TOUCH: Record<Lesson, { title: string; how: string }> = {
+  move: { title: "walk", how: "left stick · onto the ring" },
+  pickup: { title: "pick up", how: "tap pick up" },
+  shoot: { title: "shoot", how: "right stick to the ring" },
+  drop: { title: "put down", how: "on the ring · drop" },
+  grenade: { title: "grenade", how: "grenade · aim · let go" },
+  fly: { title: "fly out", how: "step in · take off" },
+};

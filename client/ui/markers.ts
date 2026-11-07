@@ -50,6 +50,8 @@ const STYLE = `
 .mk.edge .mk-pin { display: none; }
 .mk.edge .mk-body { transform: translate(var(--tx), var(--ty)); }
 @keyframes mk-pulse { 0%, 100% { box-shadow: 0 0 0 transparent; filter: brightness(1); } 50% { box-shadow: 0 0 10px var(--ui-glow); filter: brightness(1.35); } }
+/* a phone: a long tag wraps (centred on its spot) rather than running off the edge */
+@media (max-width: 640px) { .mk-tag { white-space: normal; text-align: center; width: max-content; max-width: 46vw; } }
 @keyframes mk-bob { 0%, 100% { translate: 0 0; } 50% { translate: 0 3px; } }
 `;
 
@@ -147,6 +149,11 @@ export class Markers {
         live.el.classList.toggle("edge", edge);
       }
       live.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+      // the tag (not the pin) slides back in if it would cross a screen edge (a phone's narrow view)
+      const tag = live.el.querySelector<HTMLElement>(".mk-tag")!;
+      const half = tag.offsetWidth / 2;
+      const shift = edge ? 0 : Math.max(8 + half - x, Math.min(0, w - 8 - half - x));
+      tag.style.translate = shift ? `${shift.toFixed(1)}px 0` : "";
     }
     for (const [id, live] of this.live) {
       if (seen.has(id)) continue;

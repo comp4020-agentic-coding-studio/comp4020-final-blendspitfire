@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-11-05, phone twin-stick decided
+Synced from the draft up to: 2026-11-07, phone touch button mapping
 
 ---
 
@@ -990,3 +990,13 @@ Built (agent): `server/room.ts` holds a whole world per site; `server/index.ts` 
 
 **Why.** The developer's choice; the agent's reading of the marking environment is that a phone visitor who can't play would mark the deployed app down.
 
+## ADR-076: Phone buttons: one context button, sticks pick the spot
+*2026-11-07 · Status: Accepted, built (awaiting the developer's feel test)*
+
+**Context.** ADR-075 left open how use, drop, grenade, ready, menu and mute map to touch, how the right stick fires, and how a grenade or turret picks its spot without a cursor.
+
+**Options.** Buttons: one context button plus a few fixed ones; one button per key; or the bare minimum (use + menu). Firing: fire once the stick is pushed past an outer ring; or fire on any push. Spot: drag the right stick out to the spot and let go; or tap the spot on screen.
+
+**Decision.** The developer took the recommended option each time. One big context button says whatever E would do here (greyed with the reason when it won't work) and carries the ready vote between waves. Small fixed buttons for the grenade (with its count) and drop (only with something in hand), and a menu button (continue / sound / leave). A light push on the right stick only turns; past the outer ring the rifle fires; letting go stops. With a grenade readied or a turret being placed, the push's length is the distance and letting go throws or builds it; tapping the button again cancels.
+
+**Why.** The developer's choice among the agent's options. The agent's own additions, all awaiting the developer's look: on a tall screen the camera climbs to keep about 13 units across and the pixel grid gets finer; the minimap moves top right on phones; the tutorial and the prompts name sticks and buttons instead of keys.

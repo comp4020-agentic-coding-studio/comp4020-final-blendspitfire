@@ -282,7 +282,10 @@ export interface PostProcess {
  * pixelation). `grade` is read every frame, so changing its fields takes
  * effect immediately.
  */
-export function createPostProcess(renderer: THREE.WebGLRenderer, scale: number, grade: Grade): PostProcess {
+export function createPostProcess(renderer: THREE.WebGLRenderer, scaleFor: number | ((width: number) => number), grade: Grade): PostProcess {
+  // a function: the fraction picked per window width (a phone's narrow screen gets a finer grid)
+  const pick = typeof scaleFor === "number" ? () => scaleFor : scaleFor;
+  let scale = pick(window.innerWidth);
   const filter = scale < 1 ? THREE.NearestFilter : THREE.LinearFilter;
   const type = renderer.capabilities.isWebGL2 ? THREE.HalfFloatType : THREE.UnsignedByteType;
   const depthTexture = new THREE.DepthTexture(1, 1);
@@ -350,6 +353,7 @@ export function createPostProcess(renderer: THREE.WebGLRenderer, scale: number, 
   return {
     effects,
     setSize(width, height) {
+      scale = pick(width);
       const w = Math.max(1, Math.round(width * scale));
       const h = Math.max(1, Math.round(height * scale));
       target.setSize(w, h);

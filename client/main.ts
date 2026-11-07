@@ -28,6 +28,7 @@ import { Audio, type Zone } from "./audio.ts";
 import { Gore, Impacts } from "./world/gore.ts";
 import { buildTutorial, type TutorialView } from "./world/tutorial.ts";
 import { helicopter } from "./models/heli.ts";
+import { FIRE_AT, TouchControls, type TouchButtons } from "./ui/touch.ts";
 import {
   CABIN,
   DROP_PAD,
@@ -167,6 +168,7 @@ import {
   type CrewLine,
   WIPE_HOLD_MS,
   PROJECTILE_SPEED,
+  GRENADE_RANGE,
 } from "../shared/protocol.ts";
 
 function showFatalError(message: string): void {
@@ -211,6 +213,13 @@ const params = new URLSearchParams(location.search);
 // player and a dropped item are still distinct at a glance. ?pixel=0 turns
 // it off; ?pixel=0.2 (any fraction) tries another size.
 const PIXEL_SCALE = params.get("pixel") === "0" ? 1 : Number(params.get("pixel")) || 0.25;
+/**
+ * The grid for a window this wide. A phone shows far less of the world
+ * across (VIEW_MIN_WIDE units) on far fewer pixels, so at a flat 0.25 a
+ * crawler came out three pixels long: below ~960 px the fraction rises to
+ * keep about the desktop's grid (~240 px across the narrow side's view).
+ */
+const pixelScaleFor = (width: number): number => (params.has("pixel") ? PIXEL_SCALE : Math.min(1, Math.max(PIXEL_SCALE, 240 / width)));
 
 let renderer: THREE.WebGLRenderer;
 try {
@@ -227,7 +236,7 @@ configureRenderer(renderer);
 if (params.has("debug")) renderer.info.autoReset = false;
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
-const post = createPostProcess(renderer, PIXEL_SCALE, GRADE);
+const post = createPostProcess(renderer, pixelScaleFor, GRADE);
 post.setSize(window.innerWidth, window.innerHeight);
 
 window.addEventListener("resize", () => {
@@ -236,6 +245,18 @@ window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   post.setSize(window.innerWidth, window.innerHeight);
 });
+
+/**
+ * How high the camera hangs. On a wide screen the fixed altitude; on a tall
+ * one (a phone held upright) the view would be only ~7 units across, less
+ * than the rifle's reach, so it climbs until the screen is VIEW_MIN_WIDE
+ * units across --- the world gets smaller, never narrower.
+ */
+const VIEW_MIN_WIDE = 13;
+function cameraAltitude(): number {
+  const halfTan = Math.tan(((CAMERA_FOV / 2) * Math.PI) / 180) * camera.aspect;
+  return Math.max(CAMERA_ALTITUDE, VIEW_MIN_WIDE / 2 / halfTan);
+}
 
 // --- The static world ------------------------------------------------------
 
@@ -560,6 +581,10 @@ window.addEventListener("pointermove", (e) => {
 
 function updateAim(): void {
   if (!localMesh) return;
+  if (touch.enabled) {
+    aimFromStick();
+    return;
+  }
   raycaster.setFromCamera(pointerNDC, camera);
   const hit = new THREE.Vector3();
   if (!raycaster.ray.intersectPlane(groundPlane, hit)) return;
@@ -1045,10 +1070,12 @@ function renderShop(): void {
     '<div class="title">corp supply uplink</div>' +
     `<div class="run">crew quota: ${funds}</div>` +
     rows +
-    '<div class="legend">turret: pick its spot, pay when it\'s built · scrap with E</div>' +
+    `<div class="legend">turret: pick its spot, pay when it's built · scrap with ${touch.enabled ? "the button" : "E"}</div>` +
     '<div class="legend">field dressing: patches every wound now; the next hit tears it open</div>' +
-    `<div class="legend">grenade: on your belt (${GRENADE_CARRY} at most), G then click · blasts a crowd</div>` +
-    '<div class="legend">1 / 2 / 3 to order · E / Esc to close</div></div>';
+    (touch.enabled
+      ? `<div class="legend">grenade: on your belt (${GRENADE_CARRY} at most) · blasts a crowd</div><div class="legend">tap a line to order · ≡ to close</div></div>`
+      : `<div class="legend">grenade: on your belt (${GRENADE_CARRY} at most), G then click · blasts a crowd</div>` +
+        '<div class="legend">1 / 2 / 3 to order · E / Esc to close</div></div>');
   if (html === lastShopHtml) return;
   lastShopHtml = html;
   shopEl.innerHTML = html;
@@ -1131,7 +1158,7 @@ function heliVerdict(): "ok" | "flying" | "lessons" | "hands full" {
   if (from === "garden" && myHeldItem()) return "hands full";
   return "ok";
 }
-const HELI_LABELS = { ok: "take off", flying: "in the air", lessons: "finish the lessons first", "hands full": "hands full: put it down (Q)" } as const;
+const HELI_LABELS = { ok: "take off", flying: "in the air", lessons: "finish the lessons first", "hands full": "hands full: put it down" } as const;
 
 /** every prompt to show this frame */
 function currentPrompts(): Prompt[] {
@@ -1203,7 +1230,9 @@ function renderPointerFeedback(): void {
   renderer.domElement.style.cursor = cursor;
   tipEl.textContent = tip;
   tipEl.style.display = tip ? "block" : "none";
-  tipEl.style.transform = `translate(${pointerPx.x + 16}px, ${pointerPx.y + 14}px)`;
+  // on a phone there's no cursor to follow: refusals show mid-screen, above the buttons
+  if (touch.enabled) tipEl.style.transform = `translate(${Math.round((window.innerWidth - tipEl.offsetWidth) / 2)}px, ${Math.round(window.innerHeight * 0.3)}px)`;
+  else tipEl.style.transform = `translate(${pointerPx.x + 16}px, ${pointerPx.y + 14}px)`;
   prompts.render(currentPrompts(), camera);
 }
 
@@ -1294,20 +1323,21 @@ function tutorialMarkers(p: THREE.Vector3, from: { x: number; z: number }): Mark
   }
   const held = myHeldItem();
   const mine = (kind: string) => [...items.values()].find((i) => i.state.owner === myId && i.state.kind === kind && i.state.heldBy === undefined);
-  if (lesson === "move") mark("t-goal", MOVE_PAD.x, MOVE_PAD.z, "walk here · WASD", 0.6);
+  const T = touch.enabled;
+  if (lesson === "move") mark("t-goal", MOVE_PAD.x, MOVE_PAD.z, T ? "walk here · left stick" : "walk here · WASD", 0.6);
   else if (lesson === "pickup") {
     const gun = mine("gun");
     const g = gun?.state ?? TUT_GUN_AT;
-    mark("t-goal", g.x, g.z, "rifle · E to pick up", 0.8);
+    mark("t-goal", g.x, g.z, T ? "rifle · tap pick up" : "rifle · E to pick up", 0.8);
   } else if (lesson === "shoot") {
     TUT_TARGETS.forEach((t, i) => {
       if ((myTutHits?.[i] ?? 0) < 3) out.push({ id: `t-target${i}`, at: v3(t.x, 1.6, t.z), label: held ? "shoot" : "pick the rifle back up", loud: true, from });
     });
-  } else if (lesson === "drop") mark("t-goal", DROP_PAD.x, DROP_PAD.z, held ? "put it down here · Q" : "rifle · E, then Q on the mat", 0.6);
+  } else if (lesson === "drop") mark("t-goal", DROP_PAD.x, DROP_PAD.z, T ? (held ? "put it down here · drop" : "pick up the rifle, drop it on the mat") : held ? "put it down here · Q" : "rifle · E, then Q on the mat", 0.6);
   else if (lesson === "grenade") {
     const c = TUT_CLUSTER[0];
-    if (myGrenades > 0) mark("t-goal", c.x, c.z, aimingGrenade ? "aim here · click to throw" : "G, then click here", 1.8);
-  } else if (lesson === "fly") mark("t-goal", HELIPADS.tutorial.x, HELIPADS.tutorial.z, "helicopter · step in, E", 2.4);
+    if (myGrenades > 0) mark("t-goal", c.x, c.z, T ? (aimingGrenade ? "aim here · let go to throw" : "tap grenade, aim here") : aimingGrenade ? "aim here · click to throw" : "G, then click here", 1.8);
+  } else if (lesson === "fly") mark("t-goal", HELIPADS.tutorial.x, HELIPADS.tutorial.z, T ? "helicopter · step in, take off" : "helicopter · step in, E", 2.4);
   return out;
 }
 
@@ -1351,6 +1381,14 @@ function stepBeacon(time: number): void {
   beaconLight.intensity = lit ? 2.2 * pulse : 0;
 }
 
+/** the controls line on a phone: the sticks, said once, short enough for 390 px */
+function touchControlsText(): string {
+  if (myOut) return myLate ? "watching the crew · tap: next" : "you're out · tap: next";
+  if (placingTurret) return "right stick: pick the spot · let go: build";
+  if (aimingGrenade) return "right stick: aim · let go: throw";
+  if (myHeldItem()?.state.kind === "gun") return "left: move · right: aim, push to the ring: fire";
+  return "left stick: move";
+}
 let lastControlsText = "";
 function renderControls(): void {
   const held = myHeldItem();
@@ -1369,7 +1407,8 @@ function renderControls(): void {
     text = `WASD move · ${parts.join(" · ")}`;
   }
   if (!myOut && myGrenades > 0 && !aimingGrenade) text += ` · G: ready a grenade ×${myGrenades}`;
-  text += audio.isMuted ? " · M: sound off" : " · M: mute";
+  if (touch.enabled) text = touchControlsText();
+  else text += audio.isMuted ? " · M: sound off" : " · M: mute";
   if (text !== lastControlsText) {
     controlsEl.textContent = text;
     lastControlsText = text;
@@ -1811,6 +1850,94 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
+// --- Touch: twin sticks (client/ui/touch.ts, ADR-075) ----------------------------
+// The aim stick stands in for the mouse: it sets the same aimPoint, so
+// every rule that reads the cursor (turret preview, grenade ring, hover)
+// works unchanged. A light push only turns you; past the dashed ring the
+// rifle fires. With a grenade readied or a turret being placed the push's
+// length is the distance, and letting go is the click.
+
+/** how far ahead aimPoint sits when the stick only gives a direction (the rifle's) */
+const STICK_AIM_REACH = 6;
+
+/** a grenade or a turret waiting for its spot: the stick picks a distance as well */
+const pickingSpot = (): boolean => aimingGrenade || placingTurret;
+
+function aimFromStick(): void {
+  if (!localMesh) return;
+  const { x, y, active } = touch.aim;
+  if (!active || (!x && !y)) {
+    // nothing pushed: keep facing where we were, the aim point just ahead
+    if (!pickingSpot()) aimPoint.set(localMesh.position.x + Math.sin(aimRotation) * STICK_AIM_REACH, 0, localMesh.position.z + Math.cos(aimRotation) * STICK_AIM_REACH);
+    return;
+  }
+  const len = Math.hypot(x, y);
+  aimRotation = Math.atan2(x, y);
+  localMesh.rotation.y = aimRotation;
+  const reach = pickingSpot() ? Math.max(1, Math.min(1, len) * (aimingGrenade ? GRENADE_RANGE : PLACE_RANGE)) : STICK_AIM_REACH;
+  aimPoint.set(localMesh.position.x + (x / len) * reach, 0, localMesh.position.z + (y / len) * reach);
+}
+
+/** each frame: the rifle fires while the aim stick is pushed past the ring */
+let stickFiring = false;
+function stepStickTrigger(): void {
+  if (!touch.enabled) return;
+  const { x, y, active } = touch.aim;
+  const firing = active && Math.hypot(x, y) >= FIRE_AT && !pickingSpot() && myHeldItem()?.state.kind === "gun" && !isDead();
+  touch.fireShown = !pickingSpot() && myHeldItem()?.state.kind === "gun";
+  if (firing) fireGun(!stickFiring);
+  stickFiring = firing;
+}
+
+const touch = new TouchControls({
+  use: () => {
+    if (canVote() && breakPrompts() && !eTarget()) toggleReady();
+    else if (eTarget()) useTarget(eTarget());
+  },
+  grenade: () => readyGrenade(),
+  drop: () => drop(),
+  menu: () => {
+    if (pause.isOpen) return pause.close();
+    if (boardOpen) return toggleBoard();
+    if (shopOpen) return toggleShop(false);
+    if (mySite) pause.open(mySite, audio.isMuted, !!localMesh && !myOut && objective.active && levelOf(localMesh.position.z) === "bottom");
+  },
+  // letting go of the aim stick with a spot being picked: that's the click
+  aimReleased: () => {
+    if (pickingSpot()) primary();
+  },
+  tap: () => {
+    if (!myOut) return false;
+    watchNext();
+    return true;
+  },
+});
+
+/** the context button: what E would do here, in words; the ready vote in a break */
+function touchUse(): TouchButtons["use"] {
+  if (!localMesh || isDead()) return undefined;
+  const target = eTarget();
+  if (!target) {
+    if (canVote() && breakPrompts()) return { label: amReady() ? "not ready" : `ready · ${readyCount()}`, enabled: true };
+    return undefined;
+  }
+  // the floating prompt for this target already words it: reuse its label and whether it'd work
+  const prompt = currentPrompts().find((p) => p.id !== "lift-count");
+  if (!prompt) return undefined;
+  return { label: prompt.label, enabled: prompt.enabled !== false };
+}
+
+function renderTouch(): void {
+  if (!touch.enabled) return;
+  const alive = !!localMesh && !isDead();
+  const held = myHeldItem();
+  touch.render({
+    use: touchUse(),
+    grenade: alive && (myGrenades > 0 || aimingGrenade) ? { label: aimingGrenade ? "cancel" : `grenade ×${myGrenades}`, cancel: aimingGrenade } : undefined,
+    drop: alive && (held || placingTurret) ? { label: placingTurret ? "cancel" : "drop" } : undefined,
+  });
+}
+
 function addOrUpdateRemote(p: PlayerState, t: number): void {
   let remote = remotes.get(p.id);
   if (!remote) {
@@ -2105,13 +2232,20 @@ function animate(): void {
       if (pressed.has("s") || pressed.has("arrowdown")) dz += 1;
       if (pressed.has("a") || pressed.has("arrowleft")) dx -= 1;
       if (pressed.has("d") || pressed.has("arrowright")) dx += 1;
+      // the move stick: screen right is +x, screen down is +z (the camera looks straight down, north up)
+      let pace = 1;
+      if (touch.move.active && (touch.move.x || touch.move.y)) {
+        dx = touch.move.x;
+        dz = touch.move.y;
+        pace = Math.min(1, Math.hypot(dx, dz) / 0.85);
+      }
 
       // aboard a helicopter that's taken off: sit tight till it lands
       if (myFlyingUntil) dx = dz = 0;
       if (dx !== 0 || dz !== 0) {
         const len = Math.hypot(dx, dz);
-        dx /= len;
-        dz /= len;
+        dx *= pace / len;
+        dz *= pace / len;
         const next = clampToPlayBounds(
           localMesh.position.x + dx * woundedSpeed(myWounds) * dt,
           localMesh.position.z + dz * woundedSpeed(myWounds) * dt,
@@ -2149,7 +2283,7 @@ function animate(): void {
       if (levelOf(localMesh.position.z) === "bottom" || performance.now() - wipeAt < WIPE_HOLD_MS) eye = wipeEye;
     }
     lastEye = eye;
-    camera.position.set(eye.x, CAMERA_ALTITUDE, eye.z);
+    camera.position.set(eye.x, cameraAltitude(), eye.z);
     camera.lookAt(eye.x, 0, eye.z);
     torch.aim(eye.x, eye.z, eye.rotation);
     torch.light.visible = !dead || !!watched;
@@ -2198,6 +2332,7 @@ function animate(): void {
   stepGrenadeVisuals(time);
   renderDefenceHud();
   stepTrigger();
+  stepStickTrigger();
   stepWounds(dt);
   stepTracers();
   impacts.step(dt);
@@ -2209,6 +2344,7 @@ function animate(): void {
   stepBeacon(time);
   stepAudio();
   renderControls();
+  renderTouch();
   // ?debug counts the whole frame's draws (every pass), not just the last pass's
   if (debugEl) renderer.info.reset();
   post.render(scene, camera);
@@ -2275,7 +2411,7 @@ function stepLevel(x: number, z: number, dt: number): void {
     post.setMask(activeVisibility.postMask(level === "top" ? 50 : FACILITY_WALL_HALF_HEIGHT * 2 - 0.05));
     // the tutorial's built only while someone's looking at it
     if (level === "tutorial" && !tutorialView) {
-      tutorialView = buildTutorial();
+      tutorialView = buildTutorial(touch.enabled);
       scene.add(tutorialView.group);
     } else if (level !== "tutorial" && tutorialView) {
       scene.remove(tutorialView.group);
@@ -2589,7 +2725,7 @@ function renderReadyCard(): void {
   const mine = amReady();
   readyEl.classList.toggle("done", mine);
   const nextWave = defenceState.wave + 1;
-  const what = mine ? "you're ready · X: take it back" : `ready for wave ${nextWave} · ${waveSize(nextWave)} hostiles`;
+  const what = mine ? (touch.enabled ? "you're ready" : "you're ready · X: take it back") : `ready for wave ${nextWave} · ${waveSize(nextWave)} hostiles`;
   const who = `${readyCount()} · ${readyNames()}`;
   const key = `${what}|${who}`;
   if (key === lastReady) return;

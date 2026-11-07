@@ -45,6 +45,8 @@ const STYLE = `
   letter-spacing: 0.06em; text-transform: uppercase; text-shadow: 0 0 6px var(--ui-glow), 0 1px 0 #000;
   background: rgba(6, 8, 6, 0.7); border: 2px solid var(--ui); -webkit-font-smoothing: none;
   clip-path: inset(0 0 0 100%); transition: clip-path 0.2s steps(6) 0.14s; animation: pr-float 3.2s steps(4) infinite; }
+/* a phone has no E: the context button carries the action, the tag just names it */
+body.touch .pr-key { display: none !important; }
 .pr-key { min-width: 20px; height: 20px; display: grid; place-items: center; background: var(--ui); color: #0a0c0a;
   text-shadow: none; font-size: 18px; letter-spacing: 0; padding: 0 3px; }
 .pr-text { display: flex; flex-direction: column; gap: 0; }

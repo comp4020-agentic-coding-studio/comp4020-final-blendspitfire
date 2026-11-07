@@ -29,6 +29,8 @@ const STYLE = `
 .ui-map { left: 14px; bottom: 150px; padding: 6px 8px 8px; }
 .ui-map .title { font-size: 16px; color: var(--ui-dim); margin-bottom: 4px; }
 .ui-map canvas { display: block; image-rendering: pixelated; }
+/* a phone: the left thumb owns the bottom left, so the plan goes top right under the menu button, smaller */
+@media (max-width: 640px) { .ui-map { left: auto; right: 8px; bottom: auto; top: 58px; zoom: 0.55; } }
 `;
 
 interface Plan {

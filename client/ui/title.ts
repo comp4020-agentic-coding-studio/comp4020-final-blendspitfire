@@ -196,7 +196,7 @@ export class PauseMenu {
     this.el.innerHTML =
       '<div class="title">paused</div>' +
       '<div class="dim site"></div>' +
-      '<button class="resume">continue <span class="dim">esc</span></button>' +
+      '<button class="resume">continue <span class="dim key">esc</span></button>' +
       '<button class="mute"></button>' +
       '<button class="leave">leave site</button>' +
       '<div class="warn"></div>';
@@ -224,6 +224,6 @@ export class PauseMenu {
   }
 
   private setMuted(muted: boolean): void {
-    this.muteEl.innerHTML = `sound: ${muted ? "off" : "on"} <span class="dim">m</span>`;
+    this.muteEl.innerHTML = `sound: ${muted ? "off" : "on"} <span class="dim key">m</span>`;
   }
 }

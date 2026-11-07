@@ -5,6 +5,7 @@ import {
   HELIPADS,
   LESSONS,
   LESSON_TEXT,
+  LESSON_TEXT_TOUCH,
   MOVE_PAD,
   TARGET_HITS,
   TARGET_RADIUS,
@@ -40,9 +41,9 @@ const PX = 96;
  * big and heavy enough that every stroke survives the 1/4-size render
  * (the how-to split onto its own lines, caps ~1 unit tall).
  */
-function floorText(i: number): THREE.Mesh {
+function floorText(i: number, touch: boolean): THREE.Mesh {
   const lesson = LESSONS[i];
-  const t = LESSON_TEXT[lesson];
+  const t = (touch ? LESSON_TEXT_TOUCH : LESSON_TEXT)[lesson];
   // the shooting room's targets stand by its west wall: its plate is narrower and shifted east, clear of them
   const narrow = lesson === "shoot";
   const w = narrow ? 6.2 : 7.6;
@@ -164,7 +165,8 @@ export interface TutorialView {
   dispose(): void;
 }
 
-export function buildTutorial(): TutorialView {
+/** `touch`: the floor says the phone controls (sticks, buttons) rather than the keys */
+export function buildTutorial(touch = false): TutorialView {
   const group = new THREE.Group();
   const shell: THREE.BufferGeometry[] = [];
   const floor: THREE.BufferGeometry[] = [];
@@ -195,7 +197,7 @@ export function buildTutorial(): TutorialView {
   apron.position.set(TUT_DX, -0.02, (TUT_BOUNDS.minZ + TUT_BOUNDS.maxZ) / 2);
   group.add(apron);
 
-  for (let i = 0; i < LESSONS.length; i++) group.add(floorText(i));
+  for (let i = 0; i < LESSONS.length; i++) group.add(floorText(i, touch));
   group.add(pad(MOVE_PAD.x, MOVE_PAD.z, MOVE_PAD.r, PAPER.light));
   group.add(pad(DROP_PAD.x, DROP_PAD.z, DROP_PAD.r, PAPER.light));
 
