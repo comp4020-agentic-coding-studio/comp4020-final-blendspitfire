@@ -214,12 +214,25 @@ const params = new URLSearchParams(location.search);
 // it off; ?pixel=0.2 (any fraction) tries another size.
 const PIXEL_SCALE = params.get("pixel") === "0" ? 1 : Number(params.get("pixel")) || 0.25;
 /**
- * The grid for a window this wide. A phone shows far less of the world
- * across (VIEW_MIN_WIDE units) on far fewer pixels, so at a flat 0.25 a
- * crawler came out three pixels long: below ~960 px the fraction rises to
- * keep about the desktop's grid (~240 px across the narrow side's view).
+ * How high the camera hangs. On a wide screen the fixed altitude; on a tall
+ * one (a phone held upright) the view would be only ~7 units across, less
+ * than the rifle's reach, so it climbs until the screen is VIEW_MIN_WIDE
+ * units across --- the world gets smaller, never narrower.
  */
-const pixelScaleFor = (width: number): number => (params.has("pixel") ? PIXEL_SCALE : Math.min(1, Math.max(PIXEL_SCALE, 240 / width)));
+const VIEW_MIN_WIDE = 13;
+function cameraAltitude(): number {
+  const halfTan = Math.tan(((CAMERA_FOV / 2) * Math.PI) / 180) * camera.aspect;
+  return Math.max(CAMERA_ALTITUDE, VIEW_MIN_WIDE / 2 / halfTan);
+}
+
+/**
+ * The grid for this window. The desktop's fraction everywhere, scaled by how
+ * far the camera has climbed (user 2026-11-07: a phone's world should be as
+ * coarse as the desktop's, with nothing hardcoded for phones): a tall screen
+ * hangs the camera higher to stay VIEW_MIN_WIDE across, so the grid gets
+ * finer by the same ratio and a crawler keeps the pixels it has on a desktop.
+ */
+const pixelScaleFor = (): number => (params.has("pixel") ? PIXEL_SCALE : Math.min(1, (PIXEL_SCALE * cameraAltitude()) / CAMERA_ALTITUDE));
 
 let renderer: THREE.WebGLRenderer;
 try {
@@ -245,18 +258,6 @@ window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   post.setSize(window.innerWidth, window.innerHeight);
 });
-
-/**
- * How high the camera hangs. On a wide screen the fixed altitude; on a tall
- * one (a phone held upright) the view would be only ~7 units across, less
- * than the rifle's reach, so it climbs until the screen is VIEW_MIN_WIDE
- * units across --- the world gets smaller, never narrower.
- */
-const VIEW_MIN_WIDE = 13;
-function cameraAltitude(): number {
-  const halfTan = Math.tan(((CAMERA_FOV / 2) * Math.PI) / 180) * camera.aspect;
-  return Math.max(CAMERA_ALTITUDE, VIEW_MIN_WIDE / 2 / halfTan);
-}
 
 // --- The static world ------------------------------------------------------
 

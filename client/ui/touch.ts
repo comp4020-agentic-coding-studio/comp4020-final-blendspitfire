@@ -24,22 +24,23 @@ body.touch .touch-layer { display: block; }
 .touch-stick { position: absolute; width: 0; height: 0; display: none; pointer-events: none; }
 .touch-stick.on { display: block; }
 .touch-stick .base, .touch-stick .rim, .touch-stick .knob { position: absolute; left: 0; top: 0; translate: -50% -50%; border-radius: 50%; }
-.touch-stick .base { width: 112px; height: 112px; border: 2px solid rgba(242, 234, 214, 0.45); background: rgba(6, 8, 6, 0.28); }
-.touch-stick .rim { width: 74px; height: 74px; border: 2px dashed rgba(242, 234, 214, 0.35); }
-.touch-stick .knob { width: 46px; height: 46px; background: rgba(242, 234, 214, 0.75); box-shadow: 0 0 8px rgba(255, 220, 160, 0.35); }
+.touch-stick .base { width: 96px; height: 96px; border: 2px solid rgba(242, 234, 214, 0.45); background: rgba(6, 8, 6, 0.28); }
+.touch-stick .rim { width: 64px; height: 64px; border: 2px dashed rgba(242, 234, 214, 0.35); }
+.touch-stick .knob { width: 38px; height: 38px; background: rgba(242, 234, 214, 0.75); box-shadow: 0 0 8px rgba(255, 220, 160, 0.35); }
 .touch-stick.fire .knob { background: #ff7a5a; box-shadow: 0 0 12px rgba(255, 110, 80, 0.7); }
 .touch-stick.fire .base { border-color: #ff7a5a; }
 .touch-btn { position: absolute; display: none; align-items: center; justify-content: center; gap: 6px;
   color: var(--ui); font: var(--ui-font); letter-spacing: 0.06em; text-transform: uppercase; text-align: center;
   text-shadow: 0 0 6px var(--ui-glow), 0 1px 0 #000; -webkit-font-smoothing: none;
-  border: 2px solid var(--ui); background: rgba(6, 8, 6, 0.7); padding: 6px 10px; touch-action: none; }
+  border: 2px solid var(--ui); background: rgba(6, 8, 6, 0.7); padding: 4px 8px; touch-action: none; }
 .touch-btn.on { display: flex; }
 .touch-btn.off { color: var(--ui-dim); border-color: var(--ui-dim); }
 .touch-btn.down { background: var(--ui); color: #0a0c0a; text-shadow: none; }
-.touch-btn.use { right: 12px; bottom: 236px; min-width: 132px; max-width: 46vw; min-height: 52px; font-size: 22px; line-height: 1; }
-.touch-btn.grenade { right: 12px; bottom: 174px; min-width: 60px; height: 46px; }
-.touch-btn.drop { right: 84px; bottom: 174px; min-width: 60px; height: 46px; }
-.touch-btn.menu { right: 10px; top: 10px; width: 44px; height: 40px; padding: 0; font-size: 26px; display: flex; }
+.touch-btn.use { right: 12px; bottom: 200px; min-width: 104px; max-width: 46vw; min-height: 42px; font-size: 17px; line-height: 1; }
+.touch-btn.grenade { right: 12px; bottom: 150px; min-width: 52px; height: 38px; }
+/* drop is rarely wanted (user 2026-11-07): small, up by the menu, out of the thumb's way */
+.touch-btn.drop { right: 54px; top: 10px; height: 34px; font-size: 13px; color: var(--ui-dim); border-color: var(--ui-dim); }
+.touch-btn.menu { right: 10px; top: 10px; width: 36px; height: 34px; padding: 0; font-size: 22px; display: flex; }
 `;
 
 export interface Stick {
@@ -68,8 +69,8 @@ export interface TouchHandlers {
 }
 
 /** a push this far out is "fire" (the dashed ring) */
-export const FIRE_AT = 74 / 112;
-const RADIUS = 56;
+export const FIRE_AT = 64 / 96;
+const RADIUS = 48;
 const DEAD = 0.18;
 
 interface Live {

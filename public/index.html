@@ -178,7 +178,17 @@
       .ui-title input { font: 400 34px/1 "VT323", ui-monospace, monospace; letter-spacing: 0.18em; text-transform: uppercase; text-align: center;
         width: 8em; color: var(--ui); background: transparent; border: none; border-bottom: 2px solid var(--ui); outline: none; caret-color: var(--ui); }
       .ui-title input::placeholder { color: var(--ui-dim); opacity: 0.6; }
-      .ui-title .head, .ui-title .list { width: min(460px, calc(100vw - 32px)); }
+      /* the site list: framed like every other panel, so it reads as the thing to pick from; a site you can join says so in green */
+      .ui-title .sites { --ui-ok: #8fe39a; width: min(480px, calc(100vw - 32px)); box-sizing: border-box; padding: 8px 12px 10px; margin: 6px 0;
+        border: 2px solid var(--ui); background-color: rgba(6, 8, 6, 0.6);
+        background-image: repeating-linear-gradient(0deg, rgba(0,0,0,0.22) 0 1px, transparent 1px 3px);
+        clip-path: polygon(4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px,
+          100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%,
+          4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px), 0 4px, 2px 4px, 2px 2px, 4px 2px); }
+      .ui-title .row.can .state { color: var(--ui-ok); text-shadow: 0 0 6px rgba(143, 227, 154, 0.45); }
+      .ui-title .row.can .state::before { content: "\25B6  "; }
+      .ui-title .row.can .id { color: #fff; }
+      .ui-title .row.can + .row.dim, .ui-title .row.dim + .row.can { border-top: 1px dashed var(--ui-dim); }
       .ui-title .head { display: flex; justify-content: space-between; border-bottom: 2px dashed var(--ui-dim); padding-bottom: 3px; font-size: 22px; }
       .ui-title .list { max-height: 40vh; overflow-y: auto; }
       .ui-title .row { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 4px 6px; cursor: pointer; }
@@ -187,7 +197,7 @@
       .ui-title .row .crew { margin-left: auto; font-variant-numeric: tabular-nums; }
       .ui-title .row .names { flex-basis: 100%; color: var(--ui-dim); font-size: 16px; }
       .ui-title .row:not(.dim):hover { background: var(--ui); color: #0a0c0a; text-shadow: none; }
-      .ui-title .row:not(.dim):hover .state, .ui-title .row:not(.dim):hover .names { color: #0a0c0a; }
+      .ui-title .row:not(.dim):hover .state, .ui-title .row:not(.dim):hover .names, .ui-title .row:not(.dim):hover .id { color: #0a0c0a; text-shadow: none; }
       .ui-title .row.dim { cursor: not-allowed; opacity: 0.5; }
       .ui-title .empty { padding: 6px; }
       .ui-title .why { color: #ff7a6a; min-height: 1em; }
@@ -214,41 +224,51 @@
       /* phones (ADR-075): the sticks' layer sits at z 4, so anything tapped goes over it */
       #shop, #board { z-index: 6; }
       @media (max-width: 640px) {
-        :root { --ui-font: 400 16px/1.05 "VT323", ui-monospace, "SF Mono", Menlo, monospace; }
-        #hint { left: 10px; right: 10px; bottom: 6px; font-size: 15px; }
+        :root { --ui-font: 400 14px/1.05 "VT323", ui-monospace, "SF Mono", Menlo, monospace; }
+        #hint { left: 10px; right: 10px; bottom: 6px; font-size: 13px; }
         #hint a, #hint .sep { display: none; }
         #version { display: none; }
-        #leaderboard { left: 8px; top: 56px; min-width: 0; max-width: 46vw; padding: 4px 8px; font-size: 15px; }
-        .ui-hud { top: 8px; max-width: calc(100vw - 72px); padding: 3px 8px; font-size: 15px; left: 8px; transform: none; }
+        #leaderboard { left: 8px; top: 56px; min-width: 0; max-width: 46vw; padding: 3px 6px; font-size: 13px; }
+        .ui-hud { top: 8px; max-width: calc(100vw - 64px); padding: 2px 6px; font-size: 13px; left: 8px; transform: none; }
         .ui-hud .line { gap: 8px; }
-        .ui-hud .bar { width: 64px; }
+        .ui-hud .bar { width: 52px; }
         .ui-wounds { left: 8px; bottom: 28px; padding: 4px 8px; }
-        .ui-banner { font-size: 22px; white-space: normal; text-align: center; width: max-content; max-width: calc(100vw - 32px); }
-        .ui-report { left: 16px; right: 16px; top: 64px; min-width: 0; max-width: none; font-size: 19px; padding: 10px 14px; }
-        .ui-report .title { font-size: 24px; }
-        .ui-report .row.total { font-size: 22px; }
+        .ui-banner { font-size: 18px; white-space: normal; text-align: center; width: max-content; max-width: calc(100vw - 32px); }
+        .ui-report { left: 16px; right: 16px; top: 64px; min-width: 0; max-width: none; font-size: 15px; padding: 8px 12px; }
+        .ui-report .title { font-size: 19px; }
+        .ui-report .row.total { font-size: 17px; }
         .ui-ready { bottom: 300px; white-space: normal; max-width: calc(100vw - 32px); }
         .ui-ready .key { display: none; }
-        .ui-ready .what { font-size: 18px; }
+        .ui-ready .what { font-size: 15px; }
         .ui-spectate { bottom: 40px; max-width: calc(100vw - 32px); }
-        .ui-settle { padding: 12px 14px; }
-        .ui-settle .title { font-size: 26px; }
+        .ui-settle { padding: 10px 12px; }
+        .ui-settle .title { font-size: 21px; }
+        .ui-settle .title.small { font-size: 17px; }
         .ui-settle .head, .ui-settle .row, .ui-settle .total { gap: 8px; }
         .ui-settle .head > span, .ui-settle .row > span { min-width: 2.4em; }
         .ui-settle .num { min-width: 4.5em !important; }
-        .ui-settle .total { font-size: 24px; }
-        .ui-thanks .cast { grid-template-columns: 5.5em 7em 3em; gap: 10px; font-size: 18px; }
+        .ui-settle .total { font-size: 19px; }
+        .ui-thanks .cast { grid-template-columns: 5.5em 7em 3em; gap: 8px; font-size: 15px; }
         .ui-thanks .cast.credit { grid-template-columns: 5.5em 13em; }
-        .ui-thanks .line.big { font-size: 26px; }
-        .ui-thanks .sub { font-size: 20px; }
+        .ui-thanks .line.big { font-size: 21px; }
+        .ui-thanks .line, .ui-thanks .head { font-size: 16px; }
+        .ui-thanks .sub { font-size: 16px; }
         .ui-thanks .card .line { padding: 0 16px; }
-        .ui-countdown .cd-num { font-size: 64px; }
+        .ui-countdown .cd-num { font-size: 48px; }
+        .ui-countdown .cd-text { font-size: 16px; }
+        #respawn { font-size: 64px; }
         #shop { place-items: center; padding: 0 12px; }
-        #shop .board-panel, #board .board-panel { min-width: 0; max-width: calc(100vw - 24px); padding: 12px 14px; }
-        #shop .row { padding: 8px 0; }
+        #shop .board-panel, #board .board-panel { min-width: 0; max-width: calc(100vw - 24px); padding: 10px 12px; }
+        #shop .row { padding: 6px 0; }
+        #board .title, #shop .title { font-size: 19px; }
+        #board .legend, #shop .legend, #shop .why { font-size: 13px; }
         .ui-title .logo canvas { max-width: calc(100vw - 48px); height: auto; }
         .ui-title button { min-width: 0; width: min(18em, calc(100vw - 48px)); }
-        .ui-title input { font-size: 28px; }
+        .ui-title input { font-size: 24px; }
+        .ui-title .head { font-size: 17px; }
+        .ui-title .small, .ui-title .row .names { font-size: 13px; }
+        .ui-title button, .ui-pause button { font-size: 18px; }
+        .ui-pause .title { font-size: 26px; }
         body.touch .ui-pause .key { display: none; }
         .ui-pause button { min-width: 0; width: min(18em, calc(100vw - 48px)); }
       }

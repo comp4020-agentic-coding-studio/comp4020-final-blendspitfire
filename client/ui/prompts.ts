@@ -47,6 +47,7 @@ const STYLE = `
   clip-path: inset(0 0 0 100%); transition: clip-path 0.2s steps(6) 0.14s; animation: pr-float 3.2s steps(4) infinite; }
 /* a phone has no E: the context button carries the action, the tag just names it */
 body.touch .pr-key { display: none !important; }
+@media (max-width: 640px) { .pr-tag { font-size: 15px; padding: 2px 8px 2px 4px; } .pr-detail { font-size: 13px; } }
 .pr-key { min-width: 20px; height: 20px; display: grid; place-items: center; background: var(--ui); color: #0a0c0a;
   text-shadow: none; font-size: 18px; letter-spacing: 0; padding: 0 3px; }
 .pr-text { display: flex; flex-direction: column; gap: 0; }
@@ -59,6 +60,9 @@ body.touch .pr-key { display: none !important; }
 .pr:not(.on) .pr-line { transition-delay: 0.08s; }
 .pr:not(.on) .pr-dot { transition-delay: 0.16s; }
 .pr.off { --ui: var(--ui-dim); }
+/* too near the left edge for the tag to hang up-left: it hangs up-right instead, the leader mirrored */
+.pr.flip .pr-line { right: auto; left: 0; transform: scaleX(-1); }
+.pr.flip .pr-tag { right: auto; left: 28px; padding: 3px 4px 3px 10px; }
 .pr.nope .pr-tag { animation: pr-nope 0.3s linear, pr-float 3.2s ease-in-out infinite; }
 @keyframes pr-float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -2px; } }
 @keyframes pr-nope { 0%, 100% { margin-right: 0; } 25% { margin-right: 6px; } 75% { margin-right: -6px; } }
@@ -72,6 +76,8 @@ interface Live {
   /** when it was retracted (for removal once the animation's done), or 0 while shown */
   goneAt: number;
   last: string;
+  /** the tag's width when last measured (it changes only with its text) */
+  width: number;
 }
 
 export class Prompts {
@@ -99,6 +105,7 @@ export class Prompts {
       detail: el.querySelector(".pr-detail")!,
       goneAt: 0,
       last: "",
+      width: 0,
     };
     this.live.set(id, live);
     // one frame in the DOM before "on", so the growing-out transition plays
@@ -139,10 +146,12 @@ export class Prompts {
         live.detail.textContent = p.detail ?? "";
         live.detail.style.display = p.detail ? "block" : "none";
         live.el.classList.toggle("off", p.enabled === false);
+        live.width = (live.el.querySelector(".pr-tag") as HTMLElement).offsetWidth;
       }
       this.v.copy(p.at).project(camera);
       const x = (this.v.x * 0.5 + 0.5) * w;
       const y = (-this.v.y * 0.5 + 0.5) * h;
+      live.el.classList.toggle("flip", x - 28 - live.width < 8 && x + 28 + live.width <= w - 8);
       live.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
     }
     for (const [id, live] of this.live) {

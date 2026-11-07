@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-11-07, phone touch button mapping
+Synced from the draft up to: 2026-11-07, phone playtest feedback (UI size, pixel density, drop, site list)
 
 ---
 
@@ -1000,3 +1000,15 @@ Built (agent): `server/room.ts` holds a whole world per site; `server/index.ts` 
 **Decision.** The developer took the recommended option each time. One big context button says whatever E would do here (greyed with the reason when it won't work) and carries the ready vote between waves. Small fixed buttons for the grenade (with its count) and drop (only with something in hand), and a menu button (continue / sound / leave). A light push on the right stick only turns; past the outer ring the rifle fires; letting go stops. With a grenade readied or a turret being placed, the push's length is the distance and letting go throws or builds it; tapping the button again cancels.
 
 **Why.** The developer's choice among the agent's options. The agent's own additions, all awaiting the developer's look: on a tall screen the camera climbs to keep about 13 units across and the pixel grid gets finer; the minimap moves top right on phones; the tutorial and the prompts name sticks and buttons instead of keys.
+
+
+## ADR-077: Phone playtest: smaller UI, the desktop's pixel density, drop moved, a framed site list
+*2026-11-07 · Status: Accepted, built (awaiting the developer's look)*
+
+**Context.** The developer tried ADR-075/076 on a phone. Every piece of UI was too big. The pixel grid followed a fixed number (240 / width) instead of matching the desktop. The drop button, which is rarely needed, sat in a main spot. On the title screen the site list didn't stand out.
+
+**Options.** For the pixel grid: keep the desktop's density in the world (a crawler covers as many pixels on a phone as on a desktop, the grid worked out from the camera's height and the desktop's 1/4); or the same 1/4 of the screen everywhere (pixels the same size on screen, which leaves a crawler about 3 pixels long).
+
+**Decision.** The world's density, worked out from the camera with no number fixed for phones. Following the developer's feedback, the phone UI is smaller, drop moves up beside the menu button in small grey text, and the site list gets a frame around it, with joinable sites in green.
+
+**Why.** The developer wants a phone to look as coarse as the desktop, not a separately tuned number; drop is almost never used; the list should read as the thing to pick from. The agent's own details, awaiting the developer's look: phone text about 20% smaller (base 16 to 14 px), sticks 112 to 96 px, minimap at 0.45, prompt tags flip to the right of their object near the left edge, green as the "will work" signal colour from the art rules, shown as "▶ OPEN".

@@ -51,7 +51,8 @@ const STYLE = `
 .mk.edge .mk-body { transform: translate(var(--tx), var(--ty)); }
 @keyframes mk-pulse { 0%, 100% { box-shadow: 0 0 0 transparent; filter: brightness(1); } 50% { box-shadow: 0 0 10px var(--ui-glow); filter: brightness(1.35); } }
 /* a phone: a long tag wraps (centred on its spot) rather than running off the edge */
-@media (max-width: 640px) { .mk-tag { white-space: normal; text-align: center; width: max-content; max-width: 46vw; } }
+@media (max-width: 640px) { .mk-tag { white-space: normal; text-align: center; width: max-content; max-width: 46vw; font-size: 13px; }
+  .mk-detail { font-size: 12px; } .mk.loud .mk-tag { font-size: 17px; } .mk.loud .mk-detail { font-size: 14px; } }
 @keyframes mk-bob { 0%, 100% { translate: 0 0; } 50% { translate: 0 3px; } }
 `;
 

@@ -34,8 +34,8 @@ export class Title {
       '<div class="field"><span class="dim">name</span>' +
       `<input maxlength="${NAME_MAX}" spellcheck="false" autocomplete="off" placeholder="codename" /></div>` +
       '<div class="dim small">1–12 letters or digits · blank = your codename</div>' +
-      '<div class="head"><span>sites</span><span class="dim">crew</span></div>' +
-      '<div class="list"></div>' +
+      '<div class="sites"><div class="head"><span>sites</span><span class="dim">crew</span></div>' +
+      '<div class="list"></div></div>' +
       '<div class="why"></div>' +
       '<div class="buttons"><button class="quick">▶ quick join</button><button class="new">+ new site</button></div>';
     this.el.querySelector(".logo")!.appendChild(pixelLogo(300, cell, "#f2ead6"));
@@ -108,7 +108,7 @@ export class Title {
     const state = r.started ? `under way · wave ${r.wave}` : full ? "full" : "open";
     const names = r.names.map(esc).join(", ");
     return (
-      `<div class="row${shut ? " dim" : ""}" data-room="${esc(r.id)}" title="${shut ? (r.started ? "reactor on: can't join until it's over" : "full") : "join"}">` +
+      `<div class="row${shut ? " dim" : " can"}" data-room="${esc(r.id)}" title="${shut ? (r.started ? "reactor on: can't join until it's over" : "full") : "join"}">` +
       `<span class="id">${esc(r.id)}</span><span class="state">${state}</span>` +
       `<span class="crew">${r.players}/${r.max}</span>` +
       (names ? `<span class="names">${names}</span>` : "") +
