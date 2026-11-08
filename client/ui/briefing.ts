@@ -3,8 +3,10 @@ import { pixelSvg } from "./logo.ts";
 // The mission briefing on the ride down (user 2026-11-08, ADR-086): three
 // black-and-white icon slides in the seal's style, drawn as line art and put
 // on the game's pixel grid the same way (pixelSvg). Activate the reactor;
-// hold while it powers up; ride the freight lift up with the cargo (user:
-// no stress on the number of waves). Icons and exact wording are the agent's.
+// expect hostiles and keep the reactor safe while it powers up; ride the
+// freight lift up with the cargo (user: no stress on the number of waves;
+// mention hostiles and the reactor's safety; in-world, a company work order,
+// not a game talking to the player). Exact wording and icons are the agent's.
 
 const W = 160;
 const H = 120;
@@ -21,14 +23,11 @@ const REACTOR = svg(`
   <rect x="64" y="104" width="32" height="10" fill="#fff"/>
 `);
 
-/** 2: hold on while it powers up: a gauge filling, the needle climbing, a crawler at the edge of it */
+/** 2: hostile organisms may be present: a crawler, big enough to read at the icon's size */
 const HOLD = svg(`
-  <path d="M30 90 a50 50 0 0 1 100 0"/>
-  <path d="M38 64 l8 5 M58 46 l5 8 M80 40 v10 M102 46 l-5 8 M122 64 l-8 5" stroke-width="4"/>
-  <line x1="80" y1="90" x2="112" y2="58"/>
-  <circle cx="80" cy="90" r="7" fill="#fff"/>
-  <rect x="22" y="98" width="116" height="16" stroke-width="3"/>
-  <rect x="29" y="104" width="62" height="4" fill="#fff" stroke-width="2"/>
+  <ellipse cx="80" cy="62" rx="30" ry="20" fill="#fff"/>
+  <circle cx="80" cy="36" r="10" fill="#fff"/>
+  <path d="M56 50 l-20 -16 M52 64 h-26 M56 76 l-20 16 M104 50 l20 -16 M108 64 h26 M104 76 l20 16" stroke-width="7"/>
 `);
 
 /** 3: the cargo on the freight platform going up, and you with it */
@@ -42,9 +41,9 @@ const FREIGHT = svg(`
 
 /** what HQ says over each card, typed out as it comes in */
 const SLIDES: { art: string; line: string }[] = [
-  { art: REACTOR, line: "your assignment: get the reactor running." },
-  { art: HOLD, line: "hold the line while it powers up." },
-  { art: FREIGHT, line: "then ride the freight lift up with the cargo." },
+  { art: REACTOR, line: "work order B3: restore power to the facility reactor." },
+  { art: HOLD, line: "hostile organisms may be present. the reactor must not be damaged during start-up." },
+  { art: FREIGHT, line: "on completion, accompany the cargo to the surface by freight lift." },
 ];
 /** the transmission's beats, as shares of the whole: the incoming flash, the three lines one after another, then the sign-off */
 const OPEN = 0.12;
