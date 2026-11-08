@@ -77,9 +77,11 @@ import {
   blastDoorOpen,
   evacStage,
   THANKS_MS,
+  THANKS_IN_MS,
+  THANKS_DIM_MS,
   SETTLE_PAGES_MS,
   waveSize,
-  type DefenceState, type EnemyKind, type EnemyState, type SpitState } from "../shared/enemies.ts";
+  type DefenceState, type EvacStage, type EnemyKind, type EnemyState, type SpitState } from "../shared/enemies.ts";
 import {
   BREACHES,
   DOORWAYS,
@@ -107,6 +109,7 @@ import {
   LIFT_CARS,
   LIFT_DOORS,
   LIFT_RIDE_MS,
+  LIFT_SETTLE_MS,
   inAnyCar,
   inCar,
   levelOf,
@@ -786,16 +789,16 @@ let aimingGrenade = false;
 // filled disc, additive so it glows on grass and in the dark alike
 const throwRing = new THREE.Group();
 const throwEdge = new THREE.Mesh(
-  new THREE.RingGeometry(GRENADE_RADIUS - 0.14, GRENADE_RADIUS, 40).rotateX(-Math.PI / 2),
-  new THREE.MeshBasicMaterial({ color: STENCIL, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
+  new THREE.RingGeometry(GRENADE_RADIUS - 0.22, GRENADE_RADIUS, 40).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: ACCENT, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
 );
 const throwGlow = new THREE.Mesh(
-  new THREE.RingGeometry(GRENADE_RADIUS - 0.6, GRENADE_RADIUS - 0.14, 40).rotateX(-Math.PI / 2),
-  new THREE.MeshBasicMaterial({ color: STENCIL, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
+  new THREE.RingGeometry(GRENADE_RADIUS - 0.7, GRENADE_RADIUS - 0.22, 40).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: ACCENT, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
 );
 const throwFill = new THREE.Mesh(
-  new THREE.CircleGeometry(GRENADE_RADIUS - 0.6, 40).rotateX(-Math.PI / 2),
-  new THREE.MeshBasicMaterial({ color: STENCIL, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
+  new THREE.CircleGeometry(GRENADE_RADIUS - 0.7, 40).rotateX(-Math.PI / 2),
+  new THREE.MeshBasicMaterial({ color: ACCENT, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
 );
 throwRing.add(throwEdge, throwGlow, throwFill);
 throwRing.visible = false;
@@ -908,9 +911,9 @@ function stepItemVisuals(time: number): void {
     const land = grenadeLanding(localMesh!.position, aimPoint.x, aimPoint.z, obstacles);
     throwRing.position.set(land.x, 0.04, land.z);
     const lift = noFireAt(localMesh!.position.x, localMesh!.position.z) ? 0.35 : 1;
-    (throwEdge.material as THREE.MeshBasicMaterial).opacity = (0.75 + 0.25 * pulse) * lift;
-    (throwGlow.material as THREE.MeshBasicMaterial).opacity = (0.18 + 0.12 * pulse) * lift;
-    (throwFill.material as THREE.MeshBasicMaterial).opacity = (0.05 + 0.04 * pulse) * lift;
+    (throwEdge.material as THREE.MeshBasicMaterial).opacity = (0.85 + 0.15 * pulse) * lift;
+    (throwGlow.material as THREE.MeshBasicMaterial).opacity = (0.35 + 0.15 * pulse) * lift;
+    (throwFill.material as THREE.MeshBasicMaterial).opacity = (0.12 + 0.06 * pulse) * lift;
   }
   const showTurretPreview = !dead && !!localMesh && placingTurret;
   turretPreview.visible = showTurretPreview;
@@ -2489,6 +2492,29 @@ document.body.appendChild(evacFadeEl);
 let wonReport: Extract<Report, { type: "attempt" }> | undefined;
 let lastBoard: BoardMessage | undefined;
 let shaftLid = false;
+/**
+ * The freight machinery heard (user 2026-11-08, ADR-080): the blast door
+ * grinds while it moves and seats with a clunk; the platform lurches off
+ * with a clunk and its winch grinds the whole climb, fading out under the
+ * credits as the screen goes dark. Only heard from down there (or riding).
+ */
+let lastEvacStage: EvacStage["stage"] | undefined;
+function stepEvacSound(st: EvacStage | undefined): void {
+  const s = st?.stage;
+  const near = viewLevel === "bottom" ? 1 : 0;
+  const door = s === "opening" ? Math.min(1, st!.k * 12, (1 - st!.k) * 12) : s === "shutting" ? Math.min(1, st!.k * 12, (1 - st!.k) * 12) : 0;
+  audio.setMachine("blastDoor", door * near);
+  let winch = 0;
+  if (s === "rising") winch = Math.min(1, st!.ms / 1500);
+  else if (s === "thanks") winch = Math.max(0, 1 - st!.ms / (THANKS_IN_MS + THANKS_DIM_MS));
+  audio.setMachine("winch", winch * near);
+  if (s !== lastEvacStage && near) {
+    // the door seated (open or shut), the platform lurching off
+    if ((lastEvacStage === "opening" && s === "open") || (lastEvacStage === "shutting" && s === "shut") || (lastEvacStage === "shut" && s === "rising")) audio.clunk(s === "rising" ? 0.8 : 1);
+  }
+  lastEvacStage = s;
+}
+
 function stepEvac(time: number): void {
   const now = serverClock.now();
   const e = objective.active && defenceState.phase === "won" ? defenceState.evac : undefined;
@@ -2501,6 +2527,7 @@ function stepEvac(time: number): void {
     evacView.setInside(lid);
   }
   const st = e ? evacStage(e, now) : undefined;
+  stepEvacSound(st);
   settlement.set(wonReport, lastBoard, myHandle ?? (myId ? codename({ id: myId, color: myColor, handle: myHandle }) : ""));
   const black = settlement.update(st);
   evacFadeEl.style.opacity = `${black}`;
@@ -2541,8 +2568,10 @@ function stepHeliRide(): void {
 function stepRide(): void {
   const p = localMesh?.position;
   const riding = !!p && lift.phase === "moving" && inCar(lift.at, p.x, p.z);
-  const msLeft = Math.max(0, (lift.until ?? 0) - serverClock.now());
-  const rideShake = riding ? Math.min(1, (LIFT_RIDE_MS - msLeft) / 300, msLeft / 400) : 0;
+  // the car stops LIFT_SETTLE_MS before the doors open: the ruler and the shake end there, then a still beat
+  const travelMs = LIFT_RIDE_MS - LIFT_SETTLE_MS;
+  const msLeft = Math.max(0, (lift.until ?? 0) - serverClock.now() - LIFT_SETTLE_MS);
+  const rideShake = riding ? Math.min(1, (travelMs - msLeft) / 300, msLeft / 400) : 0;
   if (rideShake > 0.01) {
     const t = performance.now() / 1000;
     camera.position.x += Math.sin(t * 23) * 0.025 * rideShake;
@@ -2558,7 +2587,7 @@ function stepRide(): void {
       rideFor = until;
       if (down || rideDepth === 0) rideDepth = RIDE_DEPTH_MIN + (until % (RIDE_DEPTH_MAX - RIDE_DEPTH_MIN + 1));
     }
-    const s = rideTravel(1 - msLeft / LIFT_RIDE_MS);
+    const s = rideTravel(1 - msLeft / travelMs);
     const depth = rideDepth * (down ? s : 1 - s);
     // we sink, so the scale climbs past the cursor (and falls past it on the way up)
     rideScale.style.transform = `translateY(${(-depth * RIDE_PX_PER_M).toFixed(1)}px)`;

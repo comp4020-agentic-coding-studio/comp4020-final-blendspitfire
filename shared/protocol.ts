@@ -680,6 +680,8 @@ export interface LiftState {
 export const LIFT_DOOR_MS = 900;
 /** a ride either way (user 2026-11-07: about 10 s, both ways, under an altitude readout) */
 export const LIFT_RIDE_MS = 10000;
+/** the last part of a ride: the car has stopped, a beat before the doors open (user 2026-11-08) */
+export const LIFT_SETTLE_MS = 1200;
 /** how long the car waits before leaving if there's anyone else on that level who might want to come */
 export const LIFT_WAIT_MS = 15000;
 /** ...and if everyone there is already aboard */

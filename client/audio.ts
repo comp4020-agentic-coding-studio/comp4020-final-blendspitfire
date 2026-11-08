@@ -49,6 +49,13 @@ const MUTE_KEY = "blendspitfire.muted";
  * at full speed, quietly, until it stops; heard fully within REACTOR_NEAR
  * of it, gone by REACTOR_FAR.
  */
+/** the freight machinery's loops: [recording, level, playback rate] each, through one low-pass (agent's mix, ADR-080) */
+export const MACHINES = {
+  blastDoor: { loops: [["spinBoiler", 1, 0.45], ["spinFan", 0.35, 0.5]] as [TakeName, number, number][], lowpass: 900, level: 0.9, glide: 0.25 },
+  winch: { loops: [["spinGenerator", 1, 0.55], ["spinBoiler", 0.5, 0.35]] as [TakeName, number, number][], lowpass: 1100, level: 0.75, glide: 0.6 },
+};
+export type MachineName = keyof typeof MACHINES;
+
 const REACTOR_IDLE = 0.15;
 const REACTOR_PEAK = 0.9;
 const REACTOR_HUM = 0.22;
@@ -333,6 +340,66 @@ export class Audio {
     if (on === this.reactorOn) return;
     this.reactorOn = on;
     void this.loaded.then(() => this.driveReactor());
+  }
+
+  /**
+   * The freight machinery (user 2026-11-08: the blast door and the climb were
+   * silent). Each frame main.ts says how hard each machine is working, 0..1:
+   * the blast door grinding (the boiler recording slowed to a heavy rumble
+   * under the fan's whine as its gears) and the platform's winch (the
+   * generator slowed and low-passed, rising a little as it gets going). They
+   * glide to that level; at 0 they're silent. Agent's mix, on /sounds.html too.
+   */
+  setMachine(name: MachineName, work: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.room) return;
+    let m = this.machines.get(name);
+    if (!m) {
+      if (work <= 0) return;
+      const spec = MACHINES[name];
+      const out = ctx.createGain();
+      out.gain.value = 0;
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.value = spec.lowpass;
+      lp.connect(out).connect(this.room);
+      const srcs: AudioBufferSourceNode[] = [];
+      for (const [take, level, rate] of spec.loops) {
+        const buf = takeBuffer(ctx, take);
+        if (!buf) continue;
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.loop = true;
+        src.playbackRate.value = rate;
+        const g = ctx.createGain();
+        g.gain.value = level;
+        src.connect(g).connect(lp);
+        src.start(ctx.currentTime, Math.random() * buf.duration);
+        srcs.push(src);
+      }
+      if (!srcs.length) return;
+      m = { out, srcs, work: 0 };
+      this.machines.set(name, m);
+    }
+    if (Math.abs(work - m.work) < 0.01) return;
+    m.work = work;
+    const t = ctx.currentTime;
+    const spec = MACHINES[name];
+    m.out.gain.setTargetAtTime(work * spec.level, t, spec.glide);
+    // working harder runs it a touch faster
+    m.srcs.forEach((s, i) => s.playbackRate.setTargetAtTime(spec.loops[i]![2] * (0.85 + 0.15 * work), t, spec.glide));
+  }
+  private machines = new Map<MachineName, { out: GainNode; srcs: AudioBufferSourceNode[]; work: number }>();
+
+  /** a heavy steel thud (the blast door seating, the platform lurching off): a punched-down boom, low-passed */
+  clunk(level = 1): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.room) return;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 700;
+    lp.connect(this.room);
+    if (!playTake(ctx, lp, "boomLow", 0.9 * level, { drive: 2, low: 6, sub: 0.8, crack: 0 }, 0.7)) SFX.stampThud(ctx, this.room, level);
   }
 
   private reactorOn = false;

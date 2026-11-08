@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-11-08, payslip formula and the PAID stamp
+Synced from the draft up to: 2026-11-08, speedrun playtest fixes (ring, floor text, lift pauses, freight sounds)
 
 ---
 
@@ -1034,3 +1034,12 @@ Built (agent): `server/room.ts` holds a whole world per site; `server/index.ts` 
 **Decision.** The first formula: income tax 45%, hazard pay clawback 70%, equipment depreciation 80%, company housing 85%, cargo insurance 90%, administration fee 50%, then the freight lift fare $15 and the morale programme $9.99. The reveal is the PAID stamp.
 
 **Why.** The developer's choice; the stamp matches the seal's rubber-stamp look. The agent's details, awaiting the developer's look: flat fees stop at zero so net pay is never negative; a won run is at least 800 points, so real payslips land around $70–$250 (1650 points pays $179.19); the payslip page grows from 13 s to 16 s (gross at 0.6 s, a cut every second from 1.5 s, the rule, 2.5 s of pause, the net turning big and green, the stamp 0.6 s later with a synthesised thud and a small shake). Preview without a run: `/?payslip=14000&freeze&score=1650`.
+
+## ADR-080: Speedrun playtest fixes: a brighter grenade ring, painted floor words, lift pauses, freight sounds
+*2026-11-08 · Status: Accepted, built (awaiting the developer's look and ears)*
+
+**Context.** The developer played a short local run (two waves) and listed: the grenade aim ring is too faint; the tutorial's floor words on a dark rounded plate look out of place; the lift should pause at the bottom before its doors open; the freight lift should wait a second after its door shuts before rising; the blast door opening and the climb make no sound. They also decided README and PROCESS stay at their current length.
+
+**Decision.** All five fixed as asked; the how is the agent's.
+
+**Why.** The developer's list. The agent's details, awaiting review: the ring was drawn additively in the dark stencil grey, which barely brightens anything; it is now the cyan "can act" signal colour with a thicker edge and stronger fill. The floor words lose the plate and are painted straight on the floor in hazard yellow with a faint dark edge and a few seeded scuffs. The lift still takes 10 s, but the car stops 1.2 s before the doors open (the ruler and the shake end there). The freight timeline gains a "shut" stage of 1 s between the door closing and the platform moving. Sounds, built from the CC0 recordings already in the game: the blast door grinds (boiler loop slowed, fan loop as gears, low-passed) while it moves and seats with a heavy clunk (the low boom slowed and dulled); the platform lurches off with a clunk and its winch grinds (generator and boiler loops, slowed) the whole climb, fading out as the credits go dark. All three are on /sounds.html.

@@ -96,6 +96,10 @@ export const EVAC_DOOR_MS = 9000;
 export const FREIGHT_BOARD_MS = 20000;
 /** the door shutting again behind the platform */
 export const EVAC_SHUT_MS = 4000;
+/** the door shut, a still second before the platform starts up (user 2026-11-08) */
+export const EVAC_HOLD_MS = 1000;
+/** from boarding closing to the platform moving */
+export const EVAC_RISE_DELAY_MS = EVAC_SHUT_MS + EVAC_HOLD_MS;
 /** the settlement's pages, played while the platform rises */
 export const SETTLE_PAGES_MS = [11000, 16000, 9000] as const;
 export const RISE_MS = SETTLE_PAGES_MS.reduce((a, b) => a + b, 0);
@@ -123,6 +127,8 @@ export type EvacStage =
   | { stage: "open" }
   | { stage: "boarding"; left: number }
   | { stage: "shutting"; k: number }
+  /** the door is shut, the platform has not moved yet */
+  | { stage: "shut" }
   /** page 0..2 of the settlement, `k` 0..1 through it; `fade` 0..1 at the end */
   | { stage: "rising"; ms: number; page: number; k: number; fade: number }
   | { stage: "thanks"; ms: number; k: number }
@@ -136,7 +142,8 @@ export function evacStage(e: EvacState, now: number): EvacStage {
   if (now < e.boardBy) return { stage: "boarding", left: e.boardBy - now };
   const shutAt = e.shutAt ?? e.boardBy;
   if (now < shutAt + EVAC_SHUT_MS) return { stage: "shutting", k: (now - shutAt) / EVAC_SHUT_MS };
-  const rise = now - (shutAt + EVAC_SHUT_MS);
+  if (now < shutAt + EVAC_RISE_DELAY_MS) return { stage: "shut" };
+  const rise = now - (shutAt + EVAC_RISE_DELAY_MS);
   if (rise < RISE_MS) {
     let page = 0;
     let start = 0;

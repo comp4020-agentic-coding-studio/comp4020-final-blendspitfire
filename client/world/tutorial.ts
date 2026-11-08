@@ -66,25 +66,11 @@ function floorText(i: number, touch: boolean): THREE.Mesh {
   canvas.height = h * PX;
   const ctx = canvas.getContext("2d")!;
   ctx.scale(PX, PX);
-  // the plate: painted on, edges a touch worn (stepped corners, like the UI's frames)
-  ctx.fillStyle = hex(RUBBER.shade);
-  const c = 0.12;
-  ctx.beginPath();
-  ctx.moveTo(c, 0);
-  ctx.lineTo(w - c, 0);
-  ctx.lineTo(w - c, c);
-  ctx.lineTo(w, c);
-  ctx.lineTo(w, h - c);
-  ctx.lineTo(w - c, h - c);
-  ctx.lineTo(w - c, h);
-  ctx.lineTo(c, h);
-  ctx.lineTo(c, h - c);
-  ctx.lineTo(0, h - c);
-  ctx.lineTo(0, c);
-  ctx.lineTo(c, c);
-  ctx.closePath();
-  ctx.fill();
+  // no plate (user 2026-11-08: the dark rounded plate looked out of place): the
+  // words are painted straight on the floor like road markings, with a thin
+  // dark edge under the paint so they still read on pale concrete
   const paint = hex(HAZARD.light);
+  const edge = hex(RUBBER.shade);
   ctx.fillStyle = paint;
   ctx.strokeStyle = paint;
   ctx.lineJoin = "miter";
@@ -97,6 +83,12 @@ function floorText(i: number, touch: boolean): THREE.Mesh {
     ctx.save();
     ctx.translate(w / 2, y);
     ctx.scale(fit, 1);
+    ctx.lineWidth = weight + 0.07;
+    ctx.strokeStyle = edge;
+    ctx.globalAlpha = 0.55;
+    ctx.strokeText(s, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = paint;
     ctx.lineWidth = weight;
     ctx.strokeText(s, 0, 0);
     ctx.fillText(s, 0, 0);
@@ -104,6 +96,16 @@ function floorText(i: number, touch: boolean): THREE.Mesh {
   };
   line(`${i + 1}/${LESSONS.length} ${t.title.toUpperCase()}`, 1.15, 0.75, 0.05);
   rows.forEach((r, k) => line(r, 1.0, 1.95 + k * 1.0, 0.035));
+  // worn paint: small scuffs where boots go, the floor showing through (seeded, same on every client)
+  const wear = (k: number): number => (((Math.sin(k * 127.1 + i * 311.7) * 43758.5453) % 1) + 1) % 1;
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.fillStyle = "#000";
+  for (let k = 0; k < 40; k++) {
+    ctx.globalAlpha = 0.25 + 0.45 * wear(k * 3 + 2);
+    ctx.fillRect(wear(k * 3) * w, wear(k * 3 + 1) * h, 0.08 + 0.25 * wear(k * 5), 0.06 + 0.06 * wear(k * 7));
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = "source-over";
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;

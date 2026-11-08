@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { CAMERA_ALTITUDE, CAMERA_FOV, configureRenderer, crawlerEyes, lampHalos, setupLighting } from "./look.ts";
 import { brute, character, crawler, floorSlab, runner } from "./models/index.ts";
-import { BRUTE_SCALE, EVAC_SHUT_MS, type EvacState } from "../shared/enemies.ts";
+import { BRUTE_SCALE, EVAC_RISE_DELAY_MS, type EvacState } from "../shared/enemies.ts";
 import { EvacView, SHAFT_AREA } from "./world/evac.ts";
 import { ASSETS } from "./models/registry.ts";
 import { REACTOR_LIVE, REACTOR_STANDBY, buildFacility, reactorCore } from "./models/facility.ts";
@@ -138,7 +138,7 @@ function facilityView(): void {
   // a clock for the stage: "rise" starts the climb at &at= ms in (so its pages and shaft can be judged)
   // &freeze holds the stage at &at= (for stills)
   const evacClock = (): number => (params.has("freeze") ? 0 : clock.getElapsedTime() * 1000);
-  const evacNow = (): number => (evacMode === "rise" ? -1e7 + EVAC_SHUT_MS + evacAt + evacClock() : evacMode === "opening" ? evacAt + evacClock() : 0);
+  const evacNow = (): number => (evacMode === "rise" ? -1e7 + EVAC_RISE_DELAY_MS + evacAt + evacClock() : evacMode === "opening" ? evacAt + evacClock() : 0);
   const visibility = new VisibilityMask(sightBlockers(WALLS.filter((w) => w !== BLAST_DOOR), FIXTURES), SOLID, SIGHT_BOUNDS);
   const masked = close && !params.has("nomask");
   if (masked) post.setMask(visibility.postMask(FACILITY_WALL_HALF_HEIGHT * 2 - 0.05));

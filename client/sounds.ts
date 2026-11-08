@@ -197,3 +197,26 @@ for (const [title, list] of GROUPS) {
   }
 }
 audio.setZone(zone);
+
+// the freight machinery (ADR-080): each runs for a few seconds the way the game drives it
+const freight = document.createElement("h2");
+freight.textContent = "IN GAME: the freight lift's blast door and winch (CC0 machine loops slowed down), and the clunk";
+sheet.append(freight);
+const runMachine = (name: "blastDoor" | "winch", ms: number): void => {
+  audio.setMachine(name, 1);
+  setTimeout(() => audio.setMachine(name, 0), ms);
+};
+for (const [label, what, play] of [
+  ["blast door", "grinding open (4 s here, 9 s in game), then seating with a clunk", () => { runMachine("blastDoor", 4000); setTimeout(() => audio.clunk(), 4000); }],
+  ["winch", "the platform lurching off with a clunk, then grinding up (6 s here, the whole settlement in game)", () => { audio.clunk(0.8); runMachine("winch", 6000); }],
+  ["clunk", "the door seating / the platform lurching off", () => audio.clunk()],
+] as const) {
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML = `<b>${label}</b><span class="what">${what}</span>`;
+  const b = document.createElement("button");
+  b.textContent = "▶ play";
+  b.onclick = play;
+  row.append(b);
+  sheet.append(row);
+}

@@ -20,7 +20,7 @@ import {
   resolveObstacles,
   type LiftLevel,
 } from "../shared/protocol.ts";
-import { EVAC_DOOR_MS, EVAC_SHUT_MS, RISE_MS, SETTLE_PAGES_MS, THANKS_MS, blastDoorOpen, evacStage } from "../shared/enemies.ts";
+import { EVAC_DOOR_MS, EVAC_RISE_DELAY_MS, EVAC_SHUT_MS, RISE_MS, SETTLE_PAGES_MS, THANKS_MS, blastDoorOpen, evacStage } from "../shared/enemies.ts";
 import { PAY_PER_POINT, payslip } from "../client/ui/settlement.ts";
 
 // The lift between the garden and the facility: a state machine on the
@@ -198,7 +198,8 @@ describe("the way out after a win", () => {
     const go = { doorAt: 0, boardBy: 50_000, shutAt: 50_000 };
     expect(evacStage(go, 40_000).stage).toBe("boarding");
     expect(evacStage(go, 51_000).stage).toBe("shutting");
-    const riseAt = 50_000 + EVAC_SHUT_MS;
+    expect(evacStage(go, 50_000 + EVAC_SHUT_MS + 10).stage).toBe("shut");
+    const riseAt = 50_000 + EVAC_RISE_DELAY_MS;
     const pages = [0, SETTLE_PAGES_MS[0], SETTLE_PAGES_MS[0] + SETTLE_PAGES_MS[1]].map((ms) => evacStage(go, riseAt + ms + 10));
     expect(pages.map((p) => (p.stage === "rising" ? p.page : -1))).toEqual([0, 1, 2]);
     expect(evacStage(go, riseAt + RISE_MS + 10).stage).toBe("thanks");
