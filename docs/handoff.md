@@ -5,7 +5,7 @@
 Updated: 2026-11-08 evening (ADR-079..083 BUILT; power-up sound dropped (user); game to be finished tonight; local main ahead of origin, NOT pushed; speedrun server :8095)
 
 ## Where we are
-- Final project due 2026-11-09 12:00. Crit 10 shipped (tag `crit-10`). origin/main is at 7d57005; everything after is local only (a push deploys: only when the user says).
+- Final project due 2026-11-09 12:00. Pushed and deployed c42271a (2026-11-08 22:10, live version 0.1.0-c42271a, CI green). One local commit after it NOT pushed: refused joins close at once behind Fly (fixes a 5 s wait seen live; awaiting the user's OK to push).
 - The game is feature-complete; the user is playtesting via the speedrun server and flagging fixes one at a time. Everything since 2026-11-03 is in ADR-060..083.
 - Branch `surface` is merged into main; still present locally (ask before deleting).
 - Commit finished+verified work without asking (CLAUDE.md). Never push unasked.
@@ -56,7 +56,7 @@ Updated: 2026-11-08 evening (ADR-079..083 BUILT; power-up sound dropped (user); 
 - Tests: spec/*.test.ts (195; rooms.test.ts covers sites: listing, isolation, cap 4, gone). They run against whatever answers on :8080 (APP_URL overrides). A DEV_JOIN/DEV_ARMED server there fails multiuser 'take what another is holding': run `PORT=8091 DB_PATH=/tmp/blendspitfire-test.db node server/index.ts` and `APP_URL=http://localhost:8091 pnpm check` instead. defence.test.ts covers won/blackout/hunt + ready vote; lift.test.ts the won/blackout lift; economy.test.ts shop + dressing + gore caps; tutorial.test.ts layout + lessons. multiuser/robustness tests join as returning players (rejoin()) or walk east, since a fresh cookie lands in the tutorial.
 
 ## Next work (ordered; due 2026-11-09 12:00)
-1. Before submission (due 2026-11-09 12:00): the user says when to push (a push to main deploys). Then run comp4020:preflight. 7+ commits ahead of origin.
+1. Push the "refused joins close at once" commit when the user OKs it, then rerun `APP_URL=https://comp4020-final-blendspitfire.fly.dev pnpm check`. Known: multiuser "take what another is holding" fails ONLY against live (fixed 55 ms walk steps, 1 s wait vs ~300 ms round trips): test timing, not a game bug; CI checks against localhost and passes.
 2. Awaiting the user's look/ears, nothing queued: payslip (ADR-079; all figures to the cent, ADR-084), speedrun fixes (ADR-080: ring, floor words, lift pauses, freight sounds), no attempt on screen (ADR-081), blast door sound (ADR-082), freight cargo two blocks at the sides (ADR-084, replaced ADR-083's 2x2), solo bonus number (ADR-078). Anything they flag is the next work.
 3. MAYBE, user's call (not committed to): during the ride down, a mission briefing as black-and-white icon slides in the pixel-logo style: activate the reactor > clear hostiles (branch: call HQ for supply) > restore power, raise the freight lift.
 - Settled (no work): README/PROCESS stay as they are (user 2026-11-08); no facility power-up sound (user 2026-11-08); blackout lift stays locked; no new shop items; /gallery.html stays in prod; quota shared; turret 40 / cap 8.
