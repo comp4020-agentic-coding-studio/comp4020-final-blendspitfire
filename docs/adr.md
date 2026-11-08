@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-11-08, freight cargo as four equipment heaps
+Synced from the draft up to: 2026-11-08, cargo back to two blocks at the sides; payslip to the cent
 
 ---
 
@@ -1070,3 +1070,12 @@ Built (agent): `server/room.ts` holds a whole world per site; `server/index.ts` 
 **Decision.** The developer's spec: equipment only; four heaps in a 2x2; no clear aisle between them, but room to squeeze through.
 
 **Why.** The developer's call. The agent's layout, awaiting review: heaps 5 x 2.5 m with 1 m squeezes (a player is 0.8 m wide); the back pair sits 0.8 m west of the front pair so the north-south squeeze doglegs rather than reading as an aisle; 1 m behind, about 2 m at the sides, and 3.6 m clear at the front for the crew. The back heaps are tall (cabinets, racks, chassis towers), the front ones low (monitors, modules, the antenna, reels) so the back is seen over them. Each heap is arranged differently; the tarp stays on one back heap instead of spilling into a squeeze. The munitions are off the lift (their models stay on the model sheet). Anyone forced aboard is put in the front strip first. Checked: both squeezes and the band between the rows are walkable, and there are 23 boarding spots for at most four players.
+
+## ADR-084: The cargo goes back to its two blocks, at the sides; the payslip shows cents throughout
+*2026-11-08 · Status: Accepted, built (awaiting the developer's look); supersedes ADR-083's layout*
+
+**Context.** Having seen the four-heap 2x2 (ADR-083), the developer asked for the previous cargo back (the munitions block and the equipment block), but placed at the two sides with the middle left empty. They also asked that the payslip's figures either all carry decimals or none do; it mixed whole dollars with $9.99 and a net in cents.
+
+**Decision.** The two original blocks (each 5.4 x 7.5 m) stand against the west and east railings; the middle 4.6 m is empty from the door to the back wall. Every payslip figure is shown to the cent.
+
+**Why.** The developer's calls. The agent chose cents over whole dollars because the $9.99 fee and a small net only read right with them, and a payslip to the cent looks like a real one. Checked: 38 boarding spots on the platform; the panel post is clear of the east block.

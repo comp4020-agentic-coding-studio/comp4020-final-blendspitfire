@@ -41,10 +41,8 @@ const SOUND_CREDITS =
   '<div class="cast solo dim">CC0 / public domain, via OpenGameArt</div></div>';
 
 const money = (n: number): string => {
-  const a = Math.abs(n);
-  // cents only where there are some under $1,000 (the $9.99 fee, the net), whole dollars otherwise
-  const c = a < 1000 && Math.round(a * 100) % 100 !== 0 ? 2 : 0;
-  return `${n < 0 ? "−" : ""}$${a.toLocaleString("en-US", { minimumFractionDigits: c, maximumFractionDigits: c })}`;
+  // every figure to the cent, like a real payslip (user 2026-11-08: all with decimals or none)
+  return `${n < 0 ? "−" : ""}$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 const pct = (a: number, b: number): string => (b ? `${Math.round((a / b) * 100)}%` : "—");
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));

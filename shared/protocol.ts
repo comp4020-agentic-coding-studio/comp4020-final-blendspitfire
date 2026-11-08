@@ -843,32 +843,24 @@ export const FREIGHT_PANEL = { x: FREIGHT.maxX - 0.35, z: FREIGHT.maxZ - 0.7 };
 export const FREIGHT_PANEL_BODY: Obstacle = { x: FREIGHT_PANEL.x, z: FREIGHT_PANEL.z, halfX: 0.25, halfZ: 0.25, halfHeight: 0.5 };
 /**
  * The cargo: the point of the whole job (user 2026-11-04: in the setting
- * the reactor is only there to power this lift). User 2026-11-08: all of
- * it machinery and information equipment (no munitions), and not one heap
- * against the back (it felt cramped, "up against your head") but four
- * heaps in a 2x2, no clear aisle between them but room to squeeze through.
- * The back pair (taller: cabinets, racks) and the front pair (lower) are
- * offset 0.8 m east-west so the gap between them doglegs instead of
- * running straight; a strip behind, room at the sides, and the front of
- * the platform clear for the crew. Solid to walk into, under sight height
- * so they're seen over (models: client/world/evac.ts deck()).
+ * the reactor is only there to power this lift). Two lashed-down blocks,
+ * munitions west and equipment east, from the back of the platform to
+ * within 3 m of its front. User 2026-11-08: one heap in the middle felt
+ * cramped, so the blocks stand against the two side railings with the
+ * middle left empty, the platform open from the door to the back wall.
+ * Solid to walk into, and under sight height so they're seen over
+ * (models: client/world/evac.ts deck()).
  */
-/** one heap's footprint, w x d */
-export const CARGO_W = 5.0;
-export const CARGO_D = 2.5;
-/** the squeeze between heaps: wider than a player (0.8), narrower than a walkway */
-export const CARGO_GAP = 1.0;
-const cargoHeap = (x: number, z: number): Obstacle => ({ x, z, halfX: CARGO_W / 2, halfZ: CARGO_D / 2, halfHeight: 0.9 });
-const CARGO_MID_X = (FREIGHT.minX + FREIGHT.maxX) / 2;
-const CARGO_BACK_Z = FREIGHT.minZ + 1.0 + CARGO_D / 2;
-const CARGO_FRONT_Z = CARGO_BACK_Z + CARGO_D + CARGO_GAP;
-const CARGO_SHIFT = 0.4;
-/** back west, back east, front west, front east */
+/** each block's width (munitions, equipment) and depth */
+export const CARGO_W = 5.4;
+export const CARGO_D = 7.5;
+/** clear of the side railings */
+const CARGO_SIDE = 0.2;
+const cargoBlock = (x: number): Obstacle => ({ x, z: FREIGHT.minZ + 0.25 + CARGO_D / 2, halfX: CARGO_W / 2, halfZ: CARGO_D / 2, halfHeight: 0.9 });
+/** munitions (west), equipment (east) */
 export const FREIGHT_CARGO: Obstacle[] = [
-  cargoHeap(CARGO_MID_X - CARGO_SHIFT - (CARGO_W + CARGO_GAP) / 2, CARGO_BACK_Z),
-  cargoHeap(CARGO_MID_X - CARGO_SHIFT + (CARGO_W + CARGO_GAP) / 2, CARGO_BACK_Z),
-  cargoHeap(CARGO_MID_X + CARGO_SHIFT - (CARGO_W + CARGO_GAP) / 2, CARGO_FRONT_Z),
-  cargoHeap(CARGO_MID_X + CARGO_SHIFT + (CARGO_W + CARGO_GAP) / 2, CARGO_FRONT_Z),
+  cargoBlock(FREIGHT.minX + CARGO_SIDE + CARGO_W / 2),
+  cargoBlock(FREIGHT.maxX - CARGO_SIDE - CARGO_W / 2),
 ];
 export const inFreight = (x: number, z: number, margin = 0): boolean => inRect(FREIGHT, x, z, margin);
 
