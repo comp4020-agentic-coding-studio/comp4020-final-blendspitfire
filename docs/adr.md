@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-11-08, blast door sound and warning picked, impact on the stop
+Synced from the draft up to: 2026-11-08, freight cargo as four equipment heaps
 
 ---
 
@@ -1061,3 +1061,12 @@ Built (agent): `server/room.ts` holds a whole world per site; `server/index.ts` 
 **Decision.** The door plays B2 so that the impact lands exactly when the door stops, opening (9 s) or shutting (4 s); the warning repeats every 1.8 s while the door moves.
 
 **Why.** The developer's picks and condition. The agent's details: the recording's impact onset was measured at 1.924 s (4.81 s at 0.4x); the door moves linearly, so the sound starts 4.19 s after the door does. The octave-down copy is aligned on the same impact (in the version auditioned it hit 4.8 s late, a second blow). Joining mid-move, or the shorter shut, starts the recording partway in so the impact still lands on the stop. The synthesised clunk on the door seating is dropped (the recording's impact replaces it) and stays only for the platform lurching off; the earlier grind loop stays underneath at a lower level. The warning beats on a grid from the move's start on the server's clock, so everyone hears it together, and stays quiet in the last 0.3 s. Checked in a real run: the browser scheduled the sound 19 ms after the door started and its stop time matched the server's (door start + 9000 ms).
+
+## ADR-083: The freight cargo becomes four equipment heaps in a 2x2
+*2026-11-08 · Status: Accepted, built (awaiting the developer's look)*
+
+**Context.** The cargo was one lashed-down heap against the back of the freight platform, munitions west and equipment east, over more than half its area. Playing it, the developer found the arrangement oddly uncomfortable, as if it were right up against your head, and wanted it all to be the machinery and information equipment of the east half.
+
+**Decision.** The developer's spec: equipment only; four heaps in a 2x2; no clear aisle between them, but room to squeeze through.
+
+**Why.** The developer's call. The agent's layout, awaiting review: heaps 5 x 2.5 m with 1 m squeezes (a player is 0.8 m wide); the back pair sits 0.8 m west of the front pair so the north-south squeeze doglegs rather than reading as an aisle; 1 m behind, about 2 m at the sides, and 3.6 m clear at the front for the crew. The back heaps are tall (cabinets, racks, chassis towers), the front ones low (monitors, modules, the antenna, reels) so the back is seen over them. Each heap is arranged differently; the tarp stays on one back heap instead of spilling into a squeeze. The munitions are off the lift (their models stay on the model sheet). Anyone forced aboard is put in the front strip first. Checked: both squeezes and the band between the rows are walkable, and there are 23 boarding spots for at most four players.

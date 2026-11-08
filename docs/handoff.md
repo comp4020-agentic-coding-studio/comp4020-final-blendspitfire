@@ -2,7 +2,7 @@
 
 > **AI-recorded.** Written and kept current automatically by the coding agent (Claude Code) as its session-to-session handoff, not written by hand. Terse on purpose: it's for the next agent session to pick up from. Decision history lives in [adr.md](adr.md).
 
-Updated: 2026-11-08 (ADR-079..082 BUILT; blast door = door_liftdoor.wav at 0.4x, impact aligned to the stop (audio.ts doorHit, DOOR_HIT_S 1.924), warning = alarm_short.wav every DOOR_ALARM_EVERY_MS; WAITING on user to pick the facility power-up on /sounds.html (trial_power_*.wav, sheet only); local main ahead of origin, NOT pushed; speedrun server :8095)
+Updated: 2026-11-08 evening (ADR-079..083 BUILT; power-up sound dropped (user); game to be finished tonight; local main ahead of origin, NOT pushed; speedrun server :8095)
 
 ## Where we are
 - Crit 10 shipped (tag `crit-10` on origin at de1932b). Final project due 2026-11-09 12:00.
@@ -71,7 +71,7 @@ Updated: 2026-11-08 (ADR-079..082 BUILT; blast door = door_liftdoor.wav at 0.4x,
 5. Before the showcase: decide whether to push (deploys). Push only when the user says. Run comp4020:preflight before submission.
 6. README/PROCESS: user 2026-11-08: leave them at their current length, no more work.
 7. LIFT RIDE: DONE (ADR-078), awaiting user look. ADR-080: LIFT_SETTLE_MS 1200 = last part of the 10 s ride standing still (stepRide travelMs). Freight: EVAC_HOLD_MS 1000 "shut" stage (EVAC_RISE_DELAY_MS). Sounds: audio.ts setMachine(MACHINES blastDoor|winch, work 0..1) + clunk(), driven by main.ts stepEvacSound(st); on /sounds.html. Grenade ring = ACCENT; tutorial floorText has no plate (paint + dark edge + scuffs). LIFT_RIDE_MS 10000 both ways (user). main.ts stepRide(): altitude ruler (.ui-ride-window/.ui-ride-scale ticks every 10 m, figures every 50 m, RIDE_PX_PER_M 1.6) scrolls past a fixed cursor, number below; rideTravel(t) accel/cruise/brake RIDE_ACCEL 0.22; depth RIDE_DEPTH_MIN..MAX 470-530 from lift.until (same for the whole car), going up runs from that depth to 0. Bot-verified -1 .. -480 m smooth.
-7b. FREIGHT CARGO REDO (user 2026-11-08, queued, not started): all cargo = the machinery/info-equipment kind (today's east half, client/models/cargo.ts equipmentCargo), none of the munitions; current single heap against the back feels cramped ("顶到头"); instead a 2x2 (田) of four heaps on the platform, no clean aisle between them but a player can squeeze through. Touches shared/protocol.ts FREIGHT_CARGO (4 obstacles), client/world/evac.ts deck(), cargo.ts. Check the panel post, boarding (everyone must fit) and the sight mask.
+7b. FREIGHT CARGO: DONE (ADR-083), awaiting user look: shared/protocol.ts FREIGHT_CARGO = 4 heaps (CARGO_W 5 x CARGO_D 2.5, CARGO_GAP 1, back pair 0.8 west of front), client/models/cargo.ts equipmentHeap(w, d, variant 0..3) (munitionsCargo/equipmentCargo removed), evac.ts deck() places them; server freightSpot() fills the front strip first. Judge: /gallery.html?facility&x=-5&z=-24&evac=open&live&high.
 8. MAYBE, user's later choice (not committed to): during the ride down, a short mission briefing as simple black-and-white icon slides, same style as the pixel logo: activate the reactor > clear hostiles (branch down: call HQ for supply) > restore power, raise the freight lift.
 - Settled (no work): blackout lift stays locked; no new shop items; lighting option C and garden-guides overlap left as is; /gallery.html stays in prod.
 

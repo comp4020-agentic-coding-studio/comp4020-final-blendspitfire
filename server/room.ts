@@ -403,7 +403,8 @@ export function createRoom(id: string, hooks: RoomHooks): Room {
 
   /** somewhere free on the freight platform, back from the door */
   function freightSpot(taken: { x: number; z: number }[]): { x: number; z: number } {
-    for (let z = FREIGHT.minZ + 2.5; z <= FREIGHT.maxZ - 1; z += 1.2) {
+    // the clear strip at the front first (in front of the heaps), then anywhere free
+    for (let z = FREIGHT.maxZ - 1.2; z >= FREIGHT.minZ + 0.6; z -= 1.2) {
       for (let x = FREIGHT.minX + 2; x <= FREIGHT.maxX - 2; x += 1.2) {
         if (overlapsAnyObstacle(x, z, PLAYER_RADIUS, [...FREIGHT_CARGO, FREIGHT_PANEL_BODY])) continue;
         if (taken.every((t) => Math.hypot(t.x - x, t.z - z) > 1)) return { x, z };

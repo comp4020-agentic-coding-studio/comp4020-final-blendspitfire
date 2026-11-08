@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { CONCRETE_DARK, EMIT_AMBER, HAZARD, PAINT_ASH, PAINT_CHARCOAL, PAINT_OXIDE, RUBBER, STEEL } from "../../shared/palette.ts";
-import { BLAST_DOOR, FACILITY_WALL_HALF_HEIGHT, FREIGHT, CARGO_W, FREIGHT_CARGO, FREIGHT_PANEL, FREIGHT_SHAFT, FREIGHT_WALLS } from "../../shared/protocol.ts";
-import { equipmentCargo, munitionsCargo } from "../models/cargo.ts";
+import { BLAST_DOOR, FACILITY_WALL_HALF_HEIGHT, FREIGHT, CARGO_D, CARGO_W, FREIGHT_CARGO, FREIGHT_PANEL, FREIGHT_SHAFT, FREIGHT_WALLS } from "../../shared/protocol.ts";
+import { equipmentHeap } from "../models/cargo.ts";
 import { RISE_MS, blastDoorOpen, evacStage, type EvacState } from "../../shared/enemies.ts";
 import { glow } from "../look.ts";
 import { lampFixture } from "../models/facility.ts";
@@ -110,18 +110,16 @@ function deck(): THREE.Group {
   parts.push(part(box(0.5, 1.0, 0.5), STEEL.base, FREIGHT_PANEL.x, 0.5, FREIGHT_PANEL.z));
   parts.push(part(box(0.4, 0.04, 0.4), HAZARD.base, FREIGHT_PANEL.x, 1.02, FREIGHT_PANEL.z));
   const g = multiMesh({ matte: [merge(parts, "ground", 0.4)] });
-  // the cargo: one heap, the two halves hard up against each other
-  const [heap] = FREIGHT_CARGO;
-  const halves = [heap.x - CARGO_W / 2 - 0.025, heap.x + CARGO_W / 2 + 0.025];
-  const ammo = munitionsCargo(CARGO_W, heap.halfZ * 2);
-  ammo.position.set(halves[0], 0, heap.z);
-  const kit = equipmentCargo(CARGO_W, heap.halfZ * 2);
-  kit.position.set(halves[1], 0, heap.z);
-  g.add(ammo, kit);
-  // the load's own light: a warm work lamp's pool over each half, so it's what the eye goes to
-  for (const x of halves) {
+  // the cargo: four equipment heaps in a 2x2 (user 2026-11-08), the back pair taller
+  FREIGHT_CARGO.forEach((heap, i) => {
+    const m = equipmentHeap(CARGO_W, CARGO_D, i);
+    m.position.set(heap.x, 0, heap.z);
+    g.add(m);
+  });
+  // the load's own light: a warm work lamp's pool over each pair, so it's what the eye goes to
+  for (const [a, b] of [[0, 2], [1, 3]]) {
     const pool = new THREE.PointLight(0xffe2b8, 18, 9, 1.4);
-    pool.position.set(x, 2.8, heap.z + 0.4);
+    pool.position.set((FREIGHT_CARGO[a].x + FREIGHT_CARGO[b].x) / 2, 2.8, (FREIGHT_CARGO[a].z + FREIGHT_CARGO[b].z) / 2);
     g.add(pool);
   }
   // and a small one over the panel, so the way to start it is findable at the door
