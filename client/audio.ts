@@ -51,7 +51,7 @@ const MUTE_KEY = "blendspitfire.muted";
  */
 /** the freight machinery's loops: [recording, level, playback rate] each, through one low-pass (agent's mix, ADR-080) */
 export const MACHINES = {
-  blastDoor: { loops: [["spinBoiler", 1, 0.45], ["spinFan", 0.35, 0.5]] as [TakeName, number, number][], lowpass: 900, level: 0.9, glide: 0.25 },
+  blastDoor: { loops: [["spinBoiler", 1, 0.45], ["spinFan", 0.35, 0.5]] as [TakeName, number, number][], lowpass: 1400, level: 1.6, glide: 0.25 },
   winch: { loops: [["spinGenerator", 1, 0.55], ["spinBoiler", 0.5, 0.35]] as [TakeName, number, number][], lowpass: 1100, level: 0.75, glide: 0.6 },
 };
 export type MachineName = keyof typeof MACHINES;
@@ -324,6 +324,25 @@ export class Audio {
   }
 
   /** a recorded take at the listener (the sound sheet) */
+  /** a file not in TAKES (recordings on trial, the sound sheet only): fetched and decoded on first play */
+  async playFile(path: string, level = 1, rate = 1): Promise<void> {
+    const ctx = this.ctx;
+    if (!ctx || !this.room) return;
+    let buf = this.files.get(path);
+    if (!buf) {
+      buf = await ctx.decodeAudioData(await (await fetch(path)).arrayBuffer());
+      this.files.set(path, buf);
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = rate;
+    const g = ctx.createGain();
+    g.gain.value = level;
+    src.connect(g).connect(this.room);
+    src.start();
+  }
+  private files = new Map<string, AudioBuffer>();
+
   playTake(name: TakeName, level = 1, punch?: Punch): void {
     if (this.ctx && this.room) playTake(this.ctx, this.room, name, level, punch);
   }

@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-11-08, speedrun playtest fixes (ring, floor text, lift pauses, freight sounds)
+Synced from the draft up to: 2026-11-08, no attempt count on screen; louder blast door
 
 ---
 
@@ -1043,3 +1043,12 @@ Built (agent): `server/room.ts` holds a whole world per site; `server/index.ts` 
 **Decision.** All five fixed as asked; the how is the agent's.
 
 **Why.** The developer's list. The agent's details, awaiting review: the ring was drawn additively in the dark stencil grey, which barely brightens anything; it is now the cyan "can act" signal colour with a thicker edge and stronger fill. The floor words lose the plate and are painted straight on the floor in hazard yellow with a faint dark edge and a few seeded scuffs. The lift still takes 10 s, but the car stops 1.2 s before the doors open (the ruler and the shake end there). The freight timeline gains a "shut" stage of 1 s between the door closing and the platform moving. Sounds, built from the CC0 recordings already in the game: the blast door grinds (boiler loop slowed, fan loop as gears, low-passed) while it moves and seats with a heavy clunk (the low boom slowed and dulled); the platform lurches off with a clunk and its winch grinds (generator and boiler loops, slowed) the whole climb, fading out as the credits go dark. All three are on /sounds.html.
+
+## ADR-081: No attempt count on screen; a louder blast door, and sounds on trial for it
+*2026-11-08 · Status: Accepted, built; door sounds awaiting the developer's pick*
+
+**Context.** The developer noticed the scoreboard still shows "run: attempt N" and remembered that repeated attempts are no longer the design. Since sites (ADR-072) a site is one-off; a wiped crew can still start again in the same site, so the server keeps counting, but the scoreboard is global and the line only reflected whichever site touched it last. Separately, the developer asked for two more sounds when the blast door opens (the whole facility's power coming on, and an engineering-style warning, not a siren), a louder door, and for more recordings to be found.
+
+**Decision.** Every player-facing "attempt" goes: the scoreboard loses the run line, won runs show their date instead of an attempt count, the attempt report says "shift failed" and drops the number, the settlement shows the site and the payslip's contract number is the site's code, and the remaining prompts say "shift" (matching "shift report"). The counter, logs and database stay. The door's grind is raised (0.9 to 1.6, brighter) and its seating clunk is stronger now. Candidates for the power-up, the warning and a louder door are on /sounds.html under "on trial" for the developer to pick.
+
+**Why.** The developer's reading of the design; the wording is the agent's. No CC0 recording found was clearly an industrial warning, so three synthesised ones (a low two-tone horn, a reversing beeper, a PA chime) sit beside three recorded alarms; the power-up has a real circuit breaker, an electric swell and both together; the door has four recordings. The trial files are not loaded by the game.

@@ -2,7 +2,7 @@
 
 > **AI-recorded.** Written and kept current automatically by the coding agent (Claude Code) as its session-to-session handoff, not written by hand. Terse on purpose: it's for the next agent session to pick up from. Decision history lives in [adr.md](adr.md).
 
-Updated: 2026-11-08 (ADR-079 payslip + ADR-080 speedrun fixes BUILT, awaiting user; ADR synced to ADR-080; local main ahead of origin, NOT pushed; speedrun server on :8095)
+Updated: 2026-11-08 (ADR-079..081 BUILT; WAITING on user to pick door-opening power-up / warning / door sounds on /sounds.html "on trial" (public/sfx/trial_*.wav, not loaded by the game; wire the picks via TAKES + stepEvacSound, credit in CREDITS.md + SOUND_CREDITS, delete the unpicked trial files); local main ahead of origin, NOT pushed; speedrun server :8095)
 
 ## Where we are
 - Crit 10 shipped (tag `crit-10` on origin at de1932b). Final project due 2026-11-09 12:00.

@@ -978,7 +978,7 @@ const LIFT_LABELS: Record<LiftVerdict, string> = {
   send: "send the lift",
   call: "call the lift",
   "too far": "move closer",
-  "attempt on": "locked — attempt in progress",
+  "attempt on": "locked — shift in progress",
   busy: "lift on its way",
   "already leaving": "leaving soon",
 };
@@ -1197,7 +1197,7 @@ function currentPrompts(): Prompt[] {
     const verdict = liftVerdict(p, lift, objective, defenceState.phase);
     let detail: string | undefined;
     if (verdict === "already leaving" && lift.departAt) detail = `doors close in ${Math.max(0, Math.ceil((lift.departAt - now) / 1000))}s`;
-    if (verdict === "send") detail = level === "top" ? "down to the facility" : "back up — leaves this attempt";
+    if (verdict === "send") detail = level === "top" ? "down to the facility" : "back up — leaves this shift";
     if (verdict === "attempt on" && defenceState.phase === "won") detail = "the way out's the freight lift, north";
     if (verdict === "attempt on" && defenceState.phase === "blackout") detail = "no power — no way out";
     if (verdict === "busy" && lift.phase === "moving") detail = `${Math.max(0, Math.ceil(((lift.until ?? now) - now) / 1000))}s`;
@@ -1399,7 +1399,7 @@ function renderControls(): void {
   const held = myHeldItem();
   let text: string;
   if (myOut) {
-    text = myLate ? "watching the crew until this attempt ends" : "you're out until this attempt ends";
+    text = myLate ? "watching the crew until this shift ends" : "you're out until this shift ends";
   } else if (placingTurret) {
     text = `WASD move · click / Space: build turret (${TURRET_COST} quota) · Q / Esc: cancel`;
   } else if (aimingGrenade) {
@@ -2510,7 +2510,7 @@ function stepEvacSound(st: EvacStage | undefined): void {
   audio.setMachine("winch", winch * near);
   if (s !== lastEvacStage && near) {
     // the door seated (open or shut), the platform lurching off
-    if ((lastEvacStage === "opening" && s === "open") || (lastEvacStage === "shutting" && s === "shut") || (lastEvacStage === "shut" && s === "rising")) audio.clunk(s === "rising" ? 0.8 : 1);
+    if ((lastEvacStage === "opening" && s === "open") || (lastEvacStage === "shutting" && s === "shut") || (lastEvacStage === "shut" && s === "rising")) audio.clunk(s === "rising" ? 0.8 : 1.4);
   }
   lastEvacStage = s;
 }
@@ -2528,7 +2528,7 @@ function stepEvac(time: number): void {
   }
   const st = e ? evacStage(e, now) : undefined;
   stepEvacSound(st);
-  settlement.set(wonReport, lastBoard, myHandle ?? (myId ? codename({ id: myId, color: myColor, handle: myHandle }) : ""));
+  settlement.set(wonReport, lastBoard, myHandle ?? (myId ? codename({ id: myId, color: myColor, handle: myHandle }) : ""), mySite);
   const black = settlement.update(st);
   evacFadeEl.style.opacity = `${black}`;
   // the rumble: only felt down there (and by whoever's watching from down there)
@@ -2718,7 +2718,7 @@ function renderSpectating(dt: number): void {
   spectateEl.style.display = myOut ? "block" : "none";
   if (!myOut) return;
   const ids = watchableIds();
-  const who = myLate ? "an attempt's on below · you're in for the next one" : "you're down";
+  const who = myLate ? "a shift's on below · you're in for the next one" : "you're down";
   spectateEl.textContent =
     ids.length === 0
       ? `${who} · nobody left standing`
@@ -2815,9 +2815,9 @@ function readyNames(): string {
 }
 
 // The scoreboard: a screen in the garden (client/world/surface.ts) that
-// opens full-screen when you use it --- how this run is going (attempts so
-// far, the most waves any cleared), the all-time top players, and the runs
-// that were won. Kept by the server across restarts; sent when it changes.
+// opens full-screen when you use it --- the all-time top players and the
+// runs that were won (no attempt count: sites are one-off since ADR-072,
+// ADR-081). Kept by the server across restarts; sent when it changes.
 const boardEl = document.createElement("div");
 boardEl.id = "board";
 document.body.appendChild(boardEl);
@@ -2827,9 +2827,6 @@ function toggleBoard(): void {
 }
 function renderBoard(b: BoardMessage): void {
   scoreboard.draw(b.top.slice(0, 3).map((p, i) => `${i + 1} ${p.name.slice(0, 12).padEnd(12)} ${p.score}`));
-  const runLine = b.run.attempts
-    ? `run: attempt ${b.run.attempts}${b.run.best ? ` · best ${b.run.best}/${WAVES_TO_WIN} waves` : ""}`
-    : "run: no attempts yet";
   const rows = b.top
     .map(
       (p, i) =>
@@ -2837,15 +2834,15 @@ function renderBoard(b: BoardMessage): void {
     )
     .join("");
   const wins = b.wins
-    .map((w) => `<div class="row won"><span>#${w.n}</span><span>${w.attempts} attempt(s)</span><span class="score">${escapeText(w.crew.slice(0, 3).join(", "))}${w.crew.length > 3 ? "…" : ""}</span></div>`)
+    .map((w) => `<div class="row won"><span>#${w.n}</span><span>${new Date(w.wonAt).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}</span><span class="score">${escapeText(w.crew.slice(0, 3).join(", "))}${w.crew.length > 3 ? "…" : ""}</span></div>`)
     .join("");
   boardEl.innerHTML =
     '<div class="board-panel">' +
-    `<div class="title">high scores</div><div class="run">${runLine}</div>` +
+    `<div class="title">high scores</div>` +
     '<div class="row head dim"><span class="rank">#</span><span>name</span><span class="score">best · kills · waves</span></div>' +
     (rows || '<div class="row dim">nobody yet</div>') +
     (wins ? `<div class="title">reactor stabilised</div>${wins}` : "") +
-    '<div class="legend">each name\'s best attempt · ★ the reactor held</div>' +
+    '<div class="legend">each name\'s best shift · ★ the reactor held</div>' +
     '<div class="legend">E / Esc to close</div></div>';
 }
 // walking away closes it
@@ -2963,8 +2960,8 @@ function showReport(r: Report): void {
     hold = 11000;
     const crew = [...r.crew].sort((a, b) => b.score - a.score);
     html =
-      `<div class="title">${r.outcome === "won" ? "reactor stabilised" : "attempt failed"}</div>` +
-      `<div class="run">attempt ${r.attempt} · ${escapeText(r.reason)}</div>` +
+      `<div class="title">${r.outcome === "won" ? "reactor stabilised" : "shift failed"}</div>` +
+      `<div class="run">${escapeText(r.reason)}</div>` +
       `<div class="row"><span>waves cleared</span><span class="score">${r.waves} / ${WAVES_TO_WIN}</span></div>` +
       (r.blackoutMs ? `<div class="row"><span>held in the dark</span><span class="score">${secs(r.blackoutMs)}</span></div>` : "") +
       `<div class="title sub">crew</div>` +
@@ -3043,7 +3040,7 @@ function previewCredits(ms: number, payslip = false): void {
   const step = (): void => {
     const at = frozen ? ms : performance.now() - t0;
     if (payslip) {
-      settlement.set(undefined, undefined, "RIPLEY");
+      settlement.set(undefined, undefined, "RIPLEY", "SITE-7Q4K");
       // ?payslip=ms: the payslip page, that far in (0..SETTLE_PAGES_MS[1])
       settlement.update({ stage: "rising", ms: at, page: 1, k: Math.min(1, at / SETTLE_PAGES_MS[1]), fade: 0 });
       requestAnimationFrame(step);

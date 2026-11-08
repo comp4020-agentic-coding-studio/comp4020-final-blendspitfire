@@ -110,6 +110,8 @@ export class Settlement {
   private report?: Attempt;
   private board?: BoardMessage;
   private me = "";
+  /** the site the shift was in (SITE-XXXX), on the shift report and the payslip's contract number */
+  private site = "";
   /** the screen was held black by the ending (thanks/done): fade back in when it lets go */
   private wasBlack = false;
   private backAt = 0;
@@ -139,7 +141,8 @@ export class Settlement {
   }
 
   /** the won attempt's report (the crew lines), the latest board, and our own name, as they arrive */
-  set(report: Attempt | undefined, board: BoardMessage | undefined, me: string): void {
+  set(report: Attempt | undefined, board: BoardMessage | undefined, me: string, site = this.site): void {
+    this.site = site;
     if (report) this.report = report;
     if (board) this.board = board;
     this.me = me;
@@ -234,7 +237,7 @@ export class Settlement {
         )
         .join("");
       return (
-        `<div class="title">shift report</div><div class="sub">reactor stabilised · ${this.report?.waves ?? 0} waves held · attempt ${this.report?.attempt ?? 0}</div>` +
+        `<div class="title">shift report</div><div class="sub">reactor stabilised · ${this.report?.waves ?? 0} waves held${this.site ? ` · ${esc(this.site)}` : ""}</div>` +
         '<div class="head"><span class="name">crew</span><span>kills</span><span>acc.</span><span>wounds</span><span class="num">score</span></div>' +
         (rows || '<div class="row in">nobody aboard</div>')
       );
@@ -246,7 +249,7 @@ export class Settlement {
         .map(([what, v]) => `<div class="row"><span class="name">${esc(what)}</span><span class="num minus">${money(v)}</span></div>`)
         .join("");
       return (
-        `<div class="title">payslip</div><div class="sub">${esc(this.me || "crew member")} · contract B3-${String(this.report?.attempt ?? 0).padStart(3, "0")} · ${me?.score ?? 0} pts</div>` +
+        `<div class="title">payslip</div><div class="sub">${esc(this.me || "crew member")} · contract B3-${esc(this.site.replace(/^SITE-/, "") || "000")} · ${me?.score ?? 0} pts</div>` +
         `<div class="gross"><span class="name">gross pay</span><span class="num">${money(gross)}</span></div>` +
         rows +
         `<div class="rule"></div>` +

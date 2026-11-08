@@ -220,3 +220,49 @@ for (const [label, what, play] of [
   row.append(b);
   sheet.append(row);
 }
+
+// On trial for the blast door opening (user 2026-11-08): the facility's power
+// coming on, an engineering warning while the door moves, and a louder door.
+// Recordings from OpenGameArt (all CC0; sources in public/sfx/CREDITS.md once picked)
+// and synthesised warnings beside them. Pick one of each.
+const repeat = (n: number, gap: number, f: () => void): void => {
+  for (let k = 0; k < n; k++) setTimeout(f, k * gap);
+};
+const TRIAL: [string, [string, string, () => void][]][] = [
+  ["on trial: the whole facility's power coming on (at the win, before the door moves)", [
+    ["A breaker", "a real circuit breaker slamming on (CleytonKauffman)", () => void audio.playFile("sfx/trial_power_breakeron.wav", 2.5)],
+    ["B charge swell", "an electric charge-up swell, 6 s (faxcorp)", () => void audio.playFile("sfx/trial_power_chargestart.wav", 1)],
+    ["C power-up", "a short electric power-up (faxcorp)", () => void audio.playFile("sfx/trial_power_powerup.wav", 1)],
+    ["D breaker + swell", "A then B half a second later: the slam, then the facility humming up", () => { void audio.playFile("sfx/trial_power_breakeron.wav", 2.5); setTimeout(() => void audio.playFile("sfx/trial_power_chargestart.wav", 0.9), 400); }],
+  ]],
+  ["on trial: the engineering warning while the door moves (heard 3 times here, repeats in game)", [
+    ["A horn (synth)", "a low two-tone industrial horn, like a crane or a big door", () => repeat(3, 1500, () => audio.play("alarmHorn"))],
+    ["B beeper (synth)", "a reversing-truck beeper", () => repeat(5, 900, () => audio.play("alarmBeeper"))],
+    ["C PA chime (synth)", "a three-note attention chime, like a public address", () => repeat(2, 2200, () => audio.play("alarmChime"))],
+    ["D alarm loop 1", "recorded alarm loop (rubberduck)", () => repeat(3, 1980, () => void audio.playFile("sfx/trial_alarm_loop01.wav", 1))],
+    ["E alarm loop 3", "recorded alarm loop (rubberduck)", () => repeat(4, 1054, () => void audio.playFile("sfx/trial_alarm_loop03.wav", 1))],
+    ["F short alarm", "recorded short alarm, more sci-fi (yd)", () => repeat(3, 1800, () => void audio.playFile("sfx/trial_alarm_short.wav", 1))],
+  ]],
+  ["on trial: a louder blast door (layered over the grind already in game, or replacing it)", [
+    ["A powered door", "a powered door opening, 2 s (Spring Spring)", () => void audio.playFile("sfx/trial_door_various.wav", 1.4)],
+    ["B old lift door", "a dirty old metal lift door, 3 s (sinny)", () => void audio.playFile("sfx/trial_door_elevator.wav", 1.4)],
+    ["C construction rumble", "heavy machinery rumble bed, 8 s (rubberduck)", () => void audio.playFile("sfx/trial_door_construction.wav", 1.2)],
+    ["D metal door", "a metal door opening, short (rubberduck)", () => void audio.playFile("sfx/trial_door_metalopen.wav", 2)],
+    ["E in-game grind (now louder)", "the grind in game, raised to 1.6 and brighter, with the stronger clunk at the end", () => { audio.setMachine("blastDoor", 1); setTimeout(() => { audio.setMachine("blastDoor", 0); audio.clunk(1.4); }, 4000); }],
+  ]],
+];
+for (const [head, rows] of TRIAL) {
+  const h = document.createElement("h2");
+  h.textContent = head;
+  sheet.append(h);
+  for (const [label, what, play] of rows) {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<b>${label}</b><span class="what">${what}</span>`;
+    const b = document.createElement("button");
+    b.textContent = "▶ play";
+    b.onclick = play;
+    row.append(b);
+    sheet.append(row);
+  }
+}

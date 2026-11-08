@@ -398,6 +398,51 @@ export function dryClick(ctx: BaseAudioContext, out: Out, level = 1): void {
   burst(ctx, out, t + 0.03, { type: "bandpass", f: 2200, q: 4, gain: 0.08 * level, decay: 0.012 });
 }
 
+/**
+ * Freight-door warnings, synthesised (user 2026-11-08: an engineering
+ * warning, not an air-raid siren). Each is one cycle; the game repeats it
+ * while the door moves. horn: a low two-tone industrial horn, square waves
+ * through a band-pass like a cheap cone speaker. beeper: a reversing-truck
+ * style pulse at ~1 kHz. chime: a three-note PA attention tone.
+ */
+export function alarmHorn(ctx: BaseAudioContext, out: Out, level = 1): void {
+  const t = ctx.currentTime;
+  for (const [at, f] of [[0, 392], [0.6, 311]] as const) {
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.value = 900;
+    bp.Q.value = 0.8;
+    // a held note: on, flat, off (a horn doesn't decay)
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t + at);
+    g.gain.linearRampToValueAtTime(0.14 * level, t + at + 0.03);
+    g.gain.setValueAtTime(0.14 * level, t + at + 0.5);
+    g.gain.linearRampToValueAtTime(0, t + at + 0.56);
+    g.connect(bp).connect(out);
+    for (const [type, m, v] of [["square", 1, 1], ["sawtooth", 1.006, 0.5]] as const) {
+      const osc = ctx.createOscillator();
+      osc.type = type;
+      osc.frequency.value = f * m;
+      const og = ctx.createGain();
+      og.gain.value = v;
+      osc.connect(og).connect(g);
+      osc.start(t + at);
+      osc.stop(t + at + 0.6);
+    }
+  }
+}
+export function alarmBeeper(ctx: BaseAudioContext, out: Out, level = 1): void {
+  const t = ctx.currentTime;
+  tone(ctx, out, t, { type: "square", f: 1040, gain: 0.07 * level, attack: 0.005, decay: 0.42 });
+}
+export function alarmChime(ctx: BaseAudioContext, out: Out, level = 1): void {
+  const t = ctx.currentTime;
+  [659, 523, 392].forEach((f, i) => {
+    tone(ctx, out, t + i * 0.32, { f, gain: 0.16 * level, attack: 0.005, decay: 0.9 });
+    tone(ctx, out, t + i * 0.32, { f: f * 2, gain: 0.04 * level, attack: 0.005, decay: 0.4 });
+  });
+}
+
 /** the PAID stamp on the payslip: a heavy rubber-stamp thud on a desk, and the desk's rattle */
 export function stampThud(ctx: BaseAudioContext, out: Out, level = 1): void {
   const t = ctx.currentTime;
@@ -543,6 +588,9 @@ export const SFX = {
   reactorAlarm,
   dryClick,
   stampThud,
+  alarmHorn,
+  alarmBeeper,
+  alarmChime,
   pickup,
   trackerPing,
   bump,

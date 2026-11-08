@@ -215,7 +215,7 @@ export class PauseMenu {
   open(site: string, muted: boolean, outIfLeaving: boolean): void {
     this.el.querySelector(".site")!.textContent = site;
     this.setMuted(muted);
-    this.warnEl.textContent = outIfLeaving ? "leaving now counts as falling: you're out of this attempt" : "";
+    this.warnEl.textContent = outIfLeaving ? "leaving now counts as falling: you're out of this shift" : "";
     this.el.classList.add("open");
   }
 
