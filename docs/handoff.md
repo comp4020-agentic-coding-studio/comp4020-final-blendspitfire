@@ -5,7 +5,7 @@
 Updated: 2026-11-09 (README ~680 / PROCESS ~1160 words, committed, NOT pushed; live is 35ee5dc; speedrun server :8095)
 
 ## Where we are
-- Final project due 2026-11-09 12:00. Live 0.1.0-b99e041 (everything but this handoff line pushed). Push only when the user says so.
+- Final project due 2026-11-09 12:00. Live 0.1.0-b99e041; unpushed: handoff c0bf3c8, net pay green from the start 0d98c9d. Push only when the user says so.
 - The game is feature-complete; the user is playtesting via the speedrun server and flagging fixes one at a time. Everything since 2026-11-03 is in ADR-060..083.
 - Branch `surface` is merged into main; still present locally (ask before deleting).
 - Commit finished+verified work without asking (CLAUDE.md). Never push unasked.
