@@ -297,11 +297,7 @@ export function sealStamp(word: string, width: number, cell: number, color: stri
   const lh = Math.round((lw * H) / W);
   const gh = 3 + lh + 2 + 7 + 3;
   const canvas = pixelCanvas(gw * cell, gh * cell, cell);
-  const svg = logoSvg()
-    .replace(' filter="url(#anu-worn)"', "")
-    .replace("<svg ", `<svg width="${W}" height="${H}" color="#fff" `);
-  const img = new Image();
-  img.onload = () => {
+  const draw = (img: HTMLImageElement): void => {
     inkPixels(canvas, (g, w, h) => g.drawImage(img, (3 / gw) * w, (3 / gh) * h, (lw / gw) * w, (lh / gh) * h), color);
     const ctx = canvas.getContext("2d")!;
     ctx.fillStyle = color;
@@ -320,8 +316,24 @@ export function sealStamp(word: string, width: number, cell: number, color: stri
     for (let y = 0; y < gh; y++)
       for (let x = 0; x < gw; x++) if (((seed = (seed * 1103515245 + 12345) >>> 0) >>> 16) % 11 === 0) ctx.clearRect(x, y, 1, 1);
   };
-  img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  // the seal decodes once; after that every stamp is drawn at once, so a page
+  // rebuilt while the stamp is down never shows it blank
+  const img = sealImage();
+  if (img.complete && img.naturalWidth) draw(img);
+  else img.addEventListener("load", () => draw(img), { once: true });
   return canvas;
+}
+
+let sealImg: HTMLImageElement | undefined;
+/** the seal (no worn filter) as an image, decoded once and kept */
+function sealImage(): HTMLImageElement {
+  if (sealImg) return sealImg;
+  sealImg = new Image();
+  const svg = logoSvg()
+    .replace(' filter="url(#anu-worn)"', "")
+    .replace("<svg ", `<svg width="${W}" height="${H}" color="#fff" `);
+  sealImg.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  return sealImg;
 }
 
 /** The DEMO stamp under the seal (user 2026-11-03/04) */

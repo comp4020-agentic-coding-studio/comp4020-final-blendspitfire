@@ -116,11 +116,11 @@
       .ui-settle .rule { height: 0; border-top: 2px solid var(--ui); margin-top: 8px; transform: scaleX(0); transform-origin: left;
         transition: transform 0.5s steps(6); }
       .ui-settle .rule.in { transform: none; }
-      .ui-settle .rule + .total { border-top: 0; margin-top: 2px; position: relative; }
-      .ui-settle .paid { position: absolute; left: 34%; top: 50%; pointer-events: none; opacity: 0;
-        transform: translateY(-50%) rotate(-12deg) scale(3); }
+      .ui-settle .rule + .total { border-top: 0; margin-top: 2px; position: relative; padding-bottom: 14px; }
+      .ui-settle .paid { position: absolute; left: 46%; top: 30%; pointer-events: none; opacity: 0;
+        transform: translate(-50%, -50%) rotate(-8deg) scale(3); }
       .ui-settle .paid canvas { display: block; filter: drop-shadow(0 0 6px rgba(255, 90, 72, 0.5)); }
-      .ui-settle.stamped .paid { opacity: 0.92; transform: translateY(-50%) rotate(-12deg) scale(1);
+      .ui-settle.stamped .paid { opacity: 0.92; transform: translate(-50%, -50%) rotate(-8deg) scale(0.62);
         transition: transform 0.12s steps(3), opacity 0.12s steps(3); }
       .ui-settle.stamped .total .num { color: #8fe39a; font-size: 1.35em; text-shadow: 0 0 14px rgba(143, 227, 154, 0.6), 0 1px 0 #000; }
       .ui-settle.stamped { animation: paid-thud 0.3s steps(6) 0.12s; }
@@ -314,7 +314,8 @@
         .ui-settle .num { min-width: 4.5em !important; }
         .ui-settle .total { font-size: 19px; }
         .ui-settle .gross { font-size: 24px; gap: 8px; }
-        .ui-settle .paid { left: 30%; zoom: 0.75; }
+        .ui-settle .paid { zoom: 0.55; left: 58%; }
+        .ui-settle .rule + .total { padding-bottom: 8px; }
         .ui-thanks .cast { grid-template-columns: 5.5em 7em 3em; gap: 8px; font-size: 15px; }
         .ui-thanks .cast.credit { grid-template-columns: 5.5em 13em; }
         .ui-thanks .line.big { font-size: 21px; }

@@ -1,6 +1,6 @@
 import type { BoardMessage, CrewLine, Report } from "../../shared/protocol.ts";
 import { CREDITS_ROLL_AT, CREDITS_ROLL_MS, SETTLE_PAGES_MS, THANKS_DIM_MS, THANKS_IN_MS, THANKS_MS, THANKS_OUT_MS, type EvacStage } from "../../shared/enemies.ts";
-import { cutStamp, demoStamp, pixelLogo } from "./logo.ts";
+import { demoStamp, pixelLogo, sealStamp } from "./logo.ts";
 
 // The settlement (ADR-060): played while the freight lift climbs, after
 // Lethal Company's end-of-shift screens. Three pages on the server's clock,
@@ -56,7 +56,7 @@ const PAY_LINES_AT = 1500;
 const PAY_LINE_MS = 1000;
 /** from the rule to the net pay: the beat before the reveal */
 const PAY_PAUSE_MS = 2500;
-const PAY_STAMP_AFTER_MS = 600;
+const PAY_STAMP_AFTER_MS = 1500;
 /** the stamp's ink: the UI's "can't" red, as a rubber stamp */
 const PAID_INK = "#ff5a48";
 const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -192,7 +192,7 @@ export class Settlement {
       this.page = st.page;
       this.el.innerHTML = this.render(st.page);
       this.stamped = false;
-      if (st.page === 1) this.el.querySelector(".paid")!.append(cutStamp("PAID", this.cell, PAID_INK));
+      if (st.page === 1) this.el.querySelector(".paid")!.append(sealStamp("PAID", 240, this.cell, PAID_INK));
     }
     const rows = this.el.querySelectorAll<HTMLElement>(".row");
     const total = this.el.querySelector<HTMLElement>(".total");

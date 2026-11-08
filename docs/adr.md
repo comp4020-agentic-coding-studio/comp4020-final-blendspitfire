@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-11-09, README compressed, reference notes moved to ADR-088
+Synced from the draft up to: 2026-11-09, payslip PAID stamp restyled as the company seal
 
 ---
 
@@ -1157,4 +1157,12 @@ Preview: `/?contract=NAME`. Checked in a real run on a DEV_TUT_STAGE=5 server: E
   family, with only things that glow allowed to be vivid.
 
 **Why.** The developer's call: keep the argument in the README and the detail in the ADRs, which the brief says don't count.
+
+## ADR-089: The payslip's PAID stamp becomes the company seal
+
+**Context.** The contract's APPROVED stamp (ADR-087) is built on the company seal; the payslip's PAID stamp was still the older plain cut stamp, on the left.
+
+**Decision.** PAID uses the same seal stamp (seal, word below, frame, worn ink). The word stays PAID: the developer asked whether APPROVED would do, and the agent suggested a payslip is paid, not approved. It sits in the empty space mid-row on the net pay line, overlapping the dollar sign a little. It lands 1.5 s after the net pay appears (was 0.6 s): the slow reveal of the net pay is deliberate, but the stamp came down too fast after it.
+
+**Why.** The developer's calls, from seeing it: match the contract's stamp, keep it off the deductions, and give the net pay a moment before the stamp hits.
 
