@@ -2,10 +2,10 @@
 
 > **AI-recorded.** Written and kept current automatically by the coding agent (Claude Code) as its session-to-session handoff, not written by hand. Terse on purpose: it's for the next agent session to pick up from. Decision history lives in [adr.md](adr.md).
 
-Updated: 2026-11-09 00:35 (ADR-087 contract pushed and deployed 35ee5dc; speedrun server :8095)
+Updated: 2026-11-09 (README ~680 / PROCESS ~1160 words, committed, NOT pushed; live is 35ee5dc; speedrun server :8095)
 
 ## Where we are
-- Final project due 2026-11-09 12:00. Pushed and deployed 35ee5dc (2026-11-09, CI green, live version 0.1.0-35ee5dc). Nothing unpushed but this handoff line.
+- Final project due 2026-11-09 12:00. Live 0.1.0-35ee5dc. Unpushed: handoff 38cf07e, README compression 6a790d0 (+ ADR-088 references), PROCESS compression c95fb94. Push only when the user says so.
 - The game is feature-complete; the user is playtesting via the speedrun server and flagging fixes one at a time. Everything since 2026-11-03 is in ADR-060..083.
 - Branch `surface` is merged into main; still present locally (ask before deleting).
 - Commit finished+verified work without asking (CLAUDE.md). Never push unasked.
@@ -60,7 +60,8 @@ Updated: 2026-11-09 00:35 (ADR-087 contract pushed and deployed 35ee5dc; speedru
 1. Known on the live app only (CI checks localhost and passes 196/196): `APP_URL=https://comp4020-final-blendspitfire.fly.dev pnpm check` fails 2 tests. (a) rooms "fifth is turned away": the refusal code (4005) reaches the client ~5 s late behind Fly; a browser shows "that site is full" ~2-3 s after load. server/index.ts refuse() terminates 250 ms after close, which did NOT help: the delay is proxy-side; unresolved. (b) multiuser "take what another is holding": fixed 55 ms walk steps and 1 s wait vs ~300 ms round trips: test timing, not a game bug.
 2. Awaiting the user's look/ears, nothing queued: payslip (ADR-079; all figures to the cent, ADR-084), speedrun fixes (ADR-080: ring, floor words, lift pauses, freight sounds), no attempt on screen (ADR-081), blast door sound (ADR-082), freight cargo two blocks at the sides (ADR-084, replaced ADR-083's 2x2), solo bonus number (ADR-078). Anything they flag is the next work.
 3. Contract DONE (ADR-087, replaces ADR-086's ride briefing; briefing.ts deleted). User approved 2026-11-09; deployed.
-- Settled (no work): README/PROCESS stay as they are (user 2026-11-08); no facility power-up sound (user 2026-11-08); blackout lift stays locked; no new shop items; /gallery.html stays in prod; quota shared; turret 40 / cap 8.
+- Docs (user 2026-11-09): README/PROCESS compressed to ~10% over the brief's limits (user: 10% over is fine); detail lives in ADRs (they don't count). Don't add to them unasked; the authorship rule in CLAUDE.md still holds. PROCESS must not present agent-made choices (e.g. which tests exist) as the user's.
+- Settled (no work): no facility power-up sound (user 2026-11-08); blackout lift stays locked; no new shop items; /gallery.html stays in prod; quota shared; turret 40 / cap 8.
 
 ## Built earlier (reference; the 2026-11-03 playtest approved whatever it didn't flag)
 - **Eighth round (user's list 2026-10-29, recorded only; nothing built yet; full wording in .claude/notes/adr-draft.md):**
