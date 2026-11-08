@@ -101,7 +101,7 @@
       .ui-settle .sub { color: var(--ui-dim); margin-bottom: 12px; }
       .ui-settle .head, .ui-settle .row, .ui-settle .total { display: flex; gap: 14px; padding: 2px 0; }
       .ui-settle .head { color: var(--ui-dim); border-bottom: 1px solid var(--ui-dim); margin-bottom: 4px; }
-      .ui-settle .head > span, .ui-settle .row > span, .ui-settle .gross > span { min-width: 3.4em; text-align: right; }
+      .ui-settle .head > span, .ui-settle .row > span, .ui-settle .gross > span, .ui-settle .total > span { min-width: 3.4em; text-align: right; }
       .ui-settle .name { flex: 1; text-align: left !important; }
       .ui-settle .num { min-width: 7em !important; font-variant-numeric: tabular-nums; }
       .ui-settle .row, .ui-settle .total { opacity: 0; transform: translateX(-6px); transition: opacity 0.25s steps(3), transform 0.25s steps(3); }
@@ -117,7 +117,7 @@
         transition: transform 0.5s steps(6); }
       .ui-settle .rule.in { transform: none; }
       .ui-settle .rule + .total { border-top: 0; margin-top: 2px; position: relative; padding-bottom: 14px; }
-      .ui-settle .paid { position: absolute; left: 46%; top: 30%; pointer-events: none; opacity: 0;
+      .ui-settle .paid { position: absolute; left: 70%; top: 30%; pointer-events: none; opacity: 0;
         transform: translate(-50%, -50%) rotate(-8deg) scale(3); }
       .ui-settle .paid canvas { display: block; filter: drop-shadow(0 0 6px rgba(255, 90, 72, 0.5)); }
       .ui-settle.stamped .paid { opacity: 0.92; transform: translate(-50%, -50%) rotate(-8deg) scale(0.62);
@@ -314,7 +314,7 @@
         .ui-settle .num { min-width: 4.5em !important; }
         .ui-settle .total { font-size: 19px; }
         .ui-settle .gross { font-size: 24px; gap: 8px; }
-        .ui-settle .paid { zoom: 0.55; left: 58%; }
+        .ui-settle .paid { zoom: 0.55; left: 66%; }
         .ui-settle .rule + .total { padding-bottom: 8px; }
         .ui-thanks .cast { grid-template-columns: 5.5em 7em 3em; gap: 8px; font-size: 15px; }
         .ui-thanks .cast.credit { grid-template-columns: 5.5em 13em; }
