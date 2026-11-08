@@ -192,10 +192,11 @@ wss.on("headers", (headers, req) => {
  */
 /**
  * Refuse a join: send the close code, then end the connection shortly after
- * instead of waiting for the client's close echo. Behind Fly's proxy that
- * echo can take ws's whole 5 s close timeout to arrive, so a refused player
- * sat on the title screen for 5 s before seeing "site full" (found
- * 2026-11-08 running the spec against the live app).
+ * instead of waiting for the client's close echo. On the live app a refused
+ * socket still only sees its code after ~5 s (a browser shows "that site is
+ * full" ~2-3 s after the page loads): the terminate didn't shorten it, so
+ * the delay is between Fly's proxy and the client, not this handshake.
+ * Left as is before the deadline (2026-11-08); harmless locally.
  */
 function refuse(socket: WsSocket, code: number, why: string): void {
   socket.close(code, why);
