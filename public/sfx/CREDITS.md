@@ -28,3 +28,5 @@ reverb supplies the space).
 | die_bug1.wav, die_bug2.wav, die_bug4.wav, die_alien5.wav | OpenGameArt, "80 CC0 creature SFX" by rubberduck (opengameart.org/content/80-cc0-creature-sfx): bug_01, bug_02, bug_04, alien_05 | CC0 |
 | splat_impact.wav, splat_squish5.wav | OpenGameArt, "Squish Sounds Effects" by EZduzziteh (opengameart.org/content/squish-sounds-effects): squishsplat_impact, squish_05 | CC0 |
 | splat_splat.wav | OpenGameArt, "Various Sound Effects" by Spring Spring (opengameart.org/content/various-sound-effects-0): snd_splat | CC0 |
+| door_liftdoor.wav | OpenGameArt, "Old elevator door" by sinny (opengameart.org/content/old-elevator-door); the blast door, played at 0.4x with an octave-down copy | CC0 |
+| alarm_short.wav | OpenGameArt, "Short alarm" by yd (opengameart.org/content/short-alarm); the freight door's warning | CC0 |

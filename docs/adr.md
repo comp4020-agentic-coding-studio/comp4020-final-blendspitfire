@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-11-08, no attempt count on screen; louder blast door
+Synced from the draft up to: 2026-11-08, blast door sound and warning picked, impact on the stop
 
 ---
 
@@ -1052,3 +1052,12 @@ Built (agent): `server/room.ts` holds a whole world per site; `server/index.ts` 
 **Decision.** Every player-facing "attempt" goes: the scoreboard loses the run line, won runs show their date instead of an attempt count, the attempt report says "shift failed" and drops the number, the settlement shows the site and the payslip's contract number is the site's code, and the remaining prompts say "shift" (matching "shift report"). The counter, logs and database stay. The door's grind is raised (0.9 to 1.6, brighter) and its seating clunk is stronger now. Candidates for the power-up, the warning and a louder door are on /sounds.html under "on trial" for the developer to pick.
 
 **Why.** The developer's reading of the design; the wording is the agent's. No CC0 recording found was clearly an industrial warning, so three synthesised ones (a low two-tone horn, a reversing beeper, a PA chime) sit beside three recorded alarms; the power-up has a real circuit breaker, an electric swell and both together; the door has four recordings. The trial files are not loaded by the game.
+
+## ADR-082: The blast door's sound lands its impact on the door stopping
+*2026-11-08 · Status: Accepted, built (verified in a real run)*
+
+**Context.** From the candidates on the sound sheet (ADR-081) the developer picked the old lift door recording made heavy and slow ("B2": 0.4x with a copy an octave below), on condition that its final impact lines up with the moment the door model stops, and the recorded short alarm ("F") as the warning. The power-up sound is not picked yet.
+
+**Decision.** The door plays B2 so that the impact lands exactly when the door stops, opening (9 s) or shutting (4 s); the warning repeats every 1.8 s while the door moves.
+
+**Why.** The developer's picks and condition. The agent's details: the recording's impact onset was measured at 1.924 s (4.81 s at 0.4x); the door moves linearly, so the sound starts 4.19 s after the door does. The octave-down copy is aligned on the same impact (in the version auditioned it hit 4.8 s late, a second blow). Joining mid-move, or the shorter shut, starts the recording partway in so the impact still lands on the stop. The synthesised clunk on the door seating is dropped (the recording's impact replaces it) and stays only for the platform lurching off; the earlier grind loop stays underneath at a lower level. The warning beats on a grid from the move's start on the server's clock, so everyone hears it together, and stays quiet in the last 0.3 s. Checked in a real run: the browser scheduled the sound 19 ms after the door started and its stop time matched the server's (door start + 9000 ms).

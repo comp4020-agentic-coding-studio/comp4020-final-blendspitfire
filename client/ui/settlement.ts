@@ -36,6 +36,7 @@ const SOUND_CREDITS =
   credit("blasts", "rubberduck · Kenney") +
   credit("creatures", "rubberduck · EZduzziteh · Spring Spring") +
   credit("machines", "qubodup · OpenGameArt") +
+  credit("doors", "sinny · yd") +
   credit("groans", "stephan (SoundBible)") +
   '<div class="cast solo dim">CC0 / public domain, via OpenGameArt</div></div>';
 

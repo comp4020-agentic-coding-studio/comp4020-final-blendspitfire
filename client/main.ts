@@ -24,7 +24,7 @@ import { LiftDoors, liftPanelAt } from "./world/lift.ts";
 import { Settlement } from "./ui/settlement.ts";
 import { PauseMenu, Title } from "./ui/title.ts";
 import { EvacView, SHAFT_AREA } from "./world/evac.ts";
-import { Audio, type Zone } from "./audio.ts";
+import { Audio, DOOR_ALARM_EVERY_MS, type Zone } from "./audio.ts";
 import { Gore, Impacts } from "./world/gore.ts";
 import { buildTutorial, type TutorialView } from "./world/tutorial.ts";
 import { helicopter } from "./models/heli.ts";
@@ -77,11 +77,13 @@ import {
   blastDoorOpen,
   evacStage,
   THANKS_MS,
+  EVAC_DOOR_MS,
+  EVAC_SHUT_MS,
   THANKS_IN_MS,
   THANKS_DIM_MS,
   SETTLE_PAGES_MS,
   waveSize,
-  type DefenceState, type EvacStage, type EnemyKind, type EnemyState, type SpitState } from "../shared/enemies.ts";
+  type DefenceState, type EvacStage, type EvacState, type EnemyKind, type EnemyState, type SpitState } from "../shared/enemies.ts";
 import {
   BREACHES,
   DOORWAYS,
@@ -2499,21 +2501,38 @@ let shaftLid = false;
  * credits as the screen goes dark. Only heard from down there (or riding).
  */
 let lastEvacStage: EvacStage["stage"] | undefined;
-function stepEvacSound(st: EvacStage | undefined): void {
+function stepEvacSound(st: EvacStage | undefined, e: EvacState | undefined, now: number): void {
   const s = st?.stage;
   const near = viewLevel === "bottom" ? 1 : 0;
-  const door = s === "opening" ? Math.min(1, st!.k * 12, (1 - st!.k) * 12) : s === "shutting" ? Math.min(1, st!.k * 12, (1 - st!.k) * 12) : 0;
-  audio.setMachine("blastDoor", door * near);
+  const moving = s === "opening" || s === "shutting";
+  const door = moving ? Math.min(1, st!.k * 12, (1 - st!.k) * 12) : 0;
+  audio.setMachine("blastDoor", door * near * 0.6);
   let winch = 0;
   if (s === "rising") winch = Math.min(1, st!.ms / 1500);
   else if (s === "thanks") winch = Math.max(0, 1 - st!.ms / (THANKS_IN_MS + THANKS_DIM_MS));
   audio.setMachine("winch", winch * near);
-  if (s !== lastEvacStage && near) {
-    // the door seated (open or shut), the platform lurching off
-    if ((lastEvacStage === "opening" && s === "open") || (lastEvacStage === "shutting" && s === "shut") || (lastEvacStage === "shut" && s === "rising")) audio.clunk(s === "rising" ? 0.8 : 1.4);
-  }
+  if (moving && e && near) {
+    // when this move started and stops, on the server's clock
+    const startAt = s === "opening" ? e.doorAt : (e.shutAt ?? e.boardBy ?? now);
+    const stopAt = startAt + (s === "opening" ? EVAC_DOOR_MS : EVAC_SHUT_MS);
+    // the door's sound, once per move, its impact on the moment the door stops (also when joining mid-move)
+    if (doorSoundFor !== startAt) {
+      doorSoundFor = startAt;
+      void audio.doorHit(stopAt - now);
+    }
+    // the warning on a grid from the move's start, so everyone hears it together
+    const beat = Math.floor((now - startAt) / DOOR_ALARM_EVERY_MS);
+    if (beat !== doorAlarmBeat) {
+      doorAlarmBeat = beat;
+      if (now < stopAt - 300) audio.doorAlarm();
+    }
+  } else doorAlarmBeat = -1;
+  // the platform lurching off
+  if (s !== lastEvacStage && near && lastEvacStage === "shut" && s === "rising") audio.clunk(0.8);
   lastEvacStage = s;
 }
+let doorSoundFor = -1;
+let doorAlarmBeat = -1;
 
 function stepEvac(time: number): void {
   const now = serverClock.now();
@@ -2527,7 +2546,7 @@ function stepEvac(time: number): void {
     evacView.setInside(lid);
   }
   const st = e ? evacStage(e, now) : undefined;
-  stepEvacSound(st);
+  stepEvacSound(st, e, now);
   settlement.set(wonReport, lastBoard, myHandle ?? (myId ? codename({ id: myId, color: myColor, handle: myHandle }) : ""), mySite);
   const black = settlement.update(st);
   evacFadeEl.style.opacity = `${black}`;

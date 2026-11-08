@@ -55,6 +55,11 @@ export const MACHINES = {
   winch: { loops: [["spinGenerator", 1, 0.55], ["spinBoiler", 0.5, 0.35]] as [TakeName, number, number][], lowpass: 1100, level: 0.75, glide: 0.6 },
 };
 export type MachineName = keyof typeof MACHINES;
+/** the blast door recording (door_liftdoor.wav, sinny, CC0): played at this rate, and where its impact is in it, s (measured onset) */
+const DOOR_RATE = 0.4;
+const DOOR_HIT_S = 1.924;
+/** the door warning repeats this often while the door moves, ms (the recording is 1.7 s) */
+export const DOOR_ALARM_EVERY_MS = 1800;
 
 const REACTOR_IDLE = 0.15;
 const REACTOR_PEAK = 0.9;
@@ -349,7 +354,7 @@ export class Audio {
    * low end lifted, the top dulled, and a copy an octave further down under
    * it for weight. Returns how long it runs, s.
    */
-  async playHeavy(path: string, o: { rate: number; level?: number; lowpass?: number; low?: number; sub?: number }): Promise<number> {
+  async playHeavy(path: string, o: { rate: number; level?: number; lowpass?: number; low?: number; sub?: number; inMs?: number }): Promise<number> {
     const ctx = this.ctx;
     if (!ctx || !this.room) return 0;
     let buf = this.files.get(path);
@@ -357,7 +362,10 @@ export class Audio {
       buf = await ctx.decodeAudioData(await (await fetch(path)).arrayBuffer());
       this.files.set(path, buf);
     }
-    const t = ctx.currentTime;
+    // inMs > 0: start that much later; < 0: already that far in (joined late), start partway
+    const inS = (o.inMs ?? 0) / 1000;
+    const t = ctx.currentTime + Math.max(0, inS);
+    const skip = Math.max(0, -inS);
     const shelf = ctx.createBiquadFilter();
     shelf.type = "lowshelf";
     shelf.frequency.value = 160;
@@ -375,11 +383,62 @@ export class Audio {
       const g = ctx.createGain();
       g.gain.value = level;
       src.connect(g).connect(shelf);
-      src.start(t);
+      // a source's offset is in the buffer's own seconds: elapsed time x its rate
+      const off = skip * rate;
+      if (off < buf!.duration) src.start(t, off);
     };
     play(o.rate, 1);
     if (o.sub) play(o.rate / 2, o.sub);
     return buf.duration / o.rate;
+  }
+
+  /**
+   * The blast door's own sound (user 2026-11-08: the old lift door recording,
+   * "B2": 0.4x with an octave-down copy), placed so its impact --- the
+   * recording's hit at DOOR_HIT_S --- lands exactly when the door stops,
+   * `msToStop` from now (negative if it already has: nothing). Both copies
+   * are lined up on the hit, so it's one blow, not two. Joining mid-move
+   * starts partway in.
+   */
+  async doorHit(msToStop: number, level = 1): Promise<void> {
+    const ctx = this.ctx;
+    if (!ctx || !this.room || msToStop < 0) return;
+    const path = "sfx/door_liftdoor.wav";
+    let buf = this.files.get(path);
+    if (!buf) {
+      buf = await ctx.decodeAudioData(await (await fetch(path)).arrayBuffer());
+      this.files.set(path, buf);
+    }
+    const now = ctx.currentTime;
+    const hitAt = now + msToStop / 1000;
+    const shelf = ctx.createBiquadFilter();
+    shelf.type = "lowshelf";
+    shelf.frequency.value = 160;
+    shelf.gain.value = 9;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 1500;
+    const out = ctx.createGain();
+    out.gain.value = 1.6 * level;
+    shelf.connect(lp).connect(out).connect(this.room);
+    for (const [rate, v] of [[DOOR_RATE, 1], [DOOR_RATE / 2, 0.5]] as const) {
+      // when this copy must start so its hit lands at hitAt
+      const start = hitAt - DOOR_HIT_S / rate;
+      const off = Math.max(0, now - start) * rate;
+      if (off >= buf.duration) continue;
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.playbackRate.value = rate;
+      const g = ctx.createGain();
+      g.gain.value = v;
+      src.connect(g).connect(shelf);
+      src.start(Math.max(now, start), off);
+    }
+  }
+
+  /** the freight door's warning (user 2026-11-08: "F", the recorded short alarm), once */
+  doorAlarm(level = 1): void {
+    void this.playFile("sfx/alarm_short.wav", level);
   }
 
   playTake(name: TakeName, level = 1, punch?: Punch): void {
