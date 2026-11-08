@@ -22,6 +22,7 @@ import { Minimap } from "./ui/minimap.ts";
 import { buildSurface, createSunlight, scoreboardScreen } from "./world/surface.ts";
 import { LiftDoors, liftPanelAt } from "./world/lift.ts";
 import { Settlement } from "./ui/settlement.ts";
+import { Briefing } from "./ui/briefing.ts";
 import { PauseMenu, Title } from "./ui/title.ts";
 import { EvacView, SHAFT_AREA } from "./world/evac.ts";
 import { Audio, DOOR_ALARM_EVERY_MS, type Zone } from "./audio.ts";
@@ -2486,6 +2487,8 @@ document.body.appendChild(heliFadeEl);
 // them, and the settlement plays over the climb, then black and the thanks
 // card until the server brings everyone up.
 const settlement = new Settlement(Math.max(1, Math.round(1 / PIXEL_SCALE)));
+/** the mission briefing on the first ride down (ADR-086) */
+const briefing = new Briefing(Math.max(1, Math.round(1 / PIXEL_SCALE)));
 settlement.onStamp = () => audio.play("stampThud");
 const evacFadeEl = document.createElement("div");
 evacFadeEl.className = "ui-wipe";
@@ -2591,6 +2594,9 @@ function stepRide(): void {
   const travelMs = LIFT_RIDE_MS - LIFT_SETTLE_MS;
   const msLeft = Math.max(0, (lift.until ?? 0) - serverClock.now() - LIFT_SETTLE_MS);
   const rideShake = riding ? Math.min(1, (travelMs - msLeft) / 300, msLeft / 400) : 0;
+  // HQ's briefing (ADR-086): on the way down, before the reactor's on, over the whole ride
+  const briefed = riding && lift.going === "bottom" && !objective.active && !params.has("briefing");
+  if (!params.has("briefing")) briefing.update(briefed ? 1 - Math.max(0, (lift.until ?? 0) - serverClock.now()) / LIFT_RIDE_MS : undefined);
   if (rideShake > 0.01) {
     const t = performance.now() / 1000;
     camera.position.x += Math.sin(t * 23) * 0.025 * rideShake;
@@ -3039,12 +3045,27 @@ requestAnimationFrame(animate);
   const params = new URLSearchParams(location.search);
   const linked = params.get("room");
   // ?credits=ms (judging stills only): the end credits frozen that far in, over a made-up crew, no site
-  if (params.has("credits")) previewCredits(Number(params.get("credits")));
+  if (params.has("briefing")) previewBriefing();
+  else if (params.has("credits")) previewCredits(Number(params.get("credits")));
   else if (params.has("payslip")) previewCredits(Number(params.get("payslip")), true);
   else {
   title.open(Title.closeReason(Number(params.get("closed"))) ?? "");
   if (linked) title.join(linked);
   }
+}
+
+/** ?briefing (judging only): the ride-down briefing (the whole 10 s ride) on a loop, over the title's dark, no site */
+function previewBriefing(): void {
+  const travel = LIFT_RIDE_MS;
+  const t0 = performance.now();
+  const step = (): void => {
+    // a still for judging: window.__briefAt = 0..1 holds it there
+    const held = (window as { __briefAt?: number }).__briefAt;
+    const t = (performance.now() - t0) % (travel + 1500);
+    briefing.update(held !== undefined ? held : t < travel ? t / travel : undefined);
+    requestAnimationFrame(step);
+  };
+  step();
 }
 
 function previewCredits(ms: number, payslip = false): void {

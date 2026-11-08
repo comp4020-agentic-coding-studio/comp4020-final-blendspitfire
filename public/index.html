@@ -173,6 +173,32 @@
         min-width: 4.2em; text-align: right; text-shadow: 0 0 6px var(--ui-glow), 0 1px 0 #000; background: var(--ui-wash); padding: 1px 6px; }
       .ui-ride-label { color: var(--ui-dim); font: var(--ui-font); font-size: 16px; letter-spacing: 0.14em; text-transform: uppercase;
         text-shadow: 0 0 6px var(--ui-glow), 0 1px 0 #000; }
+      /* the briefing on the ride down (ADR-086): an incoming transmission from HQ, a comms box low in the view */
+      .ui-brief { position: fixed; left: 50%; bottom: 13vh; transform: translateX(-50%); display: none; pointer-events: none; z-index: 6;
+        width: min(560px, calc(100vw - 32px)); }
+      .ui-brief.open { display: block; }
+      .ui-brief .frame { padding: 8px 14px 12px; color: var(--ui); font: var(--ui-font); text-transform: uppercase; letter-spacing: 0.1em;
+        background: rgba(4, 5, 4, 0.82); border: 2px solid var(--ui); text-shadow: 0 0 6px var(--ui-glow), 0 1px 0 #000;
+        background-image: repeating-linear-gradient(0deg, rgba(0,0,0,0.25) 0 1px, transparent 1px 3px); }
+      .ui-brief .head { display: flex; align-items: center; gap: 8px; color: var(--ui-dim); font-size: 16px; border-bottom: 1px dashed var(--ui-dim);
+        padding-bottom: 4px; margin-bottom: 8px; }
+      .ui-brief .live { color: #ff5a48; animation: brief-live 1s steps(2) infinite; }
+      @keyframes brief-live { 50% { opacity: 0.2; } }
+      .ui-brief .bars { margin-left: auto; display: flex; align-items: flex-end; gap: 2px; height: 14px; }
+      .ui-brief .bars i { width: 4px; background: var(--ui-dim); opacity: 0.35; }
+      .ui-brief .bars i:nth-child(1) { height: 4px; } .ui-brief .bars i:nth-child(2) { height: 7px; }
+      .ui-brief .bars i:nth-child(3) { height: 10px; } .ui-brief .bars i:nth-child(4) { height: 14px; }
+      .ui-brief .bars i.on { background: var(--ui); opacity: 1; }
+      .ui-brief .incoming { text-align: center; font-size: 30px; letter-spacing: 0.18em; padding: 22px 0; }
+      .ui-brief .sign { text-align: center; color: var(--ui-dim); font-size: 18px; padding: 26px 0; }
+      .ui-brief .body { flex-direction: column; gap: 6px; height: 236px; box-sizing: border-box; justify-content: center; }
+      .ui-brief .incoming { height: 236px; display: flex; align-items: center; justify-content: center; padding: 0; }
+      .ui-brief .row { display: flex; align-items: center; gap: 12px; }
+      .ui-brief .row .num { color: var(--ui-dim); font-size: 18px; width: 1em; }
+      .ui-brief .art canvas { display: block; filter: drop-shadow(0 0 6px var(--ui-glow)); }
+      .ui-brief .say { font-size: 22px; line-height: 1.15; text-transform: none; letter-spacing: 0.06em; }
+      .ui-brief .sign { text-align: center; color: var(--ui-dim); font-size: 16px; padding: 6px 0 0; border-top: 1px dashed var(--ui-dim); margin-top: 6px; }
+      .ui-brief .caret { animation: brief-live 0.6s steps(2) infinite; margin-left: 2px; }
       .ui-countdown { position: fixed; left: 50%; top: 18vh; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center;
         color: var(--ui); text-transform: uppercase; letter-spacing: 0.12em; pointer-events: none; opacity: 0; transition: opacity 0.3s steps(4);
         text-shadow: 0 0 10px var(--ui-glow), 0 2px 0 #000; -webkit-font-smoothing: none; z-index: 6; }
@@ -281,6 +307,12 @@
         .ui-thanks .line, .ui-thanks .head { font-size: 16px; }
         .ui-thanks .sub { font-size: 16px; }
         .ui-thanks .card .line { padding: 0 16px; }
+        .ui-brief { bottom: 30vh; }
+        .ui-brief .incoming { font-size: 19px; padding: 14px 0; }
+        .ui-brief .say { font-size: 16px; }
+        .ui-brief .head { font-size: 12px; }
+        .ui-brief .body, .ui-brief .incoming { height: 190px; }
+        .ui-brief .sign { font-size: 13px; }
         .ui-countdown .cd-num { font-size: 48px; }
         .ui-countdown .cd-text { font-size: 16px; }
         #respawn { font-size: 64px; }

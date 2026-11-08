@@ -186,10 +186,23 @@ export function logoSvg(): string {
  * px; `color` the ink, since an image can't take currentColor.
  */
 export function pixelLogo(width: number, cell: number, color: string): HTMLCanvasElement {
+  // without the worn filter: its grain breaks thin lines into dashes on so coarse a grid
+  const svg = logoSvg()
+    .replace(' filter="url(#anu-worn)"', "")
+    .replace("<svg ", `<svg width="${W}" height="${H}" color="#fff" `);
+  return pixelSvg(svg, W, H, width, cell, color);
+}
+
+/**
+ * Any line drawing (an SVG `w` x `h`, drawn in white) put on the game's
+ * pixel grid the way the seal is: `width` screen px wide, one grid pixel
+ * every `cell` px, each pixel ink, half ink or clear by how much it covers.
+ */
+export function pixelSvg(svg: string, w: number, h: number, width: number, cell: number, color: string): HTMLCanvasElement {
   const SS = 8;
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(width / cell);
-  canvas.height = Math.round((width * H) / W / cell);
+  canvas.height = Math.round((width * h) / w / cell);
   canvas.style.width = `${canvas.width * cell}px`;
   canvas.style.imageRendering = "pixelated";
   const img = new Image();
@@ -214,10 +227,6 @@ export function pixelLogo(width: number, cell: number, color: string): HTMLCanva
     }
     ctx.putImageData(out, 0, 0);
   };
-  // without the worn filter: its grain breaks thin lines into dashes on so coarse a grid
-  const svg = logoSvg()
-    .replace(' filter="url(#anu-worn)"', "")
-    .replace("<svg ", `<svg width="${W}" height="${H}" color="#fff" `);
   img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   return canvas;
 }
