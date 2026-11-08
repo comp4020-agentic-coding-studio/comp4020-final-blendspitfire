@@ -113,6 +113,7 @@ import {
   LIFT_DOORS,
   LIFT_RIDE_MS,
   LIFT_SETTLE_MS,
+  BRIEF_MARGIN_MS,
   inAnyCar,
   inCar,
   levelOf,
@@ -2596,7 +2597,10 @@ function stepRide(): void {
   const rideShake = riding ? Math.min(1, (travelMs - msLeft) / 300, msLeft / 400) : 0;
   // HQ's briefing (ADR-086): on the way down, before the reactor's on, over the whole ride
   const briefed = riding && lift.going === "bottom" && !objective.active && !params.has("briefing");
-  if (!params.has("briefing")) briefing.update(briefed ? 1 - Math.max(0, (lift.until ?? 0) - serverClock.now()) / LIFT_RIDE_MS : undefined);
+  // 2 s of quiet after setting off and before the doors (user 2026-11-08); the transmission fills the rest
+  const into = LIFT_RIDE_MS - Math.max(0, (lift.until ?? 0) - serverClock.now());
+  const briefK = (into - BRIEF_MARGIN_MS) / (LIFT_RIDE_MS - 2 * BRIEF_MARGIN_MS);
+  if (!params.has("briefing")) briefing.update(briefed && briefK >= 0 && briefK <= 1 ? briefK : undefined);
   if (rideShake > 0.01) {
     const t = performance.now() / 1000;
     camera.position.x += Math.sin(t * 23) * 0.025 * rideShake;
@@ -3056,7 +3060,7 @@ requestAnimationFrame(animate);
 
 /** ?briefing (judging only): the ride-down briefing (the whole 10 s ride) on a loop, over the title's dark, no site */
 function previewBriefing(): void {
-  const travel = LIFT_RIDE_MS;
+  const travel = LIFT_RIDE_MS - 2 * BRIEF_MARGIN_MS;
   const t0 = performance.now();
   const step = (): void => {
     // a still for judging: window.__briefAt = 0..1 holds it there

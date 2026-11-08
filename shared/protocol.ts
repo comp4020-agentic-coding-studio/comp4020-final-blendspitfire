@@ -678,8 +678,10 @@ export interface LiftState {
   departAt?: number;
 }
 export const LIFT_DOOR_MS = 900;
-/** a ride either way (user 2026-11-07: about 10 s, both ways, under an altitude readout; 2026-11-08: 14 s, so HQ's briefing on the way down can be read) */
-export const LIFT_RIDE_MS = 14000;
+/** a ride either way (user 2026-11-07: about 10 s, both ways, under an altitude readout; 2026-11-08: 18 s, so HQ's briefing on the way down can be read, with 2 s of quiet either side of it) */
+export const LIFT_RIDE_MS = 18000;
+/** the briefing's quiet margins inside a ride down: none for this long after it starts, and this long after it ends before the doors */
+export const BRIEF_MARGIN_MS = 2000;
 /** the last part of a ride: the car has stopped, a beat before the doors open (user 2026-11-08) */
 export const LIFT_SETTLE_MS = 1200;
 /** how long the car waits before leaving if there's anyone else on that level who might want to come */

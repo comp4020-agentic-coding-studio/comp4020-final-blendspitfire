@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-11-08, HQ transmission on the ride down; 14 s ride
+Synced from the draft up to: 2026-11-08, HQ transmission on the ride down with 2 s margins; 18 s ride
 
 ---
 
@@ -1089,11 +1089,11 @@ Built (agent): `server/room.ts` holds a whole world per site; `server/index.ts` 
 
 **Why.** The developer's call, for speed before the deadline. The agent's how: a turret's box is flagged and the one shared range calculation (server shots, turret shots, client prediction) skips flagged boxes, with a test pinning it.
 
-## ADR-086: HQ's incoming transmission on the ride down; the ride takes 14 s
+## ADR-086: HQ's incoming transmission on the ride down; the ride takes 18 s
 *2026-11-08 · Status: Accepted, built*
 
 **Context.** Queued since 2026-11-05 as optional: a short mission briefing during the ride down, as black-and-white icon slides in the seal's style. With budget left the night before the deadline, the developer asked for it, and shaped it while watching demos: no stress on the number of waves (just activate the reactor, wait while it starts, ride the freight lift up with the cargo); styled as an incoming transmission from HQ assigning the job; and, since the cards flashed past too fast, either a longer ride or all the lines listed. The developer then allowed the ride to grow to fit.
 
-**Decision.** A comms box low on screen during the ride down, only before the reactor is on: "incoming transmission" with signal bars filling, then three lines from HQ typed out one by one, each with its icon, staying listed until the sign-off. The lift ride grows from 10 s to 14 s (both ways; the briefing plays only on the way down).
+**Decision.** A comms box low on screen during the ride down, only before the reactor is on: "incoming transmission" with signal bars filling, then three lines from HQ typed out one by one, each with its icon, staying listed until the sign-off. The lift ride grows from 10 s to 18 s (both ways; the briefing plays only on the way down), with 2 s of quiet after setting off and 2 s after the transmission before the doors open (developer's follow-up).
 
-**Why.** The developer's direction throughout. The agent's details: the icons are line art put on the game's pixel grid by the same routine as the seal (logo.ts pixelSvg); the wording ("your assignment: get the reactor running." / "hold the line while it powers up." / "then ride the freight lift up with the cargo.") and the header "HQ › CREW · ASSIGNMENT B3" are the agent's; the briefing spans the whole ride including the stop. Checked in a real ride: one line every ~3.6 s, all three listed by about -415 m, held through the stop, closed as the doors open. Preview: `/?briefing`.
+**Why.** The developer's direction throughout. The agent's details: the icons are line art put on the game's pixel grid by the same routine as the seal (logo.ts pixelSvg); the wording ("your assignment: get the reactor running." / "hold the line while it powers up." / "then ride the freight lift up with the cargo.") and the header "HQ › CREW · ASSIGNMENT B3" are the agent's; Checked in a real ride: ~2 s of quiet, one line every ~3.6 s, all three listed by about -360 m, the sign-off, then ~2 s with the car stopped before the doors open. Preview: `/?briefing`.
