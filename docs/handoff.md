@@ -5,7 +5,7 @@
 Updated: 2026-11-08 evening (ADR-079..083 BUILT; power-up sound dropped (user); game to be finished tonight; local main ahead of origin, NOT pushed; speedrun server :8095)
 
 ## Where we are
-- Final project due 2026-11-09 12:00. Pushed and deployed c68cd94 (2026-11-08 ~22:30, CI green). Nothing local unpushed except handoff/comment touch-ups.
+- Final project due 2026-11-09 12:00. Pushed and deployed 4eb3ba6 (2026-11-08, CI green, live version 0.1.0-4eb3ba6). Nothing unpushed but this handoff line.
 - The game is feature-complete; the user is playtesting via the speedrun server and flagging fixes one at a time. Everything since 2026-11-03 is in ADR-060..083.
 - Branch `surface` is merged into main; still present locally (ask before deleting).
 - Commit finished+verified work without asking (CLAUDE.md). Never push unasked.
