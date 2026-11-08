@@ -343,6 +343,45 @@ export class Audio {
   }
   private files = new Map<string, AudioBuffer>();
 
+  /**
+   * A recording made heavy and slow (user 2026-11-08: the old lift door, but
+   * much heavier and slower): played at `rate` (slower = longer and lower),
+   * low end lifted, the top dulled, and a copy an octave further down under
+   * it for weight. Returns how long it runs, s.
+   */
+  async playHeavy(path: string, o: { rate: number; level?: number; lowpass?: number; low?: number; sub?: number }): Promise<number> {
+    const ctx = this.ctx;
+    if (!ctx || !this.room) return 0;
+    let buf = this.files.get(path);
+    if (!buf) {
+      buf = await ctx.decodeAudioData(await (await fetch(path)).arrayBuffer());
+      this.files.set(path, buf);
+    }
+    const t = ctx.currentTime;
+    const shelf = ctx.createBiquadFilter();
+    shelf.type = "lowshelf";
+    shelf.frequency.value = 160;
+    shelf.gain.value = o.low ?? 9;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = o.lowpass ?? 1500;
+    const out = ctx.createGain();
+    out.gain.value = o.level ?? 1.6;
+    shelf.connect(lp).connect(out).connect(this.room);
+    const play = (rate: number, level: number): void => {
+      const src = ctx.createBufferSource();
+      src.buffer = buf!;
+      src.playbackRate.value = rate;
+      const g = ctx.createGain();
+      g.gain.value = level;
+      src.connect(g).connect(shelf);
+      src.start(t);
+    };
+    play(o.rate, 1);
+    if (o.sub) play(o.rate / 2, o.sub);
+    return buf.duration / o.rate;
+  }
+
   playTake(name: TakeName, level = 1, punch?: Punch): void {
     if (this.ctx && this.room) playTake(this.ctx, this.room, name, level, punch);
   }

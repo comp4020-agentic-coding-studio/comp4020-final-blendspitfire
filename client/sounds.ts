@@ -245,7 +245,11 @@ const TRIAL: [string, [string, string, () => void][]][] = [
   ]],
   ["on trial: a louder blast door (layered over the grind already in game, or replacing it)", [
     ["A powered door", "a powered door opening, 2 s (Spring Spring)", () => void audio.playFile("sfx/trial_door_various.wav", 1.4)],
-    ["B old lift door", "a dirty old metal lift door, 3 s (sinny)", () => void audio.playFile("sfx/trial_door_elevator.wav", 1.4)],
+    ["B old lift door", "a dirty old metal lift door, 3 s (sinny), as recorded", () => void audio.playFile("sfx/trial_door_elevator.wav", 1.4)],
+    ["B1 heavy, half speed", "B at 0.5x (6.3 s, an octave down), low end up, top dulled", () => void audio.playHeavy("sfx/trial_door_elevator.wav", { rate: 0.5 })],
+    ["B2 heavier, 0.4x", "B at 0.4x (7.9 s, about the door's 9 s), plus a copy an octave below for weight", () => void audio.playHeavy("sfx/trial_door_elevator.wav", { rate: 0.4, sub: 0.5 })],
+    ["B3 heaviest, 0.33x", "B at 0.33x (9.5 s, the whole opening), darker, more weight underneath", () => void audio.playHeavy("sfx/trial_door_elevator.wav", { rate: 0.33, sub: 0.7, lowpass: 1100, low: 11 })],
+    ["B2 + grind + clunk", "B2 over the in-game grind, ending on the clunk: how it would sound in game", () => { void audio.playHeavy("sfx/trial_door_elevator.wav", { rate: 0.4, sub: 0.5 }).then((d) => setTimeout(() => { audio.setMachine("blastDoor", 0); audio.clunk(1.4); }, d * 1000)); audio.setMachine("blastDoor", 0.6); }],
     ["C construction rumble", "heavy machinery rumble bed, 8 s (rubberduck)", () => void audio.playFile("sfx/trial_door_construction.wav", 1.2)],
     ["D metal door", "a metal door opening, short (rubberduck)", () => void audio.playFile("sfx/trial_door_metalopen.wav", 2)],
     ["E in-game grind (now louder)", "the grind in game, raised to 1.6 and brighter, with the stronger clunk at the end", () => { audio.setMachine("blastDoor", 1); setTimeout(() => { audio.setMachine("blastDoor", 0); audio.clunk(1.4); }, 4000); }],
