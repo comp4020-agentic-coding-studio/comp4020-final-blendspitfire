@@ -5,7 +5,7 @@
 Updated: 2026-11-09 (README ~680 / PROCESS ~1160 words, committed, NOT pushed; live is 35ee5dc; speedrun server :8095)
 
 ## Where we are
-- Final project due 2026-11-09 12:00. Live 0.1.0-35ee5dc. Unpushed: handoff 38cf07e, README compression 6a790d0 (+ ADR-088 references), PROCESS compression c95fb94, handoff bcfd10a, PAID seal stamp (ADR-089). Push only when the user says so.
+- Final project due 2026-11-09 12:00. Live 0.1.0-601a28a (everything pushed). Push only when the user says so.
 - The game is feature-complete; the user is playtesting via the speedrun server and flagging fixes one at a time. Everything since 2026-11-03 is in ADR-060..083.
 - Branch `surface` is merged into main; still present locally (ask before deleting).
 - Commit finished+verified work without asking (CLAUDE.md). Never push unasked.
