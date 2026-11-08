@@ -19,6 +19,7 @@ const GROUPS: [string, [SfxName, string][]][] = [
     ["ricochet", "a round off a wall: tick, sometimes a zing"],
     ["fleshHit", "a round into a crawler"],
     ["dryClick", "won't fire (in the lift) / a refused action"],
+    ["stampThud", "the PAID stamp on the payslip"],
   ]],
   ["crawlers", [
     ["crawlerChitter", "idle voice, now and then, from where it is"],

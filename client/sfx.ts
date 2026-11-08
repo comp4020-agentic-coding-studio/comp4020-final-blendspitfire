@@ -398,6 +398,15 @@ export function dryClick(ctx: BaseAudioContext, out: Out, level = 1): void {
   burst(ctx, out, t + 0.03, { type: "bandpass", f: 2200, q: 4, gain: 0.08 * level, decay: 0.012 });
 }
 
+/** the PAID stamp on the payslip: a heavy rubber-stamp thud on a desk, and the desk's rattle */
+export function stampThud(ctx: BaseAudioContext, out: Out, level = 1): void {
+  const t = ctx.currentTime;
+  tone(ctx, out, t, { f: 120, fEnd: 55, gain: 0.5 * level, attack: 0.002, decay: 0.16 });
+  burst(ctx, out, t, { type: "lowpass", f: 900, gain: 0.35 * level, attack: 0.001, decay: 0.07 });
+  burst(ctx, out, t + 0.005, { type: "bandpass", f: 2400, q: 2, gain: 0.08 * level, decay: 0.02 });
+  burst(ctx, out, t + 0.09, { type: "bandpass", f: 1400, q: 6, gain: 0.04 * level, decay: 0.05 });
+}
+
 /** a pickup: a short cloth-and-metal shuffle */
 export function pickup(ctx: BaseAudioContext, out: Out, level = 1): void {
   const t = ctx.currentTime;
@@ -533,6 +542,7 @@ export const SFX = {
   playerHurt,
   reactorAlarm,
   dryClick,
+  stampThud,
   pickup,
   trackerPing,
   bump,

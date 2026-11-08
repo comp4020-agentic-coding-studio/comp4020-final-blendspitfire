@@ -101,7 +101,7 @@
       .ui-settle .sub { color: var(--ui-dim); margin-bottom: 12px; }
       .ui-settle .head, .ui-settle .row, .ui-settle .total { display: flex; gap: 14px; padding: 2px 0; }
       .ui-settle .head { color: var(--ui-dim); border-bottom: 1px solid var(--ui-dim); margin-bottom: 4px; }
-      .ui-settle .head > span, .ui-settle .row > span { min-width: 3.4em; text-align: right; }
+      .ui-settle .head > span, .ui-settle .row > span, .ui-settle .gross > span { min-width: 3.4em; text-align: right; }
       .ui-settle .name { flex: 1; text-align: left !important; }
       .ui-settle .num { min-width: 7em !important; font-variant-numeric: tabular-nums; }
       .ui-settle .row, .ui-settle .total { opacity: 0; transform: translateX(-6px); transition: opacity 0.25s steps(3), transform 0.25s steps(3); }
@@ -109,6 +109,22 @@
       .ui-settle .row.me { color: #fff; text-shadow: 0 0 8px var(--ui-glow); }
       .ui-settle .minus { color: #ff8a7a; }
       .ui-settle .total { margin-top: 8px; padding-top: 6px; border-top: 2px solid var(--ui); font-size: 30px; }
+      /* the payslip (ADR-079): a big green gross, cuts a second apart, a rule, the net, and a red PAID stamp slammed on it */
+      .ui-settle .gross { display: flex; gap: 14px; font-size: 40px; color: #8fe39a; text-shadow: 0 0 12px rgba(143, 227, 154, 0.5), 0 1px 0 #000;
+        margin-bottom: 6px; opacity: 0; transition: opacity 0.4s steps(4); }
+      .ui-settle .gross.in { opacity: 1; }
+      .ui-settle .rule { height: 0; border-top: 2px solid var(--ui); margin-top: 8px; transform: scaleX(0); transform-origin: left;
+        transition: transform 0.5s steps(6); }
+      .ui-settle .rule.in { transform: none; }
+      .ui-settle .rule + .total { border-top: 0; margin-top: 2px; position: relative; }
+      .ui-settle .paid { position: absolute; left: 34%; top: 50%; pointer-events: none; opacity: 0;
+        transform: translateY(-50%) rotate(-12deg) scale(3); }
+      .ui-settle .paid canvas { display: block; filter: drop-shadow(0 0 6px rgba(255, 90, 72, 0.5)); }
+      .ui-settle.stamped .paid { opacity: 0.92; transform: translateY(-50%) rotate(-12deg) scale(1);
+        transition: transform 0.12s steps(3), opacity 0.12s steps(3); }
+      .ui-settle.stamped .total .num { color: #8fe39a; font-size: 1.35em; text-shadow: 0 0 14px rgba(143, 227, 154, 0.6), 0 1px 0 #000; }
+      .ui-settle.stamped { animation: paid-thud 0.3s steps(6) 0.12s; }
+      @keyframes paid-thud { 0% { translate: 0 0; } 25% { translate: -4px 3px; } 50% { translate: 3px -2px; } 75% { translate: -2px 1px; } 100% { translate: 0 0; } }
       .ui-settle .tag { font-weight: 400; color: #0b0c0e; background: var(--ui); padding: 0 6px; text-shadow: none; }
       .ui-thanks { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
         color: var(--ui); font: var(--ui-font); letter-spacing: 0.2em; text-transform: uppercase; z-index: 8; pointer-events: none;
@@ -257,6 +273,8 @@
         .ui-settle .head > span, .ui-settle .row > span { min-width: 2.4em; }
         .ui-settle .num { min-width: 4.5em !important; }
         .ui-settle .total { font-size: 19px; }
+        .ui-settle .gross { font-size: 24px; gap: 8px; }
+        .ui-settle .paid { left: 30%; zoom: 0.75; }
         .ui-thanks .cast { grid-template-columns: 5.5em 7em 3em; gap: 8px; font-size: 15px; }
         .ui-thanks .cast.credit { grid-template-columns: 5.5em 13em; }
         .ui-thanks .line.big { font-size: 21px; }

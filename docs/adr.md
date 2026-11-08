@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-11-07, solo quota bonus; 10 s lift both ways
+Synced from the draft up to: 2026-11-08, payslip formula and the PAID stamp
 
 ---
 
@@ -1023,3 +1023,14 @@ Built (agent): `server/room.ts` holds a whole world per site; `server/index.ts` 
 **Decision.** The developer chose none of the three: subsidise each wave's quota by crew size, with the number left to the agent. The lift takes 10 s both ways.
 
 **Why.** The developer's call. The agent's numbers, awaiting playtest: when a wave is cleared with only one player alive below, it pays +25 on top (with the base 15, at least 40 a wave, one turret); two or more, unchanged; the wave report shows a "solo bonus" line. The ride: a ruler scrolling past a fixed cursor (a tick every 10 m, a figure every 50 m) with the depth underneath; it speeds up, cruises and slows (22% of the ride at each end); the floor is 470–530 m down, picked per ride from the ride's end time so everyone in the car reads the same number; the ride up runs from that depth back to 0.
+
+## ADR-079: The payslip follows the score and ends on a PAID stamp
+*2026-11-08 · Status: Accepted, built (awaiting the developer's look)*
+
+**Context.** The developer set the payslip's direction on 2026-10-29: the gross moves with the final score, a few small fixed fees, most of it taken by fixed shares (steep tax, absurd charges), ending at around two digits but still tied to the score (100 and 50 points should differ). The display: a big green gross, about one cut a second (5–8 cuts), a rule, a pause, then the net pay revealed as if it were a fortune. The formula and the effect were left open; the old payslip always came to exactly $20.
+
+**Options.** Formula: gross = score × $500 and six cuts each taking a share of what's left, plus two small flat fees; the same with ammunition and medical driven by the player's own shots and wounds; or steeper shares that leave only one or two digits. Reveal: zoom with falling coins and a till chime; a red PAID stamp slammed down; or both.
+
+**Decision.** The first formula: income tax 45%, hazard pay clawback 70%, equipment depreciation 80%, company housing 85%, cargo insurance 90%, administration fee 50%, then the freight lift fare $15 and the morale programme $9.99. The reveal is the PAID stamp.
+
+**Why.** The developer's choice; the stamp matches the seal's rubber-stamp look. The agent's details, awaiting the developer's look: flat fees stop at zero so net pay is never negative; a won run is at least 800 points, so real payslips land around $70–$250 (1650 points pays $179.19); the payslip page grows from 13 s to 16 s (gross at 0.6 s, a cut every second from 1.5 s, the rule, 2.5 s of pause, the net turning big and green, the stamp 0.6 s later with a synthesised thud and a small shake). Preview without a run: `/?payslip=14000&freeze&score=1650`.

@@ -97,7 +97,7 @@ export const FREIGHT_BOARD_MS = 20000;
 /** the door shutting again behind the platform */
 export const EVAC_SHUT_MS = 4000;
 /** the settlement's pages, played while the platform rises */
-export const SETTLE_PAGES_MS = [11000, 13000, 9000] as const;
+export const SETTLE_PAGES_MS = [11000, 16000, 9000] as const;
 export const RISE_MS = SETTLE_PAGES_MS.reduce((a, b) => a + b, 0);
 /** the last page fading out at the end of the rise; the shaft stays lit behind it */
 export const EVAC_FADE_MS = 1000;

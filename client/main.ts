@@ -77,6 +77,7 @@ import {
   blastDoorOpen,
   evacStage,
   THANKS_MS,
+  SETTLE_PAGES_MS,
   waveSize,
   type DefenceState, type EnemyKind, type EnemyState, type SpitState } from "../shared/enemies.ts";
 import {
@@ -2480,6 +2481,7 @@ document.body.appendChild(heliFadeEl);
 // them, and the settlement plays over the climb, then black and the thanks
 // card until the server brings everyone up.
 const settlement = new Settlement(Math.max(1, Math.round(1 / PIXEL_SCALE)));
+settlement.onStamp = () => audio.play("stampThud");
 const evacFadeEl = document.createElement("div");
 evacFadeEl.className = "ui-wipe";
 document.body.appendChild(evacFadeEl);
@@ -2993,16 +2995,17 @@ requestAnimationFrame(animate);
   const linked = params.get("room");
   // ?credits=ms (judging stills only): the end credits frozen that far in, over a made-up crew, no site
   if (params.has("credits")) previewCredits(Number(params.get("credits")));
+  else if (params.has("payslip")) previewCredits(Number(params.get("payslip")), true);
   else {
   title.open(Title.closeReason(Number(params.get("closed"))) ?? "");
   if (linked) title.join(linked);
   }
 }
 
-function previewCredits(ms: number): void {
+function previewCredits(ms: number, payslip = false): void {
   const line = (name: string, score: number, out = false): CrewLine => ({ name, score, out, kills: 0, shots: 0, hits: 0, wounds: 0, spent: 0, turrets: 0 });
   settlement.set(
-    { type: "attempt", outcome: "won", reason: "", attempt: 3, waves: 6, blackoutMs: 0, crew: [line("RIPLEY", 412), line("HICKS", 377), line("VASQUEZ", 350, true), line("Teal-5174", 120)] },
+    { type: "attempt", outcome: "won", reason: "", attempt: 3, waves: 6, blackoutMs: 0, crew: [line("RIPLEY", Number(params.get("score")) || 412), line("HICKS", 377), line("VASQUEZ", 350, true), line("Teal-5174", 120)] },
     { type: "board", run: { attempts: 0, best: 0 }, wins: [], top: ["RIPLEY", "BISHOP", "HICKS", "HUDSON", "VASQUEZ", "GORMAN", "APONE", "DRAKE", "FROST", "DIETRICH"].map((name, i) => ({ name, score: 600 - i * 41, kills: 0, waves: 6, won: i < 3 })) },
     "RIPLEY",
   );
@@ -3010,6 +3013,13 @@ function previewCredits(ms: number): void {
   const frozen = new URLSearchParams(location.search).has("freeze");
   const step = (): void => {
     const at = frozen ? ms : performance.now() - t0;
+    if (payslip) {
+      settlement.set(undefined, undefined, "RIPLEY");
+      // ?payslip=ms: the payslip page, that far in (0..SETTLE_PAGES_MS[1])
+      settlement.update({ stage: "rising", ms: at, page: 1, k: Math.min(1, at / SETTLE_PAGES_MS[1]), fade: 0 });
+      requestAnimationFrame(step);
+      return;
+    }
     evacFadeEl.style.opacity = `${settlement.update(at < THANKS_MS ? { stage: "thanks", ms: at, k: at / THANKS_MS } : { stage: "done" })}`;
     requestAnimationFrame(step);
   };

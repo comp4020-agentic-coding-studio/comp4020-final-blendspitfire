@@ -222,20 +222,24 @@ export function pixelLogo(width: number, cell: number, color: string): HTMLCanva
   return canvas;
 }
 
-/** DEMO in hand-set 5x7 pixel letters: at the game's pixel size a font's M closes up */
-const DEMO_GLYPHS = [
-  ["1110.", "1..1.", "1...1", "1...1", "1...1", "1..1.", "1110."],
-  ["11111", "1....", "1....", "1111.", "1....", "1....", "11111"],
-  ["1...1", "11.11", "1.1.1", "1.1.1", "1...1", "1...1", "1...1"],
-  [".111.", "1...1", "1...1", "1...1", "1...1", "1...1", ".111."],
-];
+/** stamp words in hand-set 5x7 pixel letters: at the game's pixel size a font's M closes up */
+const GLYPHS: Record<string, string[]> = {
+  D: ["1110.", "1..1.", "1...1", "1...1", "1...1", "1..1.", "1110."],
+  E: ["11111", "1....", "1....", "1111.", "1....", "1....", "11111"],
+  M: ["1...1", "11.11", "1.1.1", "1.1.1", "1...1", "1...1", "1...1"],
+  O: [".111.", "1...1", "1...1", "1...1", "1...1", "1...1", ".111."],
+  P: ["1111.", "1...1", "1...1", "1111.", "1....", "1....", "1...."],
+  A: [".111.", "1...1", "1...1", "11111", "1...1", "1...1", "1...1"],
+  I: ["11111", "..1..", "..1..", "..1..", "..1..", "..1..", "11111"],
+};
 
 /**
- * The DEMO stamp under the seal (user 2026-11-03/04): a solid block of ink
- * with the word cut out of it, on the same pixel grid as pixelLogo.
+ * A rubber stamp: a solid block of ink with `word` cut out of it, on the
+ * same pixel grid as pixelLogo (letters from GLYPHS only).
  */
-export function demoStamp(cell: number, color: string): HTMLCanvasElement {
-  const gw = 32;
+export function cutStamp(word: string, cell: number, color: string): HTMLCanvasElement {
+  const n = word.length;
+  const gw = n * 5 + (n - 1) * 2 + 6;
   const gh = 13;
   const canvas = document.createElement("canvas");
   canvas.width = gw;
@@ -245,10 +249,13 @@ export function demoStamp(cell: number, color: string): HTMLCanvasElement {
   const ctx = canvas.getContext("2d")!;
   ctx.fillStyle = color;
   ctx.fillRect(0, 0, gw, gh);
-  const x0 = Math.floor((gw - (4 * 5 + 3 * 2)) / 2);
+  const x0 = 3;
   const y0 = Math.floor((gh - 7) / 2);
-  DEMO_GLYPHS.forEach((glyph, i) =>
-    glyph.forEach((row, r) => [...row].forEach((v, c) => v === "1" && ctx.clearRect(x0 + i * 7 + c, y0 + r, 1, 1))),
+  [...word].forEach((ch, i) =>
+    GLYPHS[ch].forEach((row, r) => [...row].forEach((v, c) => v === "1" && ctx.clearRect(x0 + i * 7 + c, y0 + r, 1, 1))),
   );
   return canvas;
 }
+
+/** The DEMO stamp under the seal (user 2026-11-03/04) */
+export const demoStamp = (cell: number, color: string): HTMLCanvasElement => cutStamp("DEMO", cell, color);

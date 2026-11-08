@@ -21,7 +21,7 @@ import {
   type LiftLevel,
 } from "../shared/protocol.ts";
 import { EVAC_DOOR_MS, EVAC_SHUT_MS, RISE_MS, SETTLE_PAGES_MS, THANKS_MS, blastDoorOpen, evacStage } from "../shared/enemies.ts";
-import { payslip } from "../client/ui/settlement.ts";
+import { PAY_PER_POINT, payslip } from "../client/ui/settlement.ts";
 
 // The lift between the garden and the facility: a state machine on the
 // server (server/lift.ts) and the rules every client shares
@@ -216,10 +216,21 @@ describe("the way out after a win", () => {
     expect(freightVerdict({ x: 0, z: 0 }, "won", 1, false)).toBe("too far");
   });
 
-  it("the payslip always comes to twenty dollars", () => {
-    for (const me of [undefined, { shots: 0, wounds: 0, turrets: 0 }, { shots: 1234, wounds: 9, turrets: 3 }]) {
-      const lines = payslip(me as never, 3);
-      expect(lines.reduce((a, [, v]) => a + v, 0)).toBe(20);
+  it("the payslip adds up, never goes negative, and pays more for a higher score (ADR-079)", () => {
+    let last = -1;
+    for (const score of [0, 1, 50, 100, 500, 1000, 2000]) {
+      const { gross, lines, net } = payslip(score);
+      expect(gross).toBe(score * PAY_PER_POINT);
+      expect(lines.length).toBeGreaterThanOrEqual(5);
+      expect(lines.length).toBeLessThanOrEqual(8);
+      expect(Math.abs(gross + lines.reduce((a, [, v]) => a + v, 0) - net)).toBeLessThan(0.005);
+      expect(net).toBeGreaterThanOrEqual(0);
+      if (score >= 500) expect(net).toBeGreaterThan(last);
+      last = net;
     }
+    // a win alone is 800+ points: two to three digits, and scores visibly apart (user 2026-10-29)
+    expect(payslip(800).net).toBeGreaterThan(50);
+    expect(payslip(2000).net).toBeLessThan(500);
+    expect(payslip(1600).net).toBeGreaterThan(payslip(800).net * 1.8);
   });
 });

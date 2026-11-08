@@ -1,15 +1,15 @@
 import type { BoardMessage, CrewLine, Report } from "../../shared/protocol.ts";
 import { CREDITS_ROLL_AT, CREDITS_ROLL_MS, SETTLE_PAGES_MS, THANKS_DIM_MS, THANKS_IN_MS, THANKS_MS, THANKS_OUT_MS, type EvacStage } from "../../shared/enemies.ts";
-import { demoStamp, pixelLogo } from "./logo.ts";
+import { cutStamp, demoStamp, pixelLogo } from "./logo.ts";
 
 // The settlement (ADR-060): played while the freight lift climbs, after
 // Lethal Company's end-of-shift screens. Three pages on the server's clock,
 // so everyone's on the same page at once: the crew's shift report (and its
-// MVP), your payslip --- a big number eaten line by line down to $20 ---
+// MVP), your payslip --- a big number eaten line by line down to a few dollars ---
 // and where your name stands on the board. Then black, and the end credits
 // (user 2026-11-03): the seal and its line, this run's crew, the top ten,
 // the credits, the sounds' makers, and "thanks for playing". All the wording
-// and every number on the payslip are the agent's, except the credits'
+// is the agent's (the payslip's rule and its stamp are the user's), except the credits'
 // sections and first line and who the credits thank (the user's).
 
 type Attempt = Extract<Report, { type: "attempt" }>;
@@ -39,40 +39,64 @@ const SOUND_CREDITS =
   credit("groans", "stephan (SoundBible)") +
   '<div class="cast solo dim">CC0 / public domain, via OpenGameArt</div></div>';
 
-const money = (n: number): string => `${n < 0 ? "−" : ""}$${Math.abs(Math.round(n)).toLocaleString("en-US")}`;
+const money = (n: number): string => {
+  const a = Math.abs(n);
+  // cents only where there are some under $1,000 (the $9.99 fee, the net), whole dollars otherwise
+  const c = a < 1000 && Math.round(a * 100) % 100 !== 0 ? 2 : 0;
+  return `${n < 0 ? "−" : ""}$${a.toLocaleString("en-US", { minimumFractionDigits: c, maximumFractionDigits: c })}`;
+};
 const pct = (a: number, b: number): string => (b ? `${Math.round((a / b) * 100)}%` : "—");
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
 /** fades go in visible steps, like the rest of the pixel UI */
 const stepped = (a: number): number => Math.round(a * 8) / 8;
 /** after the card, the garden fades in from black over this long */
 const BACK_IN_MS = 1500;
+/** the payslip page's beats, ms into it (SETTLE_PAGES_MS[1] = 16 s); the cuts come a second apart (user) */
+const PAY_GROSS_AT = 600;
+const PAY_LINES_AT = 1500;
+const PAY_LINE_MS = 1000;
+/** from the rule to the net pay: the beat before the reveal */
+const PAY_PAUSE_MS = 2500;
+const PAY_STAMP_AFTER_MS = 600;
+/** the stamp's ink: the UI's "can't" red, as a rubber stamp */
+const PAID_INK = "#ff5a48";
 const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-/** the deadpan payslip: what the corp promised, and what it took back, for this crew member */
-export function payslip(me: CrewLine | undefined, crewSize: number): [string, number][] {
-  const shots = me?.shots ?? 0;
-  const wounds = me?.wounds ?? 0;
-  const turrets = me?.turrets ?? 0;
-  const gross = 480_000;
-  const lines: [string, number][] = [
-    ["base pay, reactor stabilisation", gross],
-    ["hazard pay clawback (reactor now rated safe)", -96_000],
-    [`ammunition, ${shots} round${shots === 1 ? "" : "s"} @ $35`, -shots * 35],
-    [`medical, ${wounds} wound${wounds === 1 ? "" : "s"} @ $1,200`, -wounds * 1200],
-    ...(turrets ? ([[`sentry lease, ${turrets} unit${turrets === 1 ? "" : "s"}`, -turrets * 8000]] as [string, number][]) : []),
-    ["rifle wear and tear", -18_400],
-    [`freight lift fare (shared ${crewSize} ways)`, -Math.round(37_500 / Math.max(1, crewSize))],
-    ["cargo insurance excess", -73_000],
-    ["company housing, B3 dormitory", -41_250],
-    ["morale programme", -9_999],
-  ];
-  const before = lines.reduce((a, [, v]) => a + v, 0);
-  // tax on whatever's left, then the adjustment that makes it come out right
-  const tax = -Math.round(Math.max(0, before) * 0.37);
-  lines.push(["income tax, 37%", tax]);
-  const left = before + tax;
-  lines.push(["administrative rounding", 20 - left]);
-  return lines;
+/**
+ * The payslip (user 2026-11-08, ADR-079): the gross is the score times
+ * PAY_PER_POINT, six cuts each take a share of whatever is left, then two
+ * small flat fees (never below zero). Net pay stays proportional to the
+ * score: 2000 points comes to about $222, 1000 to about $110.
+ */
+export const PAY_PER_POINT = 500;
+const PAY_CUTS: [string, number][] = [
+  ["income tax", 0.45],
+  ["hazard pay clawback", 0.7],
+  ["equipment depreciation", 0.8],
+  ["company housing, B3 dorm", 0.85],
+  ["cargo insurance excess", 0.9],
+  ["administration fee", 0.5],
+];
+const PAY_FEES: [string, number][] = [
+  ["freight lift fare", 15],
+  ["morale programme", 9.99],
+];
+const cents = (n: number): number => Math.round(n * 100) / 100;
+export function payslip(score: number): { gross: number; lines: [string, number][]; net: number } {
+  const gross = Math.max(0, Math.round(score)) * PAY_PER_POINT;
+  let left = gross;
+  const lines: [string, number][] = [];
+  for (const [what, share] of PAY_CUTS) {
+    const cut = cents(left * share);
+    lines.push([`${what} ${Math.round(share * 100)}%`, -cut]);
+    left = cents(left - cut);
+  }
+  for (const [what, fee] of PAY_FEES) {
+    const cut = Math.min(left, fee);
+    lines.push([what, -cut]);
+    left = cents(left - cut);
+  }
+  return { gross, lines, net: left };
 }
 
 export class Settlement {
@@ -89,9 +113,15 @@ export class Settlement {
   /** the screen was held black by the ending (thanks/done): fade back in when it lets go */
   private wasBlack = false;
   private backAt = 0;
+  private readonly cell: number;
+  /** the PAID stamp is down on this page already (so its sound plays once) */
+  private stamped = false;
+  /** called the moment the PAID stamp lands (main.ts plays its thud) */
+  onStamp?: () => void;
 
   /** `cell`: how many screen px one of the game's pixels is, so the seal sits on the same grid */
   constructor(cell: number) {
+    this.cell = cell;
     this.el = document.createElement("div");
     this.el.className = "ui-settle";
     document.body.appendChild(this.el);
@@ -159,13 +189,30 @@ export class Settlement {
     if (st.page !== this.page) {
       this.page = st.page;
       this.el.innerHTML = this.render(st.page);
+      this.stamped = false;
+      if (st.page === 1) this.el.querySelector(".paid")!.append(cutStamp("PAID", this.cell, PAID_INK));
     }
-    // lines come in one by one through the first part of a page
     const rows = this.el.querySelectorAll<HTMLElement>(".row");
-    const shown = Math.floor(st.k * (SETTLE_PAGES_MS[st.page] / 1000) * 2.2);
-    rows.forEach((r, i) => r.classList.toggle("in", i < shown));
     const total = this.el.querySelector<HTMLElement>(".total");
-    if (total) total.classList.toggle("in", shown > rows.length);
+    if (st.page === 1) {
+      // the payslip on its own clock (user 2026-11-08): the gross, a cut a second, the
+      // rule, a pause, then the net and the stamp slamming down on it
+      const t = st.k * SETTLE_PAGES_MS[1];
+      this.el.querySelector(".gross")!.classList.toggle("in", t >= PAY_GROSS_AT);
+      rows.forEach((r, i) => r.classList.toggle("in", t >= PAY_LINES_AT + i * PAY_LINE_MS));
+      const ruleAt = PAY_LINES_AT + rows.length * PAY_LINE_MS;
+      this.el.querySelector(".rule")!.classList.toggle("in", t >= ruleAt);
+      total!.classList.toggle("in", t >= ruleAt + PAY_PAUSE_MS);
+      const stamp = t >= ruleAt + PAY_PAUSE_MS + PAY_STAMP_AFTER_MS;
+      this.el.classList.toggle("stamped", stamp);
+      if (stamp && !this.stamped) this.onStamp?.();
+      this.stamped = stamp;
+    } else {
+      // lines come in one by one through the first part of a page
+      const shown = Math.floor(st.k * (SETTLE_PAGES_MS[st.page] / 1000) * 2.2);
+      rows.forEach((r, i) => r.classList.toggle("in", i < shown));
+      if (total) total.classList.toggle("in", shown > rows.length);
+    }
     // the last page fades out on its own: the shaft stays lit for the card to come in over
     this.el.style.opacity = `${1 - st.fade}`;
     return 0;
@@ -194,15 +241,16 @@ export class Settlement {
     }
     if (page === 1) {
       const me = crew.find((c) => c.name === this.me);
-      const lines = payslip(me, crew.length);
+      const { gross, lines, net } = payslip(me?.score ?? 0);
       const rows = lines
-        .map(([what, v]) => `<div class="row"><span class="name">${esc(what)}</span><span class="num${v < 0 ? " minus" : ""}">${money(v)}</span></div>`)
+        .map(([what, v]) => `<div class="row"><span class="name">${esc(what)}</span><span class="num minus">${money(v)}</span></div>`)
         .join("");
-      const net = lines.reduce((a, [, v]) => a + v, 0);
       return (
-        `<div class="title">payslip</div><div class="sub">${esc(this.me || "crew member")} · contract B3-${String(this.report?.attempt ?? 0).padStart(3, "0")}</div>` +
+        `<div class="title">payslip</div><div class="sub">${esc(this.me || "crew member")} · contract B3-${String(this.report?.attempt ?? 0).padStart(3, "0")} · ${me?.score ?? 0} pts</div>` +
+        `<div class="gross"><span class="name">gross pay</span><span class="num">${money(gross)}</span></div>` +
         rows +
-        `<div class="total"><span class="name">net pay</span><span class="num">${money(net)}</span></div>`
+        `<div class="rule"></div>` +
+        `<div class="total"><span class="name">net pay</span><span class="num">${money(net)}</span><span class="paid"></span></div>`
       );
     }
     const mine = crew
