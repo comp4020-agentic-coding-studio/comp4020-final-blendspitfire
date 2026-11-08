@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-11-08, HQ transmission on the ride down with 2 s margins; 18 s ride
+Synced from the draft up to: 2026-11-09, the contract between the tutorial and the dig site (signature, company-seal APPROVED stamp); lift back to 10 s
 
 ---
 
@@ -1090,10 +1090,39 @@ Built (agent): `server/room.ts` holds a whole world per site; `server/index.ts` 
 **Why.** The developer's call, for speed before the deadline. The agent's how: a turret's box is flagged and the one shared range calculation (server shots, turret shots, client prediction) skips flagged boxes, with a test pinning it.
 
 ## ADR-086: HQ's incoming transmission on the ride down; the ride takes 18 s
-*2026-11-08 · Status: Accepted, built*
+*2026-11-08 · Status: Superseded by ADR-087*
 
 **Context.** Queued since 2026-11-05 as optional: a short mission briefing during the ride down, as black-and-white icon slides in the seal's style. With budget left the night before the deadline, the developer asked for it, and shaped it while watching demos: no stress on the number of waves (just activate the reactor, wait while it starts, ride the freight lift up with the cargo); styled as an incoming transmission from HQ assigning the job; and, since the cards flashed past too fast, either a longer ride or all the lines listed. The developer then allowed the ride to grow to fit.
 
 **Decision.** A comms box low on screen during the ride down, only before the reactor is on: "incoming transmission" with signal bars filling, then three lines from HQ typed out one by one, each with its icon, staying listed until the sign-off. The lift ride grows from 10 s to 18 s (both ways; the briefing plays only on the way down), with 2 s of quiet after setting off and 2 s after the transmission before the doors open (developer's follow-up).
 
 **Why.** The developer's direction throughout. The agent's details: the icons are line art put on the game's pixel grid by the same routine as the seal (logo.ts pixelSvg); the header "HQ › CREW · ASSIGNMENT B3" is the agent's. The lines were first written as a game talking to the player ("hold the line while it powers up"); the developer asked for hostiles and the reactor's safety to be mentioned, and found "hold the line" too meta, not an in-world briefing. They became a company work order, in the voice of the credits' "Assets recovered. Thank you for your service.", approved by the developer: "work order B3: restore power to the facility reactor." / "hostile organisms may be present. the reactor must not be damaged during start-up." / "on completion, accompany the cargo to the surface by freight lift." (the cargo is the point; the crew only accompanies it). The second icon is a crawler; Checked in a real ride: ~2 s of quiet, one line every ~3.6 s, all three listed by about -360 m, the sign-off, then ~2 s with the car stopped before the doors open. Preview: `/?briefing`.
+
+## ADR-087: A contract to sign between the tutorial and the dig site; the lift is back to 10 s
+*2026-11-09 · Status: Accepted, built · Supersedes ADR-086*
+
+**Context.** ADR-086 put the job's briefing in the lift on the way down. The developer changed their mind: the briefing should come between the end of the tutorial and the main site, and feel like the company's contract. It can say more, a page at a time with a click to go on, and end with a button to sign it, after which it gets stamped. The lift goes back to its old speed. The developer asked for the steps to be spelled out (for example "descend by lift to the facility's working depth", "locate the reactor"), with the voice left to the agent to fit the contract framing.
+
+**Decision.** E in the tutorial helicopter opens the contract (client/ui/contract.ts). It takes off only once the contract is signed; "not now" or Esc closes it and the player stays put. The return flight from the garden doesn't show it. Four pages:
+1. Cover: the company seal, contract number, contractor's name, site and term.
+2. §1 Scope of work: four pixel icons joined by arrows, with numbered captions (descend to working depth, locate and power up the reactor, keep it safe until start-up, ride up with the cargo).
+3. §2 Site conditions: three icons with captions (hostile organisms may be present, issued firearms authorised, reactor lost means exits sealed).
+4. §3 Acceptance: a large "expected pay $947,500" ("varies with performance. the payslip is final."), then the signature line. "Sign" writes the player's own name across the line in a cursive hand, then the APPROVED stamp comes down with the payslip stamp's thud and shake.
+
+The stamp is the company seal in red, uncovered, with APPROVED beneath it and a rule around both. Movement and firing are blocked while the contract is open. LIFT_RIDE_MS is back to 10 s and the ride briefing is gone.
+
+**Why.** The developer shaped it over several demos:
+- The first draft (seven pages) read as bloated and wore down patience.
+- "See the payslip for deductions" read oddly. An expected pay that varies with performance fits better, and the figure shouldn't be round ("break a big round number", so $950k became $947,500). It moved to the last page, written large.
+- "The cargo is the company's first priority, the contractor its second" foreshadowed too heavily and was cut.
+- The first two pages were still too much text: "it's not that there's a lot, it's that it's dull". They became pictograms.
+- The signature uses the player's handle automatically (option A, no input box) and should look scrawled and joined up.
+- The stamp should be a company stamp built on the seal. A band across the seal covered too much of the logo, so the word went under it.
+
+The agent's details:
+- The signature is Google Fonts' Homemade Apple drawn letter by letter. Each letter's size, lean and height is seeded by the name, so the same name always signs the same way. Letters overlap so the strokes run together, there is a flourish underneath, and the whole thing goes onto the pixel grid through the seal's routine (logo.ts inkPixels). Mrs Saint Delafield was tried first but smudged into a blob at the game's pixel size. No library generates joined handwriting without a heavy ML model.
+- The stamp's ink misses about one pixel in eleven, at fixed positions.
+- The English wording is the agent's; the content was approved by the developer in Chinese.
+
+Preview: `/?contract=NAME`. Checked in a real run on a DEV_TUT_STAGE=5 server: E in the cabin opens the contract, walking is blocked, signing stamps it, and E then flies the player to the garden.
+

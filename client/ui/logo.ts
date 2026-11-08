@@ -199,36 +199,52 @@ export function pixelLogo(width: number, cell: number, color: string): HTMLCanva
  * every `cell` px, each pixel ink, half ink or clear by how much it covers.
  */
 export function pixelSvg(svg: string, w: number, h: number, width: number, cell: number, color: string): HTMLCanvasElement {
-  const SS = 8;
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(width / cell);
-  canvas.height = Math.round((width * h) / w / cell);
-  canvas.style.width = `${canvas.width * cell}px`;
-  canvas.style.imageRendering = "pixelated";
+  const canvas = pixelCanvas(width, (width * h) / w, cell);
   const img = new Image();
-  img.onload = () => {
-    const hi = document.createElement("canvas");
-    hi.width = canvas.width * SS;
-    hi.height = canvas.height * SS;
-    const hx = hi.getContext("2d")!;
-    hx.drawImage(img, 0, 0, hi.width, hi.height);
-    const src = hx.getImageData(0, 0, hi.width, hi.height).data;
-    const ctx = canvas.getContext("2d")!;
-    ctx.fillStyle = color;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    const out = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    for (let y = 0; y < canvas.height; y++) {
-      for (let x = 0; x < canvas.width; x++) {
-        let sum = 0;
-        for (let j = 0; j < SS; j++) for (let i = 0; i < SS; i++) sum += src[((y * SS + j) * hi.width + x * SS + i) * 4 + 3];
-        const cover = sum / (255 * SS * SS);
-        out.data[(y * canvas.width + x) * 4 + 3] = cover >= 0.5 ? 255 : cover >= 0.2 ? 115 : 0;
-      }
-    }
-    ctx.putImageData(out, 0, 0);
-  };
+  img.onload = () => inkPixels(canvas, (hx, hw, hh) => hx.drawImage(img, 0, 0, hw, hh), color);
   img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   return canvas;
+}
+
+/** supersampling for inkPixels: each game pixel is the coverage of SS x SS drawn ones */
+const SS = 8;
+
+/** an empty canvas on the game's pixel grid, `width` x `height` screen px */
+export function pixelCanvas(width: number, height: number, cell: number): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(width / cell);
+  canvas.height = Math.round(height / cell);
+  canvas.style.width = `${canvas.width * cell}px`;
+  canvas.style.imageRendering = "pixelated";
+  return canvas;
+}
+
+/**
+ * Ink `canvas` in game pixels: `draw` paints (any colour) onto a canvas SS
+ * times finer, and each game pixel is solid, half-tone or empty by how much
+ * of it got covered.
+ */
+export function inkPixels(canvas: HTMLCanvasElement, draw: (hx: CanvasRenderingContext2D, w: number, h: number) => void, color: string): void {
+  const hi = document.createElement("canvas");
+  hi.width = canvas.width * SS;
+  hi.height = canvas.height * SS;
+  const hx = hi.getContext("2d")!;
+  draw(hx, hi.width, hi.height);
+  const src = hx.getImageData(0, 0, hi.width, hi.height).data;
+  const ctx = canvas.getContext("2d")!;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const out = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  for (let y = 0; y < canvas.height; y++) {
+    for (let x = 0; x < canvas.width; x++) {
+      let sum = 0;
+      for (let j = 0; j < SS; j++) for (let i = 0; i < SS; i++) sum += src[((y * SS + j) * hi.width + x * SS + i) * 4 + 3];
+      const cover = sum / (255 * SS * SS);
+      out.data[(y * canvas.width + x) * 4 + 3] = cover >= 0.5 ? 255 : cover >= 0.2 ? 115 : 0;
+    }
+  }
+  ctx.putImageData(out, 0, 0);
 }
 
 /** stamp words in hand-set 5x7 pixel letters: at the game's pixel size a font's M closes up */
@@ -240,6 +256,8 @@ const GLYPHS: Record<string, string[]> = {
   P: ["1111.", "1...1", "1...1", "1111.", "1....", "1....", "1...."],
   A: [".111.", "1...1", "1...1", "11111", "1...1", "1...1", "1...1"],
   I: ["11111", "..1..", "..1..", "..1..", "..1..", "..1..", "11111"],
+  R: ["1111.", "1...1", "1...1", "1111.", "1.1..", "1..1.", "1...1"],
+  V: ["1...1", "1...1", "1...1", "1...1", ".1.1.", ".1.1.", "..1.."],
 };
 
 /**
@@ -263,6 +281,46 @@ export function cutStamp(word: string, cell: number, color: string): HTMLCanvasE
   [...word].forEach((ch, i) =>
     GLYPHS[ch].forEach((row, r) => [...row].forEach((v, c) => v === "1" && ctx.clearRect(x0 + i * 7 + c, y0 + r, 1, 1))),
   );
+  return canvas;
+}
+
+/**
+ * The company's own seal as a rubber stamp (user 2026-11-09, the contract's
+ * APPROVED): the seal in the stamp's ink, uncovered, with `word` under it and a rule round both. The ink is worn: a
+ * few pixels (the same ones every time) didn't take. `width` in screen px.
+ */
+export function sealStamp(word: string, width: number, cell: number, color: string): HTMLCanvasElement {
+  const n = word.length;
+  const ww = n * 5 + (n - 1) * 2;
+  const gw = Math.max(ww + 8, Math.round(width / cell));
+  const lw = gw - 6;
+  const lh = Math.round((lw * H) / W);
+  const gh = 3 + lh + 2 + 7 + 3;
+  const canvas = pixelCanvas(gw * cell, gh * cell, cell);
+  const svg = logoSvg()
+    .replace(' filter="url(#anu-worn)"', "")
+    .replace("<svg ", `<svg width="${W}" height="${H}" color="#fff" `);
+  const img = new Image();
+  img.onload = () => {
+    inkPixels(canvas, (g, w, h) => g.drawImage(img, (3 / gw) * w, (3 / gh) * h, (lw / gw) * w, (lh / gh) * h), color);
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = color;
+    // the word under the seal, and a rule round the lot like a rubber stamp's edge
+    const bx = Math.floor((gw - ww) / 2);
+    const by = 3 + lh + 2;
+    [...word].forEach((ch, i) =>
+      GLYPHS[ch].forEach((row, r) => [...row].forEach((v, c) => v === "1" && ctx.fillRect(bx + i * 7 + c, by + r, 1, 1))),
+    );
+    ctx.fillRect(0, 0, gw, 1);
+    ctx.fillRect(0, gh - 1, gw, 1);
+    ctx.fillRect(0, 0, 1, gh);
+    ctx.fillRect(gw - 1, 0, 1, gh);
+    // worn ink: drop about one pixel in eleven, seeded so it never flickers
+    let seed = 4020;
+    for (let y = 0; y < gh; y++)
+      for (let x = 0; x < gw; x++) if (((seed = (seed * 1103515245 + 12345) >>> 0) >>> 16) % 11 === 0) ctx.clearRect(x, y, 1, 1);
+  };
+  img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   return canvas;
 }
 

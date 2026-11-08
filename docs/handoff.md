@@ -2,10 +2,10 @@
 
 > **AI-recorded.** Written and kept current automatically by the coding agent (Claude Code) as its session-to-session handoff, not written by hand. Terse on purpose: it's for the next agent session to pick up from. Decision history lives in [adr.md](adr.md).
 
-Updated: 2026-11-08 evening (ADR-079..083 BUILT; power-up sound dropped (user); game to be finished tonight; local main ahead of origin, NOT pushed; speedrun server :8095)
+Updated: 2026-11-09 00:30 (ADR-087 contract BUILT and committed; local main ahead of origin by the ADR-086/087 commits, NOT pushed; speedrun server :8095)
 
 ## Where we are
-- Final project due 2026-11-09 12:00. Pushed and deployed 4eb3ba6 (2026-11-08, CI green, live version 0.1.0-4eb3ba6). Nothing unpushed but this handoff line.
+- Final project due 2026-11-09 12:00. Deployed 4eb3ba6 (live version 0.1.0-4eb3ba6). Unpushed on main: the ADR-086 ride briefing commits (02f236e, f13e81d, 1bd2897, since superseded) and the ADR-087 contract commit. Push only when the user says so.
 - The game is feature-complete; the user is playtesting via the speedrun server and flagging fixes one at a time. Everything since 2026-11-03 is in ADR-060..083.
 - Branch `surface` is merged into main; still present locally (ask before deleting).
 - Commit finished+verified work without asking (CLAUDE.md). Never push unasked.
@@ -47,7 +47,8 @@ Updated: 2026-11-08 evening (ADR-079..083 BUILT; power-up sound dropped (user); 
 - Sound: client/audio.ts Audio (starts on first input, M mutes), zones from main.ts zoneAt -> ROOMS reverb; beds below/above; groan events below. Effects: sfx.ts SFX (synth) + TAKES recordings (public/sfx, credits public/sfx/CREDITS.md + settlement.ts SOUND_CREDITS); RECORDED map picks a take/mix per effect (rifle = SKS heavy, turret = AR-15, explosion boomFull, crawler death dieBugSplat). Reactor: setReactor spin-up -> hum. Freight: setMachine(blastDoor|winch), doorHit(msToStop) (door_liftdoor.wav 0.4x, impact DOOR_HIT_S aligned to the stop), doorAlarm every DOOR_ALARM_EVERY_MS, clunk on the platform lurching off; driven by main.ts stepEvacSound. Sheet: /sounds.html (client/sounds.ts). Delivery rule (user): new sounds go on the sheet first.
 - Score: shared/protocol.ts scoreParts (kill 10, wave 50, standing 100, won 500, fast up to 300, reactor x300, wound -20, floor 0). Payslip: settlement.ts payslip(score). Preview /?payslip=ms&freeze&score=N, credits /?credits=ms&freeze.
 - Freight cargo (ADR-084): shared/protocol.ts FREIGHT_CARGO = 2 blocks (CARGO_W 5.4 x CARGO_D 7.5) against the side railings, middle empty; models client/models/cargo.ts munitionsCargo (west) / equipmentCargo (east), placed in evac.ts deck(); freightSpot() fills the front first.
-- Lift: LIFT_RIDE_MS 18000 both ways (ADR-086; briefing inside BRIEF_MARGIN_MS 2 s quiet each end), last LIFT_SETTLE_MS 1200 standing still; altitude ruler in main.ts stepRide. Freight: EVAC_HOLD_MS 1 s "shut" stage before the rise.
+- Lift: LIFT_RIDE_MS 10000 both ways, last LIFT_SETTLE_MS 1200 standing still; altitude ruler in main.ts stepRide. Freight: EVAC_HOLD_MS 1 s "shut" stage before the rise.
+- Contract (ADR-087): client/ui/contract.ts Contract, 4 pages (cover with seal / §1 four step icons / §2 three condition icons / §3 expected pay $947,500 + signature). main.ts use(): heli verdict ok on the tutorial pad -> contract.open(myHandle, () => net.heli()); keydown routes to contract.key() while open; naming() includes contract.isOpen (no walking/firing); touch menu closes it. Signature = Homemade Apple (Google Fonts link in index.html) per letter, seeded by name, via logo.ts inkPixels/pixelCanvas; stamp = logo.ts sealStamp("APPROVED") (seal + word + rule, worn ink). onStamp plays stampThud. Preview /?contract=NAME; screenshot bot /tmp/phone/contract.mjs (w h mobile), real-flow bot /tmp/phone/tutheli.mjs against a DEV_TUT_STAGE=5 server.
 ## Key files
 - shared/protocol.ts (contract, map, verdicts, Report, GoreMark, SHOP), shared/enemies.ts (waves, blackout, FlowField goal, READY_LEAD_MS), shared/palette.ts, shared/tutorial.ts (shed + helicopters; no runtime imports from protocol)
 - server/index.ts (connections, tick, projectiles, shop, gore, endings), server/defence.ts (waves, won/blackout, hunt, turrets), server/db.ts
@@ -58,7 +59,7 @@ Updated: 2026-11-08 evening (ADR-079..083 BUILT; power-up sound dropped (user); 
 ## Next work (ordered; due 2026-11-09 12:00)
 1. Known on the live app only (CI checks localhost and passes 196/196): `APP_URL=https://comp4020-final-blendspitfire.fly.dev pnpm check` fails 2 tests. (a) rooms "fifth is turned away": the refusal code (4005) reaches the client ~5 s late behind Fly; a browser shows "that site is full" ~2-3 s after load. server/index.ts refuse() terminates 250 ms after close, which did NOT help: the delay is proxy-side; unresolved. (b) multiuser "take what another is holding": fixed 55 ms walk steps and 1 s wait vs ~300 ms round trips: test timing, not a game bug.
 2. Awaiting the user's look/ears, nothing queued: payslip (ADR-079; all figures to the cent, ADR-084), speedrun fixes (ADR-080: ring, floor words, lift pauses, freight sounds), no attempt on screen (ADR-081), blast door sound (ADR-082), freight cargo two blocks at the sides (ADR-084, replaced ADR-083's 2x2), solo bonus number (ADR-078). Anything they flag is the next work.
-3. Briefing DONE (ADR-086): client/ui/briefing.ts Briefing (incoming transmission, 3 typed lines that stay listed, pixelSvg icons), driven in main.ts stepRide on down rides before objective.active; preview /?briefing (window.__briefAt = 0..1 holds a still).
+3. Contract DONE (ADR-087, replaces ADR-086's ride briefing; briefing.ts deleted). User approved the look 2026-11-09. Next: the user decides when to push.
 - Settled (no work): README/PROCESS stay as they are (user 2026-11-08); no facility power-up sound (user 2026-11-08); blackout lift stays locked; no new shop items; /gallery.html stays in prod; quota shared; turret 40 / cap 8.
 
 ## Built earlier (reference; the 2026-11-03 playtest approved whatever it didn't flag)

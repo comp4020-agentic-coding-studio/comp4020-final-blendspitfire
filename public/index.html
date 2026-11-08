@@ -6,7 +6,7 @@
     <title>Asset Nexus Unlimited</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=VT323&family=Homemade+Apple&display=swap" rel="stylesheet" />
     <style>
       /* One look for every piece of UI: an old company terminal. A pixel
          face in a warm phosphor white with a faint glow, chunky two-pixel
@@ -173,32 +173,46 @@
         min-width: 4.2em; text-align: right; text-shadow: 0 0 6px var(--ui-glow), 0 1px 0 #000; background: var(--ui-wash); padding: 1px 6px; }
       .ui-ride-label { color: var(--ui-dim); font: var(--ui-font); font-size: 16px; letter-spacing: 0.14em; text-transform: uppercase;
         text-shadow: 0 0 6px var(--ui-glow), 0 1px 0 #000; }
-      /* the briefing on the ride down (ADR-086): an incoming transmission from HQ, a comms box low in the view */
-      .ui-brief { position: fixed; left: 50%; bottom: 13vh; transform: translateX(-50%); display: none; pointer-events: none; z-index: 6;
-        width: min(560px, calc(100vw - 32px)); }
-      .ui-brief.open { display: block; }
-      .ui-brief .frame { padding: 8px 14px 12px; color: var(--ui); font: var(--ui-font); text-transform: uppercase; letter-spacing: 0.1em;
-        background: rgba(4, 5, 4, 0.82); border: 2px solid var(--ui); text-shadow: 0 0 6px var(--ui-glow), 0 1px 0 #000;
-        background-image: repeating-linear-gradient(0deg, rgba(0,0,0,0.25) 0 1px, transparent 1px 3px); }
-      .ui-brief .head { display: flex; align-items: center; gap: 8px; color: var(--ui-dim); font-size: 16px; border-bottom: 1px dashed var(--ui-dim);
-        padding-bottom: 4px; margin-bottom: 8px; }
-      .ui-brief .live { color: #ff5a48; animation: brief-live 1s steps(2) infinite; }
-      @keyframes brief-live { 50% { opacity: 0.2; } }
-      .ui-brief .bars { margin-left: auto; display: flex; align-items: flex-end; gap: 2px; height: 14px; }
-      .ui-brief .bars i { width: 4px; background: var(--ui-dim); opacity: 0.35; }
-      .ui-brief .bars i:nth-child(1) { height: 4px; } .ui-brief .bars i:nth-child(2) { height: 7px; }
-      .ui-brief .bars i:nth-child(3) { height: 10px; } .ui-brief .bars i:nth-child(4) { height: 14px; }
-      .ui-brief .bars i.on { background: var(--ui); opacity: 1; }
-      .ui-brief .incoming { text-align: center; font-size: 30px; letter-spacing: 0.18em; padding: 22px 0; }
-      .ui-brief .sign { text-align: center; color: var(--ui-dim); font-size: 18px; padding: 26px 0; }
-      .ui-brief .body { flex-direction: column; gap: 6px; height: 236px; box-sizing: border-box; justify-content: center; }
-      .ui-brief .incoming { height: 236px; display: flex; align-items: center; justify-content: center; padding: 0; }
-      .ui-brief .row { display: flex; align-items: center; gap: 12px; }
-      .ui-brief .row .num { color: var(--ui-dim); font-size: 18px; width: 1em; }
-      .ui-brief .art canvas { display: block; filter: drop-shadow(0 0 6px var(--ui-glow)); }
-      .ui-brief .say { font-size: 22px; line-height: 1.15; text-transform: none; letter-spacing: 0.06em; }
-      .ui-brief .sign { text-align: center; color: var(--ui-dim); font-size: 16px; padding: 6px 0 0; border-top: 1px dashed var(--ui-dim); margin-top: 6px; }
-      .ui-brief .caret { animation: brief-live 0.6s steps(2) infinite; margin-left: 2px; }
+      /* the contract (ADR-087): the company's terms between the tutorial and the dig site, page by page, signed and stamped */
+      .ui-contract { position: fixed; inset: 0; display: none; place-items: center; z-index: 25; background: rgba(4, 5, 4, 0.7); pointer-events: auto; }
+      .ui-contract.open { display: grid; }
+      .ui-contract .doc { width: min(600px, calc(100vw - 32px)); box-sizing: border-box; padding: 14px 20px 14px; color: var(--ui); font: var(--ui-font);
+        letter-spacing: 0.05em; background: rgba(8, 9, 8, 0.94); border: 2px solid var(--ui); text-shadow: 0 0 6px var(--ui-glow), 0 1px 0 #000;
+        background-image: repeating-linear-gradient(0deg, rgba(0,0,0,0.22) 0 1px, transparent 1px 3px); }
+      .ui-contract .top { display: flex; justify-content: space-between; text-transform: uppercase; letter-spacing: 0.14em; font-size: 22px;
+        border-bottom: 2px dashed var(--ui-dim); padding-bottom: 4px; margin-bottom: 10px; }
+      .ui-contract .top .pg { color: var(--ui-dim); font-size: 16px; }
+      .ui-contract .page { display: flex; flex-direction: column; gap: 12px; min-height: 240px; justify-content: center; font-size: 21px; line-height: 1.2; }
+      .ui-contract .seal { display: flex; justify-content: center; margin-bottom: 6px; }
+      .ui-contract .seal canvas, .ui-contract .art canvas { display: block; filter: drop-shadow(0 0 6px var(--ui-glow)); }
+      .ui-contract .steps { display: flex; align-items: flex-start; justify-content: center; gap: 6px; }
+      .ui-contract .step { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; max-width: 150px; }
+      .ui-contract .step .say { font-size: 18px; line-height: 1.1; }
+      .ui-contract .step .say b { color: var(--ui-dim); }
+      .ui-contract .then { color: var(--ui-dim); font-size: 22px; padding-top: 38px; }
+      .ui-contract p { margin: 0 0 10px; }
+      .ui-contract ol { margin: 0; padding-left: 1.6em; }
+      .ui-contract li { margin-bottom: 8px; }
+      .ui-contract .dim { color: var(--ui-dim); }
+      .ui-contract .big { font-size: 30px; text-transform: uppercase; letter-spacing: 0.2em; margin: 6px 0 14px; }
+      .ui-contract .kv { display: flex; gap: 12px; padding: 2px 0; text-transform: uppercase; }
+      .ui-contract .kv span { color: var(--ui-dim); min-width: 7em; }
+      .ui-contract .pay { display: flex; flex-direction: column; align-items: center; margin: 0 0 12px; text-transform: uppercase; letter-spacing: 0.12em; }
+      .ui-contract .pay b { font-size: 52px; line-height: 1; letter-spacing: 0.06em; margin: 2px 0; font-weight: 400; }
+      .ui-contract .pay span:last-child { text-transform: none; letter-spacing: 0.05em; font-size: 17px; }
+      .ui-contract .sigline { position: relative; height: 104px; border-bottom: 2px solid var(--ui); margin: 14px 0 6px; }
+      .ui-contract .sig { position: absolute; left: 8px; bottom: 2px; }
+      .ui-contract .sig canvas, .ui-contract .stamp canvas { display: block; }
+      .ui-contract .stamp { position: absolute; right: 10px; top: 50%; transform: translateY(-50%) rotate(-8deg) scale(3); opacity: 0; }
+      .ui-contract .stamp canvas { filter: drop-shadow(0 0 6px rgba(255, 90, 72, 0.5)); }
+      .ui-contract.stamped .stamp { opacity: 0.92; transform: translateY(-50%) rotate(-8deg) scale(1); transition: transform 0.12s steps(3), opacity 0.12s steps(3); }
+      .ui-contract.stamped .doc { animation: paid-thud 0.3s steps(6) 0.12s; }
+      .ui-contract .nav { display: flex; justify-content: space-between; margin-top: 12px; }
+      .ui-contract button { font: var(--ui-font); font-size: 20px; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer; color: var(--ui);
+        background: transparent; border: 2px solid var(--ui-dim); padding: 3px 14px; text-shadow: inherit; }
+      .ui-contract button.go { border-color: var(--ui); }
+      .ui-contract button.dim { color: var(--ui-dim); }
+      .ui-contract button:hover { background: var(--ui); color: #0a0c0a; text-shadow: none; }
       .ui-countdown { position: fixed; left: 50%; top: 18vh; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center;
         color: var(--ui); text-transform: uppercase; letter-spacing: 0.12em; pointer-events: none; opacity: 0; transition: opacity 0.3s steps(4);
         text-shadow: 0 0 10px var(--ui-glow), 0 2px 0 #000; -webkit-font-smoothing: none; z-index: 6; }
@@ -307,15 +321,23 @@
         .ui-thanks .line, .ui-thanks .head { font-size: 16px; }
         .ui-thanks .sub { font-size: 16px; }
         .ui-thanks .card .line { padding: 0 16px; }
-        .ui-brief { bottom: 30vh; }
-        .ui-brief .incoming { font-size: 19px; padding: 14px 0; }
-        .ui-brief .say { font-size: 16px; }
-        .ui-brief .head { font-size: 12px; }
-        .ui-brief .body, .ui-brief .incoming { height: 190px; }
-        .ui-brief .sign { font-size: 13px; }
         .ui-countdown .cd-num { font-size: 48px; }
         .ui-countdown .cd-text { font-size: 16px; }
         #respawn { font-size: 64px; }
+        .ui-contract .page { font-size: 15px; min-height: 300px; }
+        .ui-contract .steps { flex-wrap: wrap; row-gap: 14px; }
+        .ui-contract .steps .then { display: none; }
+        .ui-contract .steps.n4 .step { flex: 0 0 46%; }
+        .ui-contract .steps.n3 .step { flex: 0 0 31%; }
+        .ui-contract .step .say { font-size: 14px; }
+        .ui-contract .top { font-size: 15px; }
+        .ui-contract .big { font-size: 19px; }
+        .ui-contract button { font-size: 15px; padding: 3px 8px; }
+        .ui-contract .kv span { min-width: 6em; }
+        .ui-contract .stamp { right: 0; transform-origin: right center; }
+        .ui-contract .pay b { font-size: 36px; }
+        .ui-contract .pay span:last-child { font-size: 13px; }
+        .ui-contract.stamped .stamp { transform: translateY(-50%) rotate(-8deg) scale(0.62); }
         #shop { place-items: center; padding: 0 12px; }
         #shop .board-panel, #board .board-panel { min-width: 0; max-width: calc(100vw - 24px); padding: 10px 12px; }
         #shop .row { padding: 6px 0; }
