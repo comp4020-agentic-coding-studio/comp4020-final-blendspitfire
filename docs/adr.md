@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-11-09, the contract between the tutorial and the dig site (signature, company-seal APPROVED stamp); lift back to 10 s
+Synced from the draft up to: 2026-11-09, README compressed, reference notes moved to ADR-088
 
 ---
 
@@ -1125,4 +1125,36 @@ The agent's details:
 - The English wording is the agent's; the content was approved by the developer in Chinese.
 
 Preview: `/?contract=NAME`. Checked in a real run on a DEV_TUT_STAGE=5 server: E in the cabin opens the contract, walking is blocked, signing stamps it, and E then flies the player to the garden.
+
+## ADR-088: References, and what each one gave the game
+*2026-11-09 · Status: Accepted*
+
+**Context.** README.md has to argue what "good" means in 400 to 600 words, and its reference list had grown to about 200 words on its own. The course says ADRs don't count towards the word limit and the README can link to them, so the developer asked to compress the README and move detail here.
+
+**Decision.** The README keeps one line per reference and links here. The developer's own notes on what each reference gave the game, moved unchanged from the README:
+
+- Jesse Schell, *The Art of Game Design: A Book of Lenses*, 3rd ed. (CRC
+  Press, 2019); read in Chinese as 《游戏设计艺术（第3版）》, trans. 刘嘉俊 et
+  al. (Publishing House of Electronics Industry, 2021). The ideas of
+  experience, problem-solving and goals with value inside the game; these are
+  my readings of it.
+- *Buckshot Roulette* and *Lethal Company*: a pixelated picture lets players
+  imagine the detail the models lack, and builds tension. The game itself
+  isn't meant as horror. *Lethal Company* also inspired the setting of
+  recovering assets for a shady company.
+- *Titanfall 2*'s Frontier Defense: the main gameplay reference, activating an
+  objective, protecting it and surviving.
+- *Escape from Duckov*: showed me a top-down twin-stick game can carry
+  something light with a story; a fixed viewing distance also lowers how much
+  detail the models need.
+- *Arc Raiders*: a sci-fi post-apocalyptic reference used while exploring the
+  art and prompting, not something the final picture copies.
+- James Gurney, *Color and Light: A Guide for the Realist Painter* (Andrews
+  McMeel, 2010), and his posts on gamut masking
+  ([Color wheel masking](http://gurneyjourney.blogspot.com/2008/01/color-wheel-masking-part-1.html),
+  [Gamut masking method](http://gurneyjourney.blogspot.com/2011/09/part-1-gamut-masking-method.html)):
+  the basis of the facility's colour system, many hues all greyed into one
+  family, with only things that glow allowed to be vivid.
+
+**Why.** The developer's call: keep the argument in the README and the detail in the ADRs, which the brief says don't count.
 
