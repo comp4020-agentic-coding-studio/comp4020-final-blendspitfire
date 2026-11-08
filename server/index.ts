@@ -3,7 +3,7 @@ import { randomUUID, randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFile, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, type WebSocket as WsSocket } from "ws";
 import { ROOM_MAX, createRoom, type Room } from "./room.ts";
 import { PERSIST_INTERVAL_MS, ROOM_CLOSE, type RoomInfo } from "../shared/protocol.ts";
 
@@ -190,6 +190,18 @@ wss.on("headers", (headers, req) => {
  * one. A site that's gone, full or under way closes the socket with a code
  * the client reads (ROOM_CLOSE in shared/protocol.ts).
  */
+/**
+ * Refuse a join: send the close code, then end the connection shortly after
+ * instead of waiting for the client's close echo. Behind Fly's proxy that
+ * echo can take ws's whole 5 s close timeout to arrive, so a refused player
+ * sat on the title screen for 5 s before seeing "site full" (found
+ * 2026-11-08 running the spec against the live app).
+ */
+function refuse(socket: WsSocket, code: number, why: string): void {
+  socket.close(code, why);
+  setTimeout(() => socket.terminate(), 250);
+}
+
 wss.on("connection", (socket, req) => {
   const playerId = pendingIds.get(req) ?? randomUUID();
   const url = new URL(req.url ?? "/ws", "http://localhost");
@@ -199,13 +211,13 @@ wss.on("connection", (socket, req) => {
   let room: Room | undefined;
   if (wanted) {
     room = rooms.get(wanted.toUpperCase());
-    if (!room) return socket.close(ROOM_CLOSE.gone, "no such site");
+    if (!room) return refuse(socket, ROOM_CLOSE.gone, "no such site");
   } else {
     room =
       [...rooms.values()].filter((r) => r.canJoin(playerId)).sort((a, b) => b.size() - a.size())[0] ?? openRoom();
   }
   if (!room.canJoin(playerId)) {
-    return socket.close(room.started() ? ROOM_CLOSE.started : ROOM_CLOSE.full, room.started() ? "under way" : "full");
+    return refuse(socket, room.started() ? ROOM_CLOSE.started : ROOM_CLOSE.full, room.started() ? "under way" : "full");
   }
   // the same person in another site (another tab): that tab's closed, one body per id
   for (const other of rooms.values()) if (other !== room && other.has(playerId)) other.kick(playerId);
