@@ -742,6 +742,8 @@ export interface Obstacle {
   halfZ: number;
   /** half the height; also its center's Y position */
   halfHeight: number;
+  /** a turret's box: blocks walking, but shots pass it (user 2026-11-08) */
+  turret?: true;
 }
 
 const wallBetween = (x1: number, z1: number, x2: number, z2: number, halfHeight: number): Obstacle => ({
@@ -1233,7 +1235,7 @@ export const PLAYER_SPEED = 6;
 
 /** a placed turret, as an obstacle: it blocks players and projectiles */
 export function boxObstacle(item: { x: number; z: number }): Obstacle {
-  return { x: item.x, z: item.z, halfX: BOX_HALF_EXTENT, halfZ: BOX_HALF_EXTENT, halfHeight: BOX_HALF_EXTENT };
+  return { x: item.x, z: item.z, halfX: BOX_HALF_EXTENT, halfZ: BOX_HALF_EXTENT, halfHeight: BOX_HALF_EXTENT, turret: true };
 }
 
 /**
@@ -1254,7 +1256,9 @@ export const SHOT_BOUNDS: Obstacle[] = [
  * turret or the world's edge stops it. Shared so your own shot is drawn
  * stopping exactly where the server will stop it.
  */
-export function shotRange(x: number, z: number, dirX: number, dirZ: number, obstacles: Obstacle[]): number {
+export function shotRange(x: number, z: number, dirX: number, dirZ: number, all: Obstacle[]): number {
+  // turrets don't stop shots, anyone's (user 2026-11-08): only walls, doors and fixtures do
+  const obstacles = all.filter((o) => !o.turret);
   if (overlapsAnyObstacle(x, z, PROJECTILE_RADIUS, obstacles)) return 0; // point-blank into a wall
   return rayToObstacles(x, z, dirX, dirZ, [...obstacles, ...SHOT_BOUNDS], PROJECTILE_MAX_RANGE);
 }

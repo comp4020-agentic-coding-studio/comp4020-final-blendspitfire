@@ -2,7 +2,7 @@
 
 > **AI-recorded.** This log is entered automatically by the coding agent (Claude Code), not written by hand. Decisions are discussed in conversation; the agent logs each one to a local draft (`.claude/notes/adr-draft.md`, not in git) and periodically translates and condenses the draft into this file. Rationale attributed to "the developer" is the developer's own stated reason, paraphrased.
 
-Synced from the draft up to: 2026-11-08, cargo back to two blocks at the sides; payslip to the cent
+Synced from the draft up to: 2026-11-08, shots pass through turrets
 
 ---
 
@@ -1079,3 +1079,12 @@ Built (agent): `server/room.ts` holds a whole world per site; `server/index.ts` 
 **Decision.** The two original blocks (each 5.4 x 7.5 m) stand against the west and east railings; the middle 4.6 m is empty from the door to the back wall. Every payslip figure is shown to the cent.
 
 **Why.** The developer's calls. The agent chose cents over whole dollars because the $9.99 fee and a small net only read right with them, and a payslip to the cent looks like a real one. Checked: 38 boarding spots on the platform; the panel post is clear of the east block.
+
+## ADR-085: Shots pass through turrets
+*2026-11-08 · Status: Accepted, built*
+
+**Context.** The developer found a small bug involving turrets blocking shots and chose the quickest fix: turrets no longer stop shots.
+
+**Decision.** A turret still blocks walking, but every shot (the crew's and the turrets' own) passes through turrets; only walls, doors and fixtures stop them.
+
+**Why.** The developer's call, for speed before the deadline. The agent's how: a turret's box is flagged and the one shared range calculation (server shots, turret shots, client prediction) skips flagged boxes, with a test pinning it.

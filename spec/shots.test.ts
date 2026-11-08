@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   HIT_RADIUS,
   OBSTACLES,
+  boxObstacle,
   PROJECTILE_MAX_RANGE,
   PROJECTILE_RADIUS,
   rayToObstacles,
@@ -51,6 +52,13 @@ describe("rayToObstacles", () => {
     for (let a = 0; a < Math.PI * 2; a += 0.05) {
       expect(shotRange(0, 10, Math.cos(a), Math.sin(a), OBSTACLES)).toBeLessThan(PROJECTILE_MAX_RANGE);
     }
+  });
+
+  it("passes through turrets: only walls stop it (user 2026-11-08)", () => {
+    const open = shotRange(0, -8, 1, 0, OBSTACLES);
+    const withTurret = shotRange(0, -8, 1, 0, [...OBSTACLES, boxObstacle({ x: 2, z: -8 })]);
+    expect(withTurret).toBeCloseTo(open, 6);
+    expect(withTurret).toBeGreaterThan(2);
   });
 
   it("goes nowhere when fired point-blank into a wall", () => {
